@@ -1,0 +1,65 @@
+diff --git a/jsfx/jsfx_api.cpp b/jsfx/jsfx_api.cpp
+index 36f7a4d2..3770e653 100644
+--- a/jsfx/jsfx_api.cpp
++++ b/jsfx/jsfx_api.cpp
+@@ -16,13 +16,14 @@ const char *g_config_slider_classname = "REAPERhfader";
+ 
+ HINSTANCE g_hInst;
+ 
+-extern "C" {
+-
+-#ifdef _WIN32
+-__declspec(dllexport) jsfxAPI JesusonicAPI=
+-#else
+-__attribute__((visibility("default"))) jsfxAPI JesusonicAPI=
+-#endif
++// extern "C" {
++
++// #ifdef _WIN32
++// __declspec(dllexport) 
++// #else
++// __attribute__((visibility("default"))) jsfxAPI JesusonicAPI=
++// #endif
++jsfxAPI JesusonicAPI =
+ {
+   JSFX_API_VERSION_CURRENT,
+ 
+@@ -70,16 +71,16 @@ __attribute__((visibility("default"))) jsfxAPI JesusonicAPI=
+ };
+ 
+ 
+-BOOL WINAPI DllMain(HINSTANCE hDllInst, DWORD fdwReason, LPVOID res)
+-{
+-  if (fdwReason==DLL_PROCESS_ATTACH)
+-  {
+-    g_hInst=hDllInst;
+-  }
+-  return TRUE;
+-}
++// BOOL WINAPI DllMain(HINSTANCE hDllInst, DWORD fdwReason, LPVOID res)
++// {
++//   if (fdwReason==DLL_PROCESS_ATTACH)
++//   {
++//     g_hInst=hDllInst;
++//   }
++//   return TRUE;
++// }
+ 
+-};
++// };
+ 
+ extern int g_last_srate;
+ 
+diff --git a/jsfx/jsfx_api.h b/jsfx/jsfx_api.h
+index 349eaf42..4fc03f70 100644
+--- a/jsfx/jsfx_api.h
++++ b/jsfx/jsfx_api.h
+@@ -20,6 +20,8 @@
+ 
+ #ifndef _WIN32
+ #include "../WDL/swell/swell.h"
++#else
++#include <windows.h>
+ #endif
+ 
+ typedef struct
