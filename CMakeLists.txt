@@ -163,22 +163,17 @@ endif()
 
 if(UNIX)
     target_compile_options(jsfx PRIVATE -fPIC)
+    set_target_properties(jsfx PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_compile_options(lice PRIVATE -fPIC)
+    set_target_properties(lice PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
-set_target_properties(jsfx PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_compile_definitions(jsfx
     PRIVATE
         WDL_FFT_REALSIZE=8
         FORCE_WIN32_CURSES
 )
-target_include_directories(${PROJECT_NAME}
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/jsfx"
-    )
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-        jsfx
-)
+
 set(MY_MSVC_WARNINGS
     /wd4018
     /wd4100
@@ -201,5 +196,14 @@ set(MY_MSVC_WARNINGS
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE ${MY_MSVC_WARNINGS})
     target_compile_options(lice PRIVATE ${MY_MSVC_WARNINGS})
-    # target_compile_options(jsfx PRIVATE ${MY_MSVC_WARNINGS}) # Uncomment if jsfx is enabled
+    target_compile_options(jsfx PRIVATE ${MY_MSVC_WARNINGS}) # Uncomment if jsfx is enabled
 endif()
+
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/jsfx"
+    )
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        jsfx
+)

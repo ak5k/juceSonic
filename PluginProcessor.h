@@ -1,7 +1,9 @@
 #pragma once
 
-#include <jsfx_api.h>
+//
 #include <juce_audio_utils/juce_audio_utils.h>
+
+#include <jsfx_api.h>
 
 extern jsfxAPI JesusonicAPI;
 extern HINSTANCE g_hInst;

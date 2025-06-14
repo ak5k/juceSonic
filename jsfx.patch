@@ -51,15 +51,23 @@ index 36f7a4d2..3770e653 100644
  extern int g_last_srate;
  
 diff --git a/jsfx/jsfx_api.h b/jsfx/jsfx_api.h
-index 349eaf42..4fc03f70 100644
+index 349eaf42..2ab1063f 100644
 --- a/jsfx/jsfx_api.h
 +++ b/jsfx/jsfx_api.h
-@@ -20,6 +20,8 @@
+@@ -5,13 +5,14 @@
+  *
+  * API used by REAPER
+  */
+-
++#pragma once
  
- #ifndef _WIN32
- #include "../WDL/swell/swell.h"
-+#else
-+#include <windows.h>
+ #ifndef _JESUSONIC_DLL_H_
+ #define _JESUSONIC_DLL_H_
+ 
+ #ifndef _JS_SFXUI_H_
+-#define SX_Instance void
++// #define SX_Instance void
++#include "sfxui.h"
  #endif
  
- typedef struct
+ #define JSFX_API_VERSION_CURRENT 0xf0f01091
