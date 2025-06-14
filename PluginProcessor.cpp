@@ -14,6 +14,8 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
 #endif
       )
 {
+    g_hInst = (HINSTANCE)juce::Process::getCurrentModuleInstanceHandle();
+
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
     appDataDir = appDataDir.getChildFile(JucePlugin_Name);
     if (!appDataDir.exists())
@@ -21,7 +23,7 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         appDataDir.getChildFile("Data").createDirectory();
         appDataDir.getChildFile("Effects").createDirectory();
     }
-    bool wantWak = true;
+    bool wantWak = false;
     auto path = appDataDir.getFullPathName().toStdString();
     sxInstance = JesusonicAPI.sx_createInstance(path.c_str(), "volume", &wantWak);
 }

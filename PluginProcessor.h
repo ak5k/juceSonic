@@ -1,10 +1,10 @@
 #pragma once
 
-#include "jsfx/jsfx/jsfx_api.h"
-
-#include <juce_audio_processors/juce_audio_processors.h>
+#include <jsfx_api.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 
 extern jsfxAPI JesusonicAPI;
+extern HINSTANCE g_hInst;
 
 //==============================================================================
 class AudioPluginAudioProcessor final : public juce::AudioProcessor

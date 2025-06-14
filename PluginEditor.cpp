@@ -1,7 +1,5 @@
 #include "PluginEditor.h"
-
 #include "PluginProcessor.h"
-extern jsfxAPI JesusonicAPI;
 
 //==============================================================================
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
@@ -21,9 +19,9 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     if (sxUi)
         return;
     auto* nativeHandle = getWindowHandle();
-    auto* hInstance = juce::Process::getCurrentModuleInstanceHandle();
-    auto* processorPtr = processorRef.getSXInstancePtr();
-    sxUi = JesusonicAPI.sx_createUI(processorRef.getSXInstancePtr(), (HINSTANCE)hInstance, (HWND)nativeHandle, nullptr);
+    auto* sxInstancePtr = processorRef.getSXInstancePtr();
+    sxUi = JesusonicAPI.sx_createUI(sxInstancePtr, g_hInst, (HWND)nativeHandle, nullptr);
+    return;
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()

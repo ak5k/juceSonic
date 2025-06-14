@@ -1,0 +1,7 @@
+*
+!.gitignore
+!.vscode/
+!cmakelists.txt
+!*.h
+!*.cpp
+!jsfx.patch
