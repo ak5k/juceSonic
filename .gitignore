@@ -5,3 +5,4 @@
 !*.h
 !*.cpp
 !jsfx.patch
+!fix-jsfx-includes.sh
