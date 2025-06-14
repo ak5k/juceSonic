@@ -1,6 +1,6 @@
 #!/bin/sh
 
-BASE_PATH="."
+BASE_PATH="./jsfx"
 
 find "$BASE_PATH" -type f \( -iname "*.h" -o -iname "*.hpp" \) | while read -r file; do
     dir=$(dirname "$file")
