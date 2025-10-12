@@ -44,13 +44,11 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 {
     stopTimer();
-    
+
     // Clean up JSFX UI window if it exists
     auto* sxInstance = processorRef.getSXInstancePtr();
     if (sxInstance)
-    {
         JesusonicAPI.sx_deleteUI(sxInstance);
-    }
 }
 
 void AudioPluginAudioProcessorEditor::timerCallback()
@@ -179,11 +177,11 @@ void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
     }
 
     // Calculate optimal window size based on number of parameters
-    const int headerHeight = 40;  // Button area
-    const int statusHeight = 30;  // Status label
+    const int headerHeight = 40;    // Button area
+    const int statusHeight = 30;    // Status label
     const int parameterHeight = 40; // Height per parameter
     const int minHeight = 200;
-    
+
     // Get screen dimensions
     auto displays = juce::Desktop::getInstance().getDisplays();
     auto mainDisplay = displays.getPrimaryDisplay();
@@ -191,13 +189,13 @@ void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
     {
         auto screenArea = mainDisplay->userArea;
         int maxWindowHeight = (screenArea.getHeight() * 2) / 3; // 2/3 of screen height
-        
+
         // Calculate desired height
         int desiredHeight = headerHeight + statusHeight + (numParams * parameterHeight);
-        
+
         // Clamp to reasonable bounds
         int newHeight = juce::jmax(minHeight, juce::jmin(desiredHeight, maxWindowHeight));
-        
+
         setSize(700, newHeight);
     }
 }
