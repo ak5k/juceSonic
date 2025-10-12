@@ -44,6 +44,13 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 {
     stopTimer();
+    
+    // Clean up JSFX UI window if it exists
+    auto* sxInstance = processorRef.getSXInstancePtr();
+    if (sxInstance)
+    {
+        JesusonicAPI.sx_deleteUI(sxInstance);
+    }
 }
 
 void AudioPluginAudioProcessorEditor::timerCallback()
@@ -80,7 +87,7 @@ void AudioPluginAudioProcessorEditor::resized()
     buttonArea.removeFromLeft(5);
     unloadButton.setBounds(buttonArea.removeFromLeft(100));
     buttonArea.removeFromLeft(5);
-    uiButton.setBounds(buttonArea.removeFromLeft(50));
+    uiButton.setBounds(buttonArea.removeFromLeft(100));
     buttonArea.removeFromLeft(10);
     wetLabel.setBounds(buttonArea.removeFromLeft(50));
     buttonArea.removeFromLeft(5);
@@ -126,8 +133,26 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
 
 void AudioPluginAudioProcessorEditor::unloadJSFXFile()
 {
-    processorRef.unloadJSFX();
-    rebuildParameterSliders();
+    // Show confirmation dialog
+    auto options = juce::MessageBoxOptions()
+                       .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                       .withTitle("Unload JSFX")
+                       .withMessage("Are you sure you want to unload the current JSFX effect?")
+                       .withButton("Yes")
+                       .withButton("No")
+                       .withAssociatedComponent(this);
+
+    juce::AlertWindow::showAsync(
+        options,
+        [this](int result)
+        {
+            if (result == 1) // Yes button
+            {
+                processorRef.unloadJSFX();
+                rebuildParameterSliders();
+            }
+        }
+    );
 }
 
 void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
@@ -151,6 +176,29 @@ void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
     {
         slider->setBounds(0, y, viewport.getMaximumVisibleWidth() - 20, 35);
         y += 40;
+    }
+
+    // Calculate optimal window size based on number of parameters
+    const int headerHeight = 40;  // Button area
+    const int statusHeight = 30;  // Status label
+    const int parameterHeight = 40; // Height per parameter
+    const int minHeight = 200;
+    
+    // Get screen dimensions
+    auto displays = juce::Desktop::getInstance().getDisplays();
+    auto mainDisplay = displays.getPrimaryDisplay();
+    if (mainDisplay != nullptr)
+    {
+        auto screenArea = mainDisplay->userArea;
+        int maxWindowHeight = (screenArea.getHeight() * 2) / 3; // 2/3 of screen height
+        
+        // Calculate desired height
+        int desiredHeight = headerHeight + statusHeight + (numParams * parameterHeight);
+        
+        // Clamp to reasonable bounds
+        int newHeight = juce::jmax(minHeight, juce::jmin(desiredHeight, maxWindowHeight));
+        
+        setSize(700, newHeight);
     }
 }
 

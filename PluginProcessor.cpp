@@ -2,6 +2,9 @@
 
 #include "PluginEditor.h"
 
+// WDL localization
+#include "jsfx/WDL/localize/localize.h"
+
 //==============================================================================
 juce::AudioProcessorValueTreeState::ParameterLayout AudioPluginAudioProcessor::createParameterLayout()
 {
@@ -31,6 +34,9 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     , apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
     g_hInst = (HINSTANCE)juce::Process::getCurrentModuleInstanceHandle();
+
+    // Initialize WDL localization system (required for JSFX UI)
+    WDL_LoadLanguagePack("", NULL);
 
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
     appDataDir = appDataDir.getChildFile(JucePlugin_Name);

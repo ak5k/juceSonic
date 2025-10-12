@@ -179,8 +179,8 @@ private:
     AudioPluginAudioProcessor& processorRef;
 
     juce::TextButton loadButton{"Load JSFX"};
-    juce::TextButton unloadButton{"Unload JSFX"};
-    juce::TextButton uiButton{"UI"};
+    juce::TextButton unloadButton{"Unload"};
+    juce::TextButton uiButton{"Show UI"};
     juce::Slider wetSlider;
     juce::Label wetLabel;
     juce::Viewport viewport;
