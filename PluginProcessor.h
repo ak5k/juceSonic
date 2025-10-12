@@ -3,12 +3,14 @@
 //
 #include <jsfx_api.h>
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <juce_dsp/juce_dsp.h>
 
 extern jsfxAPI JesusonicAPI;
 extern HINSTANCE g_hInst;
 
 //==============================================================================
-class AudioPluginAudioProcessor final : public juce::AudioProcessor
+class AudioPluginAudioProcessor final : public juce::AudioProcessor,
+                                                private juce::Timer
 {
 public:
     //==============================================================================
@@ -22,6 +24,7 @@ public:
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
 
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     using AudioProcessor::processBlock;
 
     //==============================================================================
@@ -90,6 +93,8 @@ public:
 
 private:
     //==============================================================================
+    void timerCallback() override;
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void updateParameterMapping();
 
@@ -117,6 +122,9 @@ private:
 
     double lastWet = 1.0;
     double currentWet = 1.0;
+
+    std::atomic<int> currentJSFXLatency{0};
+    juce::dsp::DelayLine<float> bypassDelayLine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
 };

@@ -54,11 +54,26 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         auto paramID = juce::String("param") + juce::String(i);
         parameterCache.push_back(apvts.getParameter(paramID));
     }
+
+    // Start timer for latency updates (check every 100ms)
+    startTimer(100);
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
 {
+    stopTimer();
     unloadJSFX();
+}
+
+//==============================================================================
+void AudioPluginAudioProcessor::timerCallback()
+{
+    // Check if latency has changed and update the host
+    int latency = currentJSFXLatency.load(std::memory_order_relaxed);
+    if (latency != getLatencySamples())
+    {
+        setLatencySamples(latency);
+    }
 }
 
 //==============================================================================
@@ -131,6 +146,14 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
 {
     lastSampleRate = sampleRate;
     tempBuffer.setSize(1, samplesPerBlock * getTotalNumInputChannels());
+
+    // Prepare delay line for bypass (max 10 seconds of latency should be more than enough)
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = getTotalNumInputChannels();
+    bypassDelayLine.prepare(spec);
+    bypassDelayLine.setMaximumDelayInSamples(static_cast<int>(sampleRate * 10.0));
 
     if (sxInstance)
         JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)sampleRate, nullptr);
@@ -308,10 +331,8 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Update lastWet for next block
     lastWet = currentWet;
 
-    // Check for latency changes (some JSFX can have dynamic latency)
-    int currentLatency = JesusonicAPI.sx_getCurrentLatency(sxInstance);
-    if (currentLatency != getLatencySamples())
-        setLatencySamples(currentLatency);
+    // Update latency atomically for the timer to read (some JSFX can have dynamic latency)
+    currentJSFXLatency.store(JesusonicAPI.sx_getCurrentLatency(sxInstance), std::memory_order_relaxed);
 
     for (int sample = 0; sample < numSamples; ++sample)
         for (int channel = 0; channel < numChannels; ++channel)
@@ -338,6 +359,28 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     //     juce::ignoreUnused(channelData);
     //     // ..do something to the data...
     // }
+}
+
+void AudioPluginAudioProcessor::processBlockBypassed(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+{
+    juce::ignoreUnused(midiMessages);
+
+    // Introduce the same latency as the JSFX plugin to maintain timing alignment
+    int latencySamples = getLatencySamples();
+    if (latencySamples > 0)
+    {
+        bypassDelayLine.setDelay(static_cast<float>(latencySamples));
+
+        // Process each channel through the delay line
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            auto* channelData = buffer.getWritePointer(channel);
+            juce::dsp::AudioBlock<float> block(&channelData, 1, buffer.getNumSamples());
+            juce::dsp::ProcessContextReplacing<float> context(block);
+            bypassDelayLine.process(context);
+        }
+    }
+    // If no latency, just pass the audio through unchanged
 }
 
 //==============================================================================
@@ -422,8 +465,9 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
 
     updateParameterMapping();
 
-    // Get and report latency to host
+    // Get and set initial latency
     int latencySamples = JesusonicAPI.sx_getCurrentLatency(sxInstance);
+    currentJSFXLatency.store(latencySamples, std::memory_order_relaxed);
     setLatencySamples(latencySamples);
 
     return true;
@@ -437,6 +481,7 @@ void AudioPluginAudioProcessor::unloadJSFX()
         sxInstance = nullptr;
 
         // Reset latency to 0 when unloading
+        currentJSFXLatency.store(0, std::memory_order_relaxed);
         setLatencySamples(0);
     }
 
