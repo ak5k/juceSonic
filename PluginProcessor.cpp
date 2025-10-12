@@ -308,6 +308,13 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Update lastWet for next block
     lastWet = currentWet;
 
+    // Check for latency changes (some JSFX can have dynamic latency)
+    int currentLatency = JesusonicAPI.sx_getCurrentLatency(sxInstance);
+    if (currentLatency != getLatencySamples())
+    {
+        setLatencySamples(currentLatency);
+    }
+
     for (int sample = 0; sample < numSamples; ++sample)
         for (int channel = 0; channel < numChannels; ++channel)
             buffer.getWritePointer(channel)[sample] = tempPtr[sample * numChannels + channel];
@@ -417,6 +424,10 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
 
     updateParameterMapping();
 
+    // Get and report latency to host
+    int latencySamples = JesusonicAPI.sx_getCurrentLatency(sxInstance);
+    setLatencySamples(latencySamples);
+
     return true;
 }
 
@@ -426,6 +437,9 @@ void AudioPluginAudioProcessor::unloadJSFX()
     {
         JesusonicAPI.sx_destroyInstance(sxInstance);
         sxInstance = nullptr;
+        
+        // Reset latency to 0 when unloading
+        setLatencySamples(0);
     }
 
     apvts.state.setProperty(jsfxPathParamID, "", nullptr);
