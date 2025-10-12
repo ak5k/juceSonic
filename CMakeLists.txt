@@ -132,7 +132,7 @@ endif()
 
 message(STATUS "Applying jsfx.patch...")
 execute_process(
-    COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/jsfx.patch
+    COMMAND git apply --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/jsfx.patch
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/jsfx
     RESULT_VARIABLE PATCH_APPLY_RESULT
 )
