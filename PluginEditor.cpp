@@ -13,6 +13,18 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(unloadButton);
     unloadButton.onClick = [this]() { unloadJSFXFile(); };
 
+    // Wet amount slider
+    addAndMakeVisible(wetLabel);
+    wetLabel.setText("Dry/Wet", juce::dontSendNotification);
+    wetLabel.setJustificationType(juce::Justification::centredRight);
+
+    addAndMakeVisible(wetSlider);
+    wetSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    wetSlider.setRange(0.0, 1.0, 0.01);
+    wetSlider.setValue(processorRef.getWetAmount(), juce::dontSendNotification);
+    wetSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+    wetSlider.onValueChange = [this]() { processorRef.setWetAmount(wetSlider.getValue()); };
+
     addAndMakeVisible(statusLabel);
     statusLabel.setJustificationType(juce::Justification::centred);
     statusLabel.setText("No JSFX loaded", juce::dontSendNotification);
@@ -43,6 +55,10 @@ void AudioPluginAudioProcessorEditor::timerCallback()
                    + " parameters)";
     }
     statusLabel.setText(statusText, juce::dontSendNotification);
+
+    // Update wet slider if it changed elsewhere
+    if (std::abs(wetSlider.getValue() - processorRef.getWetAmount()) > 0.001)
+        wetSlider.setValue(processorRef.getWetAmount(), juce::dontSendNotification);
 }
 
 //==============================================================================
@@ -60,6 +76,10 @@ void AudioPluginAudioProcessorEditor::resized()
     loadButton.setBounds(buttonArea.removeFromLeft(100));
     buttonArea.removeFromLeft(5);
     unloadButton.setBounds(buttonArea.removeFromLeft(100));
+    buttonArea.removeFromLeft(10);
+    wetLabel.setBounds(buttonArea.removeFromLeft(30));
+    buttonArea.removeFromLeft(5);
+    wetSlider.setBounds(buttonArea.removeFromLeft(150));
 
     statusLabel.setBounds(bounds.removeFromTop(30));
     viewport.setBounds(bounds);

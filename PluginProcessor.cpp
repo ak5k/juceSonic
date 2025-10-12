@@ -183,35 +183,102 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             tempPtr[sample * numChannels + channel] = buffer.getReadPointer(channel)[sample];
 
     static std::vector<float> lastValues(maxParameters, -999.0f);
+    static std::vector<double> lastActualValues(maxParameters, -999999.0);
 
     for (int i = 0; i < numActiveParams; ++i)
     {
         if (auto* param = parameterCache[i])
         {
-            const auto& range = parameterRanges[i];
             float normalizedValue = param->getValue();
-            double actualValue = range.minVal + normalizedValue * (range.maxVal - range.minVal);
+
+            // Get range fresh each time (like VST wrapper does) - range might be dynamic!
+            double minVal, maxVal;
+            JesusonicAPI.sx_getParmVal(sxInstance, i, &minVal, &maxVal, NULL);
+            double actualValue = minVal + normalizedValue * (maxVal - minVal);
+
+            // Only send to JSFX if value actually changed
+            if (std::abs(actualValue - lastActualValues[i]) > 0.0001)
+            {
+                // Use sampleoffs=0 like VST wrapper does
+                JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
+                lastActualValues[i] = actualValue;
+
+                // Debug: confirm we're actually calling sx_setParmVal
+                if (i < 2)
+                {
+                    DBG("*** sx_setParmVal called for param "
+                        << i
+                        << " with value "
+                        << actualValue
+                        << " (sampleoffs=0 - immediate)");
+                }
+            }
 
             // Debug output when parameter values change (only for first 2 params)
             if (i < 2 && std::abs(normalizedValue - lastValues[i]) > 0.001f)
             {
+                // Verify what's actually stored after setting
+                double verifyMin, verifyMax, verifyStep;
+                double storedValue = JesusonicAPI.sx_getParmVal(sxInstance, i, &verifyMin, &verifyMax, &verifyStep);
+
                 DBG("Param "
                     << i
                     << ": normalized="
                     << normalizedValue
                     << " range=["
-                    << range.minVal
+                    << minVal
                     << ".."
-                    << range.maxVal
-                    << "]"
-                    << " actual="
+                    << maxVal
+                    << "] actual="
                     << actualValue
-                    << " -> sending ACTUAL to JSFX");
+                    << " -> sent to JSFX"
+                    << " | Stored: "
+                    << storedValue
+                    << " (min="
+                    << verifyMin
+                    << " max="
+                    << verifyMax
+                    << " step="
+                    << verifyStep
+                    << ")");
                 lastValues[i] = normalizedValue;
             }
+        }
+    }
 
-            // Try sending actual value instead of normalized
-            JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
+    // Get transport info from host
+    double tempo = 120.0;
+    int timeSigNumerator = 4;
+    int timeSigDenominator = 4;
+    double playState = 1.0; // 0=stopped, 1=playing, 5=recording
+    double playPositionSeconds = 0.0;
+    double playPositionBeats = 0.0;
+
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto posInfo = playHead->getPosition())
+        {
+            if (auto bpm = posInfo->getBpm())
+                tempo = *bpm;
+
+            if (auto timeSig = posInfo->getTimeSignature())
+            {
+                timeSigNumerator = timeSig->numerator;
+                timeSigDenominator = timeSig->denominator;
+            }
+
+            if (auto ppqPos = posInfo->getPpqPosition())
+                playPositionBeats = *ppqPos;
+
+            if (auto timeInSeconds = posInfo->getTimeInSeconds())
+                playPositionSeconds = *timeInSeconds;
+
+            // Determine play state
+            playState = 0.0; // stopped
+            if (posInfo->getIsPlaying())
+                playState = 1.0; // playing
+            if (posInfo->getIsRecording())
+                playState = 5.0; // recording (1 | 4)
         }
     }
 
@@ -221,16 +288,19 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         buffer.getNumSamples(),
         totalNumOutputChannels,
         getSampleRate(),
-        120.0,
-        4,
-        4,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
+        tempo,
+        timeSigNumerator,
+        timeSigDenominator,
+        playState,
+        playPositionSeconds,
+        playPositionBeats,
+        lastWet,
+        currentWet,
         0
     );
+
+    // Update lastWet for next block
+    lastWet = currentWet;
 
     for (int sample = 0; sample < numSamples; ++sample)
         for (int channel = 0; channel < numChannels; ++channel)
@@ -287,6 +357,10 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
         if (xmlState->hasTagName(apvts.state.getType()))
         {
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+
+            // Restore wet amount
+            currentWet = apvts.state.getProperty("wetAmount", 1.0);
+            lastWet = currentWet;
 
             auto jsfxPath = getCurrentJSFXPath();
             if (jsfxPath.isNotEmpty())

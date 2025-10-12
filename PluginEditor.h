@@ -179,6 +179,8 @@ private:
 
     juce::TextButton loadButton{"Load JSFX"};
     juce::TextButton unloadButton{"Unload JSFX"};
+    juce::Slider wetSlider;
+    juce::Label wetLabel;
     juce::Viewport viewport;
     juce::Component parameterContainer;
     juce::Label statusLabel;
