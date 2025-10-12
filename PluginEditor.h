@@ -1,28 +1,190 @@
 #pragma once
 
 #include "PluginProcessor.h"
+
 #include <juce_gui_extra/juce_gui_extra.h>
+
+//==============================================================================
+class ParameterSlider : public juce::Component
+{
+public:
+    ParameterSlider(AudioPluginAudioProcessor& proc, int paramIndex)
+        : processor(proc)
+        , index(paramIndex)
+    {
+        auto paramID = juce::String("param") + juce::String(paramIndex);
+
+        addAndMakeVisible(nameLabel);
+        nameLabel.setJustificationType(juce::Justification::centredLeft);
+
+        double minVal = 0.0, maxVal = 1.0, step = 0.0;
+        bool hasRange = processor.getJSFXParameterRange(index, minVal, maxVal, step);
+
+        // Check if it's an enum/choice parameter
+        bool isEnum = processor.isJSFXParameterEnum(index);
+
+        // Detect parameter type from min/max/step
+        if (hasRange && minVal == 0.0 && maxVal == 1.0 && step == 1.0 && !isEnum)
+        {
+            // Boolean parameter - use toggle button
+            controlType = ControlType::ToggleButton;
+            toggleButton.setButtonText("");
+            addAndMakeVisible(toggleButton);
+
+            buttonAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+                processor.getAPVTS(),
+                paramID,
+                toggleButton
+            );
+        }
+        else if (isEnum && hasRange)
+        {
+            // Enum/choice parameter - use combo box
+            controlType = ControlType::ComboBox;
+            addAndMakeVisible(comboBox);
+
+            // Build combo box items from enum values
+            int numItems = juce::roundToInt(maxVal - minVal) + 1;
+            for (int i = 0; i < numItems; ++i)
+            {
+                double actualValue = minVal + i;
+                juce::String itemText = processor.getJSFXParameterDisplayText(index, actualValue);
+                comboBox.addItem(itemText, i + 1); // ComboBox item IDs start at 1
+            }
+
+            comboBoxAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+                processor.getAPVTS(),
+                paramID,
+                comboBox
+            );
+        }
+        else
+        {
+            // Numeric parameter - use slider
+            controlType = ControlType::Slider;
+            slider.setSliderStyle(juce::Slider::LinearHorizontal);
+            slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 100, 20);
+            slider.setRange(0.0, 1.0, 0.001);
+            addAndMakeVisible(slider);
+
+            sliderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                processor.getAPVTS(),
+                paramID,
+                slider
+            );
+
+            if (hasRange)
+            {
+                // Check if it's an integer parameter
+                bool isIntParam = (step >= 1.0);
+
+                slider.textFromValueFunction =
+                    [&proc = this->processor, idx = this->index, minVal, maxVal](double normalizedValue) -> juce::String
+                {
+                    double actualValue = minVal + normalizedValue * (maxVal - minVal);
+                    return proc.getJSFXParameterDisplayText(idx, actualValue);
+                };
+
+                slider.valueFromTextFunction = [minVal, maxVal](const juce::String& text) -> double
+                {
+                    double actualValue = text.getDoubleValue();
+                    if (maxVal > minVal)
+                        return (actualValue - minVal) / (maxVal - minVal);
+                    return 0.0;
+                };
+
+                // For integer parameters, set discrete interval
+                if (isIntParam && maxVal > minVal)
+                {
+                    int numSteps = juce::roundToInt(maxVal - minVal);
+                    if (numSteps > 0 && numSteps < 1000)
+                        slider.setRange(0.0, 1.0, 1.0 / numSteps);
+                }
+
+                // Force slider to update its text box with the new formatting
+                slider.updateText();
+            }
+        }
+
+        updateFromProcessor();
+    }
+
+    void updateFromProcessor()
+    {
+        juce::String paramName = processor.getJSFXParameterName(index);
+        nameLabel.setText(paramName, juce::dontSendNotification);
+    }
+
+    void resized() override
+    {
+        auto bounds = getLocalBounds();
+        nameLabel.setBounds(bounds.removeFromLeft(200));
+
+        switch (controlType)
+        {
+        case ControlType::ToggleButton:
+            toggleButton.setBounds(bounds.removeFromLeft(50).reduced(5));
+            break;
+        case ControlType::ComboBox:
+            comboBox.setBounds(bounds.reduced(2));
+            break;
+        case ControlType::Slider:
+            slider.setBounds(bounds);
+            break;
+        }
+    }
+
+private:
+    enum class ControlType
+    {
+        Slider,
+        ToggleButton,
+        ComboBox
+    };
+
+    AudioPluginAudioProcessor& processor;
+    int index;
+    ControlType controlType = ControlType::Slider;
+
+    juce::Slider slider;
+    juce::ToggleButton toggleButton;
+    juce::ComboBox comboBox;
+    juce::Label nameLabel;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> comboBoxAttachment;
+};
 
 //==============================================================================
 class AudioPluginAudioProcessorEditor final
     : public juce::AudioProcessorEditor
-    , public juce::Timer
+    , private juce::Timer
 {
 public:
     explicit AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor&);
     ~AudioPluginAudioProcessorEditor() override;
-
-    void timerCallback() override;
 
     //==============================================================================
     void paint(juce::Graphics&) override;
     void resized() override;
 
 private:
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
+    void timerCallback() override;
+    void loadJSFXFile();
+    void unloadJSFXFile();
+    void rebuildParameterSliders();
+
     AudioPluginAudioProcessor& processorRef;
-    bool init =false;
+
+    juce::TextButton loadButton{"Load JSFX"};
+    juce::TextButton unloadButton{"Unload JSFX"};
+    juce::Viewport viewport;
+    juce::Component parameterContainer;
+    juce::Label statusLabel;
+
+    juce::OwnedArray<ParameterSlider> parameterSliders;
+    std::unique_ptr<juce::FileChooser> fileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

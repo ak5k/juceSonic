@@ -1,9 +1,8 @@
 #pragma once
 
 //
-#include <juce_audio_utils/juce_audio_utils.h>
-
 #include <jsfx_api.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 
 extern jsfxAPI JesusonicAPI;
 extern HINSTANCE g_hInst;
@@ -53,9 +52,57 @@ public:
         return sxInstance;
     }
 
+    bool loadJSFX(const juce::File& jsfxFile);
+    void unloadJSFX();
+
+    juce::String getCurrentJSFXPath() const;
+
+    juce::String getCurrentJSFXName() const
+    {
+        return currentJSFXName;
+    }
+
+    int getNumActiveParameters() const
+    {
+        return numActiveParams;
+    }
+
+    juce::String getJSFXParameterName(int index) const;
+    bool getJSFXParameterRange(int index, double& minVal, double& maxVal, double& step) const;
+    bool isJSFXParameterEnum(int index) const;
+    juce::String getJSFXParameterDisplayText(int index, double value) const;
+
+    juce::AudioProcessorValueTreeState& getAPVTS()
+    {
+        return apvts;
+    }
+
 private:
     //==============================================================================
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    void updateParameterMapping();
+
+    static constexpr int maxParameters = 256;
+    static constexpr const char* jsfxPathParamID = "jsfxFilePath";
+
+    struct ParameterRange
+    {
+        double minVal = 0.0;
+        double maxVal = 1.0;
+        double step = 0.0;
+    };
+
+    juce::AudioProcessorValueTreeState apvts;
+    std::vector<juce::RangedAudioParameter*> parameterCache;
+    std::vector<ParameterRange> parameterRanges;
+
     SX_Instance* sxInstance = nullptr;
     juce::AudioBuffer<double> tempBuffer;
+
+    juce::String currentJSFXName;
+    juce::String jsfxRootDir;
+    int numActiveParams = 0;
+    double lastSampleRate = 44100.0;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
 };

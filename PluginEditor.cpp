@@ -5,44 +5,126 @@
 //==============================================================================
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
     : AudioProcessorEditor(&p)
-
     , processorRef(p)
 {
-    juce::ignoreUnused(processorRef);
-    // Make sure that before the constructor has finished, you've set the
-    // editor's size to whatever you need it to be.
-    setSize(400, 300);
-    startTimerHz(30); // Start a timer to update the UI at 30 FPS
-}
+    addAndMakeVisible(loadButton);
+    loadButton.onClick = [this]() { loadJSFXFile(); };
 
-void AudioPluginAudioProcessorEditor::timerCallback()
-{
-    if (init)
-        return;
+    addAndMakeVisible(unloadButton);
+    unloadButton.onClick = [this]() { unloadJSFXFile(); };
 
-    init = true;
-    auto* sxInstance = processorRef.getSXInstancePtr();
-    sxInstance->DoUpdate((HWND)getTopLevelComponent()->getWindowHandle());
+    addAndMakeVisible(statusLabel);
+    statusLabel.setJustificationType(juce::Justification::centred);
+    statusLabel.setText("No JSFX loaded", juce::dontSendNotification);
+
+    addAndMakeVisible(viewport);
+    viewport.setViewedComponent(&parameterContainer, false);
+
+    setSize(700, 500);
+
+    rebuildParameterSliders();
+    startTimer(200);
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 {
-    // JesusonicAPI.sx_deleteUI(sxUi);
+    stopTimer();
+}
+
+void AudioPluginAudioProcessorEditor::timerCallback()
+{
+    juce::String statusText = "No JSFX loaded";
+    if (!processorRef.getCurrentJSFXName().isEmpty())
+    {
+        statusText = "Loaded: "
+                   + processorRef.getCurrentJSFXName()
+                   + " ("
+                   + juce::String(processorRef.getNumActiveParameters())
+                   + " parameters)";
+    }
+    statusLabel.setText(statusText, juce::dontSendNotification);
 }
 
 //==============================================================================
 void AudioPluginAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    // (Our component is opaque, so we must completely fill the background with a solid colour)
-    // g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-
-    // g.setColour(juce::Colours::white);
-    // g.setFont(15.0f);
-    // g.drawFittedText("Hello World!", getLocalBounds(), juce::Justification::centred, 1);
+    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
 }
 
 void AudioPluginAudioProcessorEditor::resized()
 {
-    // This is generally where you'll want to lay out the positions of any
-    // subcomponents in your editor..
+    auto bounds = getLocalBounds();
+
+    auto buttonArea = bounds.removeFromTop(40);
+    buttonArea.reduce(5, 5);
+    loadButton.setBounds(buttonArea.removeFromLeft(100));
+    buttonArea.removeFromLeft(5);
+    unloadButton.setBounds(buttonArea.removeFromLeft(100));
+
+    statusLabel.setBounds(bounds.removeFromTop(30));
+    viewport.setBounds(bounds);
+}
+
+void AudioPluginAudioProcessorEditor::loadJSFXFile()
+{
+    fileChooser = std::make_unique<juce::FileChooser>(
+        "Select a JSFX file to load...",
+        juce::File::getSpecialLocation(juce::File::userHomeDirectory),
+        "*"
+    );
+
+    auto chooserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+    fileChooser->launchAsync(
+        chooserFlags,
+        [this](const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file != juce::File{})
+            {
+                if (processorRef.loadJSFX(file))
+                {
+                    rebuildParameterSliders();
+                }
+                else
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon,
+                        "Error",
+                        "Failed to load JSFX file: " + file.getFullPathName()
+                    );
+                }
+            }
+        }
+    );
+}
+
+void AudioPluginAudioProcessorEditor::unloadJSFXFile()
+{
+    processorRef.unloadJSFX();
+    rebuildParameterSliders();
+}
+
+void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
+{
+    parameterSliders.clear();
+
+    int numParams = processorRef.getNumActiveParameters();
+
+    for (int i = 0; i < numParams; ++i)
+    {
+        auto* slider = new ParameterSlider(processorRef, i);
+        parameterSliders.add(slider);
+        parameterContainer.addAndMakeVisible(slider);
+    }
+
+    int totalHeight = numParams * 40;
+    parameterContainer.setSize(viewport.getMaximumVisibleWidth(), totalHeight);
+
+    int y = 0;
+    for (auto* slider : parameterSliders)
+    {
+        slider->setBounds(0, y, viewport.getMaximumVisibleWidth() - 20, 35);
+        y += 40;
+    }
 }

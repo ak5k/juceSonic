@@ -3,6 +3,21 @@
 #include "PluginEditor.h"
 
 //==============================================================================
+juce::AudioProcessorValueTreeState::ParameterLayout AudioPluginAudioProcessor::createParameterLayout()
+{
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+
+    for (int i = 0; i < maxParameters; ++i)
+    {
+        auto paramID = juce::String("param") + juce::String(i);
+        auto paramName = juce::String("Parameter ") + juce::String(i);
+
+        layout.add(std::make_unique<juce::AudioParameterFloat>(paramID, paramName, 0.0f, 1.0f, 0.0f));
+    }
+
+    return layout;
+}
+
 AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     : AudioProcessor(
           BusesProperties()
@@ -13,6 +28,7 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
               .withOutput("Output", juce::AudioChannelSet::stereo(), true)
 #endif
       )
+    , apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
     g_hInst = (HINSTANCE)juce::Process::getCurrentModuleInstanceHandle();
 
@@ -23,14 +39,20 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         appDataDir.getChildFile("Data").createDirectory();
         appDataDir.getChildFile("Effects").createDirectory();
     }
-    bool wantWak = false;
-    auto path = appDataDir.getFullPathName().toStdString();
-    sxInstance = JesusonicAPI.sx_createInstance(path.c_str(), "volume", &wantWak);
+
+    jsfxRootDir = appDataDir.getFullPathName();
+
+    parameterCache.reserve(maxParameters);
+    for (int i = 0; i < maxParameters; ++i)
+    {
+        auto paramID = juce::String("param") + juce::String(i);
+        parameterCache.push_back(apvts.getParameter(paramID));
+    }
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
 {
-    JesusonicAPI.sx_destroyInstance(sxInstance);
+    unloadJSFX();
 }
 
 //==============================================================================
@@ -101,10 +123,11 @@ void AudioPluginAudioProcessor::changeProgramName(int index, const juce::String&
 //==============================================================================
 void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
-    juce::ignoreUnused(sampleRate, samplesPerBlock);
+    lastSampleRate = sampleRate;
     tempBuffer.setSize(1, samplesPerBlock * getTotalNumInputChannels());
+
+    if (sxInstance)
+        JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)sampleRate, nullptr);
 }
 
 void AudioPluginAudioProcessor::releaseResources()
@@ -123,8 +146,8 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
     // In this template code we only support mono or stereo.
     // Some plugin hosts, such as certain GarageBand versions, will only
     // load plugins that support stereo bus layouts.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono() &&
-        layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
+        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
 
     // This checks if the input layout matches the output layout
@@ -144,7 +167,12 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     juce::ScopedNoDenormals noDenormals;
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // Interleave buffer samples into tempBuffer
+    if (!sxInstance)
+    {
+        buffer.clear();
+        return;
+    }
+
     int numSamples = buffer.getNumSamples();
     int numChannels = buffer.getNumChannels();
     tempBuffer.setSize(1, numSamples * numChannels, false, false, true);
@@ -154,21 +182,54 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         for (int channel = 0; channel < numChannels; ++channel)
             tempPtr[sample * numChannels + channel] = buffer.getReadPointer(channel)[sample];
 
+    static std::vector<float> lastValues(maxParameters, -999.0f);
+
+    for (int i = 0; i < numActiveParams; ++i)
+    {
+        if (auto* param = parameterCache[i])
+        {
+            const auto& range = parameterRanges[i];
+            float normalizedValue = param->getValue();
+            double actualValue = range.minVal + normalizedValue * (range.maxVal - range.minVal);
+
+            // Debug output when parameter values change (only for first 2 params)
+            if (i < 2 && std::abs(normalizedValue - lastValues[i]) > 0.001f)
+            {
+                DBG("Param "
+                    << i
+                    << ": normalized="
+                    << normalizedValue
+                    << " range=["
+                    << range.minVal
+                    << ".."
+                    << range.maxVal
+                    << "]"
+                    << " actual="
+                    << actualValue
+                    << " -> sending ACTUAL to JSFX");
+                lastValues[i] = normalizedValue;
+            }
+
+            // Try sending actual value instead of normalized
+            JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
+        }
+    }
+
     JesusonicAPI.sx_processSamples(
         sxInstance,
         tempBuffer.getWritePointer(0),
         buffer.getNumSamples(),
         totalNumOutputChannels,
         getSampleRate(),
-        120.0, // tempo
-        4,     // time signature numerator
-        4,     // time signature denominator
-        1.0,   // play state
-        0.0,   // play position
-        0.0,   // play position in beats
-        0.0,   // last wet value
-        1.0,   // wet value
-        0      // flags
+        120.0,
+        4,
+        4,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0
     );
 
     for (int sample = 0; sample < numSamples; ++sample)
@@ -212,17 +273,188 @@ juce::AudioProcessorEditor* AudioPluginAudioProcessor::createEditor()
 //==============================================================================
 void AudioPluginAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
-    juce::ignoreUnused(destData);
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    copyXmlToBinary(*xml, destData);
 }
 
 void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
-    juce::ignoreUnused(data, sizeInBytes);
+    std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
+
+    if (xmlState != nullptr)
+    {
+        if (xmlState->hasTagName(apvts.state.getType()))
+        {
+            apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+
+            auto jsfxPath = getCurrentJSFXPath();
+            if (jsfxPath.isNotEmpty())
+            {
+                juce::File jsfxFile(jsfxPath);
+                if (jsfxFile.existsAsFile())
+                    loadJSFX(jsfxFile);
+            }
+        }
+    }
+}
+
+bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
+{
+    if (!jsfxFile.existsAsFile())
+        return false;
+
+    unloadJSFX();
+
+    auto effectName = jsfxFile.getFileNameWithoutExtension();
+    juce::File appDataDir = juce::File(jsfxRootDir);
+    juce::File effectsDir = appDataDir.getChildFile("Effects");
+
+    if (!effectsDir.exists())
+        effectsDir.createDirectory();
+
+    // Always copy to filename without extension (JSFX API expects no extension)
+    juce::File targetFile = effectsDir.getChildFile(effectName);
+
+    if (jsfxFile != targetFile)
+        jsfxFile.copyFileTo(targetFile);
+
+    bool wantWak = false;
+    sxInstance = JesusonicAPI.sx_createInstance(
+        appDataDir.getFullPathName().toRawUTF8(),
+        ("Effects/" + effectName).toRawUTF8(),
+        &wantWak
+    );
+
+    if (!sxInstance)
+        return false;
+
+    apvts.state.setProperty(jsfxPathParamID, jsfxFile.getFullPathName(), nullptr);
+
+    currentJSFXName = effectName;
+
+    JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
+
+    updateParameterMapping();
+
+    return true;
+}
+
+void AudioPluginAudioProcessor::unloadJSFX()
+{
+    if (sxInstance)
+    {
+        JesusonicAPI.sx_destroyInstance(sxInstance);
+        sxInstance = nullptr;
+    }
+
+    apvts.state.setProperty(jsfxPathParamID, "", nullptr);
+
+    currentJSFXName.clear();
+    numActiveParams = 0;
+}
+
+juce::String AudioPluginAudioProcessor::getCurrentJSFXPath() const
+{
+    return apvts.state.getProperty(jsfxPathParamID, "").toString();
+}
+
+juce::String AudioPluginAudioProcessor::getJSFXParameterName(int index) const
+{
+    if (!sxInstance || index < 0 || index >= numActiveParams)
+        return "Parameter " + juce::String(index);
+
+    char paramName[256] = {0};
+    JesusonicAPI.sx_getParmName(sxInstance, index, paramName, sizeof(paramName));
+
+    if (paramName[0] != 0)
+        return juce::String(paramName);
+
+    return "Parameter " + juce::String(index);
+}
+
+bool AudioPluginAudioProcessor::getJSFXParameterRange(int index, double& minVal, double& maxVal, double& step) const
+{
+    if (index < 0 || index >= static_cast<int>(parameterRanges.size()))
+        return false;
+
+    minVal = parameterRanges[index].minVal;
+    maxVal = parameterRanges[index].maxVal;
+    step = parameterRanges[index].step;
+    return true;
+}
+
+bool AudioPluginAudioProcessor::isJSFXParameterEnum(int index) const
+{
+    if (!sxInstance || index < 0 || index >= numActiveParams)
+        return false;
+
+    return JesusonicAPI.sx_parmIsEnum(sxInstance, index) != 0;
+}
+
+juce::String AudioPluginAudioProcessor::getJSFXParameterDisplayText(int index, double value) const
+{
+    if (!sxInstance || index < 0 || index >= numActiveParams)
+        return juce::String(value);
+
+    char displayText[256] = {0};
+    JesusonicAPI.sx_getParmDisplay(sxInstance, index, displayText, sizeof(displayText), &value);
+
+    if (displayText[0] != 0)
+        return juce::String(displayText);
+
+    return juce::String(value);
+}
+
+void AudioPluginAudioProcessor::updateParameterMapping()
+{
+    if (!sxInstance)
+    {
+        numActiveParams = 0;
+        parameterRanges.clear();
+        return;
+    }
+
+    numActiveParams = JesusonicAPI.sx_getNumParms(sxInstance);
+    numActiveParams = juce::jmin(numActiveParams, maxParameters);
+
+    parameterRanges.resize(numActiveParams);
+
+    for (int i = 0; i < numActiveParams; ++i)
+    {
+        double currentVal = JesusonicAPI.sx_getParmVal(
+            sxInstance,
+            i,
+            &parameterRanges[i].minVal,
+            &parameterRanges[i].maxVal,
+            &parameterRanges[i].step
+        );
+
+        DBG("Param "
+            << i
+            << " from JSFX: currentVal="
+            << currentVal
+            << " range=["
+            << parameterRanges[i].minVal
+            << ".."
+            << parameterRanges[i].maxVal
+            << "]"
+            << " step="
+            << parameterRanges[i].step);
+
+        if (auto* param = parameterCache[i])
+        {
+            float normalizedValue = 0.0f;
+            if (parameterRanges[i].maxVal > parameterRanges[i].minVal)
+            {
+                normalizedValue = static_cast<float>(
+                    (currentVal - parameterRanges[i].minVal) / (parameterRanges[i].maxVal - parameterRanges[i].minVal)
+                );
+            }
+
+            param->setValueNotifyingHost(normalizedValue);
+        }
+    }
 }
 
 //==============================================================================
