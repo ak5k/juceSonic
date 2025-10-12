@@ -311,9 +311,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Check for latency changes (some JSFX can have dynamic latency)
     int currentLatency = JesusonicAPI.sx_getCurrentLatency(sxInstance);
     if (currentLatency != getLatencySamples())
-    {
         setLatencySamples(currentLatency);
-    }
 
     for (int sample = 0; sample < numSamples; ++sample)
         for (int channel = 0; channel < numChannels; ++channel)
@@ -437,7 +435,7 @@ void AudioPluginAudioProcessor::unloadJSFX()
     {
         JesusonicAPI.sx_destroyInstance(sxInstance);
         sxInstance = nullptr;
-        
+
         // Reset latency to 0 when unloading
         setLatencySamples(0);
     }
