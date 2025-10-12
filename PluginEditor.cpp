@@ -185,7 +185,7 @@ void AudioPluginAudioProcessorEditor::openJSFXUI()
     {
         DWORD error = GetLastError();
         DBG("CreateDialog failed with error: " << error);
-        
+
         juce::AlertWindow::showMessageBoxAsync(
             juce::MessageBoxIconType::InfoIcon,
             "No UI Available",
@@ -193,4 +193,3 @@ void AudioPluginAudioProcessorEditor::openJSFXUI()
         );
     }
 }
-
