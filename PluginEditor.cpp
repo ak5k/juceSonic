@@ -13,6 +13,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(unloadButton);
     unloadButton.onClick = [this]() { unloadJSFXFile(); };
 
+    addAndMakeVisible(uiButton);
+    uiButton.onClick = [this]() { openJSFXUI(); };
+
     // Wet amount slider
     addAndMakeVisible(wetLabel);
     wetLabel.setText("Dry/Wet", juce::dontSendNotification);
@@ -76,8 +79,10 @@ void AudioPluginAudioProcessorEditor::resized()
     loadButton.setBounds(buttonArea.removeFromLeft(100));
     buttonArea.removeFromLeft(5);
     unloadButton.setBounds(buttonArea.removeFromLeft(100));
+    buttonArea.removeFromLeft(5);
+    uiButton.setBounds(buttonArea.removeFromLeft(50));
     buttonArea.removeFromLeft(10);
-    wetLabel.setBounds(buttonArea.removeFromLeft(30));
+    wetLabel.setBounds(buttonArea.removeFromLeft(50));
     buttonArea.removeFromLeft(5);
     wetSlider.setBounds(buttonArea.removeFromLeft(150));
 
@@ -148,3 +153,44 @@ void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
         y += 40;
     }
 }
+
+void AudioPluginAudioProcessorEditor::openJSFXUI()
+{
+    auto* sxInstance = processorRef.getSXInstancePtr();
+    if (!sxInstance)
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "No JSFX Loaded",
+            "Please load a JSFX file first before opening the UI."
+        );
+        return;
+    }
+
+    DBG("Calling sx_createUI with g_hInst=" << juce::String::toHexString((juce::pointer_sized_int)g_hInst));
+
+    // Create the JSFX UI window as a standalone window (NULL parent)
+    HWND uiWindow = JesusonicAPI.sx_createUI(sxInstance, g_hInst, NULL, nullptr);
+
+    DBG("sx_createUI returned: " << juce::String::toHexString((juce::pointer_sized_int)uiWindow));
+
+    if (uiWindow)
+    {
+        // Show the window
+        ShowWindow(uiWindow, SW_SHOW);
+        SetForegroundWindow(uiWindow);
+        DBG("UI window shown successfully");
+    }
+    else
+    {
+        DWORD error = GetLastError();
+        DBG("CreateDialog failed with error: " << error);
+        
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::InfoIcon,
+            "No UI Available",
+            "This JSFX effect does not have a graphical user interface.\nError code: " + juce::String((int)error)
+        );
+    }
+}
+

@@ -116,6 +116,8 @@ target_link_libraries(${PROJECT_NAME}
         juce::juce_recommended_warning_flags)
 
 # Reset jsfx submodule to HEAD and apply patch (adds Windows headers, removes DLL exports)
+# message(STATUS "Resetting jsfx submodule...")
+# Reset jsfx submodule to HEAD and apply patch (adds Windows headers, removes DLL exports)
 message(STATUS "Resetting jsfx submodule...")
 execute_process(
     COMMAND git reset --hard 
@@ -229,3 +231,12 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE
         jsfx
 )
+
+# Add JSFX UI resources directly to each plugin format target (resources can't be in static libraries)
+if(WIN32)
+    foreach(target_name IN ITEMS ${PROJECT_NAME}_VST3 ${PROJECT_NAME}_Standalone ${PROJECT_NAME}_AU)
+        if(TARGET ${target_name})
+            target_sources(${target_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/jsfx/res.rc")
+        endif()
+    endforeach()
+endif()

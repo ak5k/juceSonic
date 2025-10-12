@@ -174,11 +174,13 @@ private:
     void loadJSFXFile();
     void unloadJSFXFile();
     void rebuildParameterSliders();
+    void openJSFXUI();
 
     AudioPluginAudioProcessor& processorRef;
 
     juce::TextButton loadButton{"Load JSFX"};
     juce::TextButton unloadButton{"Unload JSFX"};
+    juce::TextButton uiButton{"UI"};
     juce::Slider wetSlider;
     juce::Label wetLabel;
     juce::Viewport viewport;
