@@ -115,6 +115,28 @@ target_link_libraries(${PROJECT_NAME}
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
+# Reset jsfx submodule to HEAD and apply patch (adds Windows headers, removes DLL exports)
+message(STATUS "Resetting jsfx submodule...")
+execute_process(
+    COMMAND git reset --hard 
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/jsfx
+    RESULT_VARIABLE RESET_RESULT
+    OUTPUT_QUIET ERROR_QUIET
+)
+if(NOT RESET_RESULT EQUAL 0)
+    message(WARNING "Failed to reset jsfx submodule")
+endif()
+
+message(STATUS "Applying jsfx.patch...")
+execute_process(
+    COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/jsfx.patch
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/jsfx
+    RESULT_VARIABLE PATCH_APPLY_RESULT
+)
+if(NOT PATCH_APPLY_RESULT EQUAL 0)
+    message(WARNING "Failed to apply jsfx.patch")
+endif()
+
 add_library(lice STATIC)
 target_include_directories(lice
     PRIVATE
