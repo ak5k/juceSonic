@@ -9,8 +9,9 @@ extern jsfxAPI JesusonicAPI;
 extern HINSTANCE g_hInst;
 
 //==============================================================================
-class AudioPluginAudioProcessor final : public juce::AudioProcessor,
-                                                private juce::Timer
+class AudioPluginAudioProcessor final
+    : public juce::AudioProcessor
+    , private juce::Timer
 {
 public:
     //==============================================================================

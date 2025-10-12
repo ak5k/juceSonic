@@ -71,9 +71,7 @@ void AudioPluginAudioProcessor::timerCallback()
     // Check if latency has changed and update the host
     int latency = currentJSFXLatency.load(std::memory_order_relaxed);
     if (latency != getLatencySamples())
-    {
         setLatencySamples(latency);
-    }
 }
 
 //==============================================================================
