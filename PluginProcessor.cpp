@@ -254,9 +254,9 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     double playPositionSeconds = 0.0;
     double playPositionBeats = 0.0;
 
-    if (auto* playHead = getPlayHead())
+    if (auto* ph = getPlayHead())
     {
-        if (auto posInfo = playHead->getPosition())
+        if (auto posInfo = ph->getPosition())
         {
             if (auto bpm = posInfo->getBpm())
                 tempo = *bpm;
