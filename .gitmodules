@@ -1,6 +1,8 @@
 [submodule "JUCE"]
 	path = JUCE
 	url = https://github.com/juce-framework/JUCE
+	ignore = dirty
 [submodule "jsfx"]
 	path = jsfx
 	url = https://github.com/justinfrankel/jsfx
+	ignore = dirty
