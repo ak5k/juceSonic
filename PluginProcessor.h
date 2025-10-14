@@ -7,7 +7,6 @@
 #include <juce_dsp/juce_dsp.h>
 
 extern jsfxAPI JesusonicAPI;
-extern HINSTANCE g_hInst;
 
 //==============================================================================
 class AudioPluginAudioProcessor final

@@ -129,6 +129,18 @@ target_link_libraries(${PROJECT_NAME}
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
+# Disable specific warnings for JSFX integration
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        /wd4099
+        /wd4100  # unreferenced formal parameter
+        /wd4244
+        /wd4458
+        /wd4505  # unreferenced local function has been removed
+        /wd4996
+    )
+endif()
+
 
 # ==============================================================================
 # JSFX Integration - Using jsfx-cmake submodule

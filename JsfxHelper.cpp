@@ -8,12 +8,11 @@
 // JUCE includes for image processing
 #include <juce_graphics/juce_graphics.h>
 
-// Global variables for JSFX system
-static HINSTANCE g_hInst = nullptr;
+// g_hInst is defined in jsfx_api.cpp, we just use the extern declaration from sfxui.h
 
 void JsfxHelper::initialize()
 {
-    // Get the module handle of the current DLL
+    // Get the module handle of the current DLL - required by JSFX system
     g_hInst = (HINSTANCE)juce::Process::getCurrentModuleInstanceHandle();
 
     // Initialize WDL localization system (required for JSFX UI dialogs)
