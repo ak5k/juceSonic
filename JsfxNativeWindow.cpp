@@ -1,11 +1,9 @@
 #include "JsfxNativeWindow.h"
 
+#include "JsfxHelper.h"
 #include "build/_deps/jsfx-src/jsfx/sfxui.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
-
-// SWELL provides Win32 API compatibility on all platforms
-#include "build/_deps/jsfx-src/WDL/swell/swell.h"
 
 class JsfxNativeWindow::HostComponent : public juce::Component
 {
@@ -23,51 +21,46 @@ public:
 
     void createNative()
     {
-        if (nativeHwnd || !sxInstance)
+        if (nativeUIHandle || !sxInstance)
             return;
-        HWND parent = (HWND)getWindowHandle();
+
+        void* parent = getWindowHandle();
         if (!parent)
             return;
-        // Pass hostpostparam matching sx->m_hostctx (set in loadJSFX via sx_set_host_ctx)
-        nativeHwnd = sx_createUI(
-            sxInstance,
-            (HINSTANCE)juce::Process::getCurrentModuleInstanceHandle(),
-            parent,
-            sxInstance->m_hostctx
-        );
-        if (nativeHwnd)
+
+        // Create JSFX UI using helper (isolates Win32/SWELL from JUCE)
+        nativeUIHandle = JsfxHelper::createJsfxUI(sxInstance, parent);
+
+        if (nativeUIHandle)
         {
-            auto r = getLocalBounds();
-            SetWindowPos(
-                nativeHwnd,
-                NULL,
-                0,
-                0,
-                r.getWidth(),
-                r.getHeight(),
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
-            );
-            ShowWindow(nativeHwnd, SW_SHOWNA);
+            // Get the actual size that the JSFX UI dialog wants to be
+            auto uiSize = JsfxHelper::getJsfxUISize(nativeUIHandle);
+
+            // Notify parent that we want to resize to accommodate the dialog
+            if (auto* parentWindow = findParentComponentOfClass<JsfxNativeWindow>())
+                parentWindow->resizeForDialog(uiSize.width, uiSize.height);
+
+            // Position and show the dialog
+            JsfxHelper::positionJsfxUI(nativeUIHandle, 0, 0, uiSize.width, uiSize.height);
+            JsfxHelper::showJsfxUI(nativeUIHandle, true);
         }
     }
 
     void destroyNative()
     {
-        if (nativeHwnd)
+        if (nativeUIHandle)
         {
-            if (sxInstance)
-                sx_deleteUI(sxInstance);
-            DestroyWindow(nativeHwnd);
-            nativeHwnd = nullptr;
+            JsfxHelper::destroyJsfxUI(sxInstance, nativeUIHandle);
+            nativeUIHandle = nullptr;
         }
     }
 
     void resized() override
     {
-        if (nativeHwnd)
+        if (nativeUIHandle)
         {
             auto r = getLocalBounds();
-            SetWindowPos(nativeHwnd, NULL, 0, 0, r.getWidth(), r.getHeight(), SWP_NOZORDER | SWP_NOACTIVATE);
+            JsfxHelper::positionJsfxUI(nativeUIHandle, 0, 0, r.getWidth(), r.getHeight());
         }
     }
 
@@ -78,7 +71,7 @@ public:
 
 private:
     SX_Instance* sxInstance = nullptr;
-    HWND nativeHwnd = nullptr;
+    void* nativeUIHandle = nullptr;
 };
 
 JsfxNativeWindow::JsfxNativeWindow(SX_Instance* instance, const juce::String& title)
@@ -89,8 +82,12 @@ JsfxNativeWindow::JsfxNativeWindow(SX_Instance* instance, const juce::String& ti
     setResizable(true, false);
     host = std::make_unique<HostComponent>(sxInstance);
     setContentNonOwned(host.get(), true);
-    centreWithSize(500, 400);
+
+    // Start with a small default size - will be resized based on actual dialog size
+    centreWithSize(100, 100);
     setVisible(true);
+
+    // Create the native UI - this will trigger resizeForDialog callback
     host->createNative();
 }
 
@@ -105,4 +102,18 @@ void JsfxNativeWindow::closeButtonPressed()
     if (host)
         host->destroyNative();
     setVisible(false);
+}
+
+void JsfxNativeWindow::resizeForDialog(int width, int height)
+{
+    // Resize the content component to match the dialog size
+    if (host)
+        host->setSize(width, height);
+
+    // Resize the window to accommodate the content plus title bar
+    // The DocumentWindow will automatically add space for the title bar
+    setSize(width, height + getTitleBarHeight());
+
+    // Re-center the window with the new size
+    centreWithSize(width, height + getTitleBarHeight());
 }

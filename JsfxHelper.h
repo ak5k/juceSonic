@@ -29,6 +29,27 @@ public:
     // Register custom JSFX window classes
     static void registerJsfxWindowClasses();
 
+    // UI Management - isolates Win32/SWELL from JUCE
+    struct UISize
+    {
+        int width, height;
+    };
+
+    // Create JSFX UI and return platform-specific handle
+    static void* createJsfxUI(SX_Instance* instance, void* parentWindow);
+
+    // Destroy JSFX UI
+    static void destroyJsfxUI(SX_Instance* instance, void* uiHandle);
+
+    // Get the natural size of the created UI
+    static UISize getJsfxUISize(void* uiHandle);
+
+    // Position the UI within its parent
+    static void positionJsfxUI(void* uiHandle, int x, int y, int width, int height);
+
+    // Show/hide the UI
+    static void showJsfxUI(void* uiHandle, bool show);
+
     // Cleanup resources
     static void cleanup();
 };

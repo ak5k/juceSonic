@@ -107,6 +107,65 @@ void JsfxHelper::registerJsfxWindowClasses()
     DBG("JSFX Helper: Window classes registered");
 }
 
+void* JsfxHelper::createJsfxUI(SX_Instance* instance, void* parentWindow)
+{
+    if (!instance || !parentWindow)
+        return nullptr;
+
+    HWND parent = static_cast<HWND>(parentWindow);
+
+    // Create JSFX UI - need to declare the function
+    extern HWND sx_createUI(SX_Instance * instance, HINSTANCE hInst, HWND parent, void* hostctx);
+
+    HWND uiWindow = sx_createUI(instance, g_hInst, parent, instance->m_hostctx);
+
+    return uiWindow;
+}
+
+void JsfxHelper::destroyJsfxUI(SX_Instance* instance, void* uiHandle)
+{
+    if (!instance || !uiHandle)
+        return;
+
+    // Destroy JSFX UI - need to declare the function
+    extern void sx_deleteUI(SX_Instance * instance);
+
+    sx_deleteUI(instance);
+
+    HWND hwnd = static_cast<HWND>(uiHandle);
+    DestroyWindow(hwnd);
+}
+
+JsfxHelper::UISize JsfxHelper::getJsfxUISize(void* uiHandle)
+{
+    if (!uiHandle)
+        return {0, 0};
+
+    HWND hwnd = static_cast<HWND>(uiHandle);
+    RECT rect;
+    GetWindowRect(hwnd, &rect);
+
+    return {rect.right - rect.left, rect.bottom - rect.top};
+}
+
+void JsfxHelper::positionJsfxUI(void* uiHandle, int x, int y, int width, int height)
+{
+    if (!uiHandle)
+        return;
+
+    HWND hwnd = static_cast<HWND>(uiHandle);
+    SetWindowPos(hwnd, NULL, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void JsfxHelper::showJsfxUI(void* uiHandle, bool show)
+{
+    if (!uiHandle)
+        return;
+
+    HWND hwnd = static_cast<HWND>(uiHandle);
+    ShowWindow(hwnd, show ? SW_SHOWNA : SW_HIDE);
+}
+
 void JsfxHelper::cleanup()
 {
     // Cleanup can be implemented here if needed

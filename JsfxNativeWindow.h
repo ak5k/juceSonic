@@ -12,6 +12,9 @@ public:
 
     void closeButtonPressed() override;
 
+    // Called by HostComponent when JSFX dialog size is determined
+    void resizeForDialog(int width, int height);
+
 private:
     class HostComponent;
     std::unique_ptr<HostComponent> host;
