@@ -34,6 +34,46 @@
             "type": "cppvsdbg",
             "request": "attach",
             "processId": "${command:pickProcess}"
+        },
+        {
+            "name": "(gdb) Debug Standalone - Linux",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/juceSonic_artefacts/Debug/Standalone/juceSonic",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Debug: Config and Build",
+            "miDebuggerPath": "/home/linuxbrew/.linuxbrew/bin/gdb"
+        },
+        {
+            "name": "(lldb) Debug Standalone - Linux",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/juceSonic_artefacts/Debug/Standalone/juceSonic",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Debug: Config and Build",
+            "miDebuggerPath": "/home/linuxbrew/.linuxbrew/bin/lldb"
         }
     ]
 }

@@ -41,7 +41,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     setSize(700, 500);
 
     rebuildParameterSliders();
-    startTimer(200);
+    // 30fps = ~33ms interval (also pumps SWELL message loop on Linux)
+    startTimer(33);
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
@@ -59,6 +60,13 @@ void AudioPluginAudioProcessorEditor::destroyJsfxUI()
 
 void AudioPluginAudioProcessorEditor::timerCallback()
 {
+#ifndef _WIN32
+    // On Linux, pump the SWELL message loop to process window events, redraws, and timers
+    // This is needed for JSFX UI to work properly
+    extern void SWELL_RunMessageLoop();
+    SWELL_RunMessageLoop();
+#endif
+
     juce::String statusText = "No JSFX loaded";
     if (!processorRef.getCurrentJSFXName().isEmpty())
     {

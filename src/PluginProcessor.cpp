@@ -49,11 +49,11 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     // Initialize JSFX system using helper (isolates Win32/SWELL code from JUCE)
     JsfxHelper::initialize();
 
-    // Initialize JSFX sliders with platform-specific module handle
-    JsfxHelper::initializeSliders(juce::Process::getCurrentModuleInstanceHandle(), true, 0);
-
-    // Initialize JSFX meters with platform-specific module handle
-    JsfxHelper::initializeMeters(juce::Process::getCurrentModuleInstanceHandle(), true);
+    // Initialize JSFX sliders and meters
+    // Note: g_hInst is set in JsfxHelper::initialize() and is platform-appropriate
+    extern HINSTANCE g_hInst;
+    JsfxHelper::initializeSliders(g_hInst, true, 0);
+    JsfxHelper::initializeMeters(g_hInst, true);
 
     // Set slider class name for JSFX controls
     extern const char* g_config_slider_classname;

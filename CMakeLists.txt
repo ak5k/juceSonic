@@ -19,6 +19,57 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 project(juceSonic VERSION 0.0.1 LANGUAGES CXX C)
 
+# ==============================================================================
+# Submodule and Dependency Initialization (runs only on first successful configure)
+# ==============================================================================
+
+# Check if initialization has been completed (cache variable)
+if(NOT SUBMODULES_INITIALIZED)
+    message(STATUS "Running first-time initialization...")
+    
+    set(INIT_SUCCESS TRUE)
+    
+    # Step 1: Git submodule initialization
+    find_package(Git QUIET)
+    if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
+        message(STATUS "Initializing git submodules...")
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            RESULT_VARIABLE GIT_SUBMOD_RESULT
+        )
+        if(NOT GIT_SUBMOD_RESULT EQUAL "0")
+            message(FATAL_ERROR "git submodule update --init --recursive failed with ${GIT_SUBMOD_RESULT}")
+            set(INIT_SUCCESS FALSE)
+        else()
+            message(STATUS "Git submodules initialized successfully")
+        endif()
+    else()
+        message(WARNING "Git not found or not a git repository. Submodules will not be initialized automatically.")
+        set(INIT_SUCCESS FALSE)
+    endif()
+    
+    # Step 2: Additional initialization commands will go here
+    # Example:
+    # if(INIT_SUCCESS)
+    #     message(STATUS "Running additional initialization step...")
+    #     execute_process(...)
+    #     if(NOT RESULT EQUAL "0")
+    #         set(INIT_SUCCESS FALSE)
+    #     endif()
+    # endif()
+    
+    # Only mark as initialized if ALL steps succeeded
+    if(INIT_SUCCESS)
+        set(SUBMODULES_INITIALIZED TRUE CACHE BOOL "All initialization steps completed successfully" FORCE)
+        message(STATUS "All initialization steps completed successfully")
+    else()
+        message(WARNING "Initialization incomplete. Will retry on next configure.")
+    endif()
+else()
+    message(STATUS "Initialization already completed (SUBMODULES_INITIALIZED=${SUBMODULES_INITIALIZED})")
+endif()
+
 # If you've installed JUCE somehow (via a package manager, or directly using the CMake install
 # target), you'll need to tell this project that it depends on the installed copy of JUCE. If you've
 # included JUCE directly in your source tree (perhaps as a submodule), you'll need to tell CMake to

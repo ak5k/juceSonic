@@ -1,6 +1,7 @@
 *
 !.gitignore
 !.vscode/
+!.vscode/*
 !cmakelists.txt
 !src/
 !src/*.h
@@ -8,5 +9,3 @@
 !jsfx.patch
 !fix-jsfx-includes.sh
 !Effects/
-!.vscode/launch.json
-!.vscode/tasks.json
