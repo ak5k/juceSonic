@@ -82,22 +82,26 @@ void JsfxHelper::initialize()
 
     if (!globalSliderBitmap)
     {
-        juce::Graphics g(globalThumbImage);
+        // Draw into the image using Graphics - scope this block to ensure Graphics is destroyed
+        // before we create BitmapData (Direct2D only allows one context at a time)
+        {
+            juce::Graphics graphics(globalThumbImage);
 
-        // Fill with transparent background
-        g.fillAll(juce::Colours::transparentBlack);
+            // Fill entire image with opaque background color to avoid alpha channel issues on Windows
+            graphics.fillAll(juce::Colour(0xffc0c0c0)); // Light gray, fully opaque
 
-        // Draw a simple rounded rectangle thumb
-        g.setColour(juce::Colour(0xff808080)); // Medium gray
-        g.fillRoundedRectangle(1.0f, 1.0f, thumbWidth - 2.0f, thumbHeight - 2.0f, 2.0f);
+            // Draw the main thumb body with rounded corners
+            graphics.setColour(juce::Colour(0xff909090)); // Medium gray
+            graphics.fillRoundedRectangle(1.0f, 1.0f, thumbWidth - 2.0f, thumbHeight - 2.0f, 2.0f);
 
-        // Add a subtle highlight on top
-        g.setColour(juce::Colour(0xffa0a0a0)); // Lighter gray
-        g.fillRoundedRectangle(2.0f, 2.0f, thumbWidth - 4.0f, thumbHeight / 2.0f - 1.0f, 1.5f);
+            // Add a subtle highlight on top for 3D effect
+            graphics.setColour(juce::Colour(0xffb0b0b0)); // Lighter gray
+            graphics.fillRoundedRectangle(2.0f, 2.0f, thumbWidth - 4.0f, thumbHeight / 2.0f - 1.0f, 1.5f);
 
-        // Add a border
-        g.setColour(juce::Colour(0xff404040)); // Dark gray
-        g.drawRoundedRectangle(1.0f, 1.0f, thumbWidth - 2.0f, thumbHeight - 2.0f, 2.0f, 1.0f);
+            // Add a darker border for definition
+            graphics.setColour(juce::Colour(0xff707070)); // Dark gray
+            graphics.drawRoundedRectangle(1.0f, 1.0f, thumbWidth - 2.0f, thumbHeight - 2.0f, 2.0f, 1.0f);
+        } // Graphics context destroyed here
 
         DBG("JSFX Helper: Created slider thumb image in memory");
 
