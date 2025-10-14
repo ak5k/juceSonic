@@ -82,7 +82,17 @@ jobs:
       - name: Install Linux ARM64 cross-compilation tools
         if: runner.os == 'Linux' && matrix.arch == 'aarch64'
         run: |
+          # Add arm64 architecture
           sudo dpkg --add-architecture arm64
+          
+          # Configure sources to use ports.ubuntu.com for arm64 packages
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|[arch=amd64] http://azure.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          
+          # Update and install packages
           sudo apt-get update
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
