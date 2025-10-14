@@ -22,34 +22,34 @@ jobs:
       matrix:
         include:
           # macOS Universal Binary (arm64 + x86_64)
-          - name: macOS Universal
+          - name: macOS-Universal
             os: macos-latest
             arch: universal
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
             
           # Windows x64
-          - name: Windows x64
+          - name: Windows-x64
             os: windows-latest
             arch: x64
             cmake_args: -A x64
           
           # Windows ARM64
-          - name: Windows ARM64
+          - name: Windows-ARM64
             os: windows-latest
             arch: arm64
             cmake_args: -A ARM64
           
           # Linux x86_64
-          - name: Linux x86_64
+          - name: Linux-x86_64
             os: ubuntu-latest
             arch: x86_64
             cmake_args: ""
           
-          # Linux ARM64 (using cross-compilation)
-          - name: Linux ARM64
+          # Linux ARM64
+          - name: Linux-ARM64
             os: ubuntu-latest
             arch: aarch64
-            cmake_args: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+            cmake_args: -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/cmake/linux-arm64.cmake
 
     steps:
       - name: Checkout code
@@ -82,23 +82,12 @@ jobs:
       - name: Install Linux ARM64 cross-compilation tools
         if: runner.os == 'Linux' && matrix.arch == 'aarch64'
         run: |
-          # Add arm64 architecture
           sudo dpkg --add-architecture arm64
-          
-          # Configure sources to use ports.ubuntu.com for arm64 packages
-          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|[arch=amd64] http://azure.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          
-          # Update and install packages
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
+          sudo apt-get update -qq
+          sudo apt-get install -qq aptitude > /dev/null
+          sudo aptitude install -yR \
             g++-aarch64-linux-gnu \
             libasound2-dev:arm64 \
-            libjack-jackd2-dev:arm64 \
             libcurl4-openssl-dev:arm64 \
             libfreetype6-dev:arm64 \
             libx11-dev:arm64 \
@@ -110,7 +99,7 @@ jobs:
             libxrender-dev:arm64 \
             libwebkit2gtk-4.1-dev:arm64 \
             libglu1-mesa-dev:arm64 \
-            mesa-common-dev:arm64
+            mesa-common-dev:arm64 > /dev/null
 
       - name: Setup Ninja (macOS)
         if: runner.os == 'macOS'
@@ -209,7 +198,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: juceSonic-${{ matrix.name }}-${{ env.BUILD_TYPE }}
+          name: juceSonic-${{ runner.os }}-${{ matrix.arch }}-${{ env.BUILD_TYPE }}
           path: artifacts/*
           if-no-files-found: error
 
