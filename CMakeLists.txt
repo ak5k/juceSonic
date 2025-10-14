@@ -197,12 +197,12 @@ endif()
 
 
 # ==============================================================================
-# JSFX Integration - Using jsfx-cmake submodule
+# JSFX Integration
 # ==============================================================================
 
-# Add jsfx-cmake submodule (handles all WDL/SWELL/curses complexity)
+# Add jsfx directory (handles all WDL/SWELL/curses complexity)
 set(JSFX_BUILD_EXAMPLES OFF CACHE BOOL "Don't build jsfx examples" FORCE)
-add_subdirectory(jsfx-cmake)
+add_subdirectory(jsfx)
 
 # On Windows, explicitly add JSFX resource file to the plugin targets
 # This ensures the dialog templates are compiled into the VST3/Standalone DLL
@@ -239,19 +239,10 @@ endif()
 
 # Link JSFX to main plugin target
 # Use linker groups to handle circular dependencies between our code and jsfx_core
-if(UNIX AND NOT APPLE)
-    target_link_libraries(${PROJECT_NAME}
-        PRIVATE
-            -Wl,--start-group
-            jsfx
-            -Wl,--end-group
-    )
-else()
-    target_link_libraries(${PROJECT_NAME}
-        PRIVATE
-            jsfx
-    )
-endif()
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        jsfx
+)
 
 if(APPLE AND NOT CMAKE_GENERATOR STREQUAL "Ninja")
     message(FATAL_ERROR "use ninja")

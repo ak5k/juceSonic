@@ -8,6 +8,6 @@
 !src/
 !src/*.h
 !src/*.cpp
-!jsfx.patch
-!fix-jsfx-includes.sh
-!Effects/
+!Effects/%
+!jsfx/
+!jsfx/**
