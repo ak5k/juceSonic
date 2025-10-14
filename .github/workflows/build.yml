@@ -143,33 +143,58 @@ jobs:
       - name: Package artifacts (macOS)
         if: runner.os == 'macOS'
         run: |
-          # Create zip files for macOS bundles
-          cd build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone
-          zip -r ../../../../../artifacts/juceSonic-Standalone-macOS-universal.zip juceSonic.app
-          cd ../VST3
-          zip -r ../../../../../artifacts/juceSonic-VST3-macOS-universal.zip juceSonic.vst3
-          cd ../AU
-          zip -r ../../../../../artifacts/juceSonic-AU-macOS-universal.zip juceSonic.component
+          # Find and package macOS bundles
+          STANDALONE=$(find build -name "juceSonic.app" -type d | head -1)
+          if [ -n "$STANDALONE" ]; then
+            cd "$(dirname "$STANDALONE")"
+            zip -r "$OLDPWD/artifacts/juceSonic-Standalone-macOS-universal.zip" juceSonic.app
+            cd "$OLDPWD"
+          fi
+          
+          VST3=$(find build -name "juceSonic.vst3" -type d | head -1)
+          if [ -n "$VST3" ]; then
+            cd "$(dirname "$VST3")"
+            zip -r "$OLDPWD/artifacts/juceSonic-VST3-macOS-universal.zip" juceSonic.vst3
+            cd "$OLDPWD"
+          fi
+          
+          AU=$(find build -name "juceSonic.component" -type d | head -1)
+          if [ -n "$AU" ]; then
+            cd "$(dirname "$AU")"
+            zip -r "$OLDPWD/artifacts/juceSonic-AU-macOS-universal.zip" juceSonic.component
+            cd "$OLDPWD"
+          fi
 
       - name: Package artifacts (Windows)
         if: runner.os == 'Windows'
         run: |
-          # Copy Windows artifacts
-          Copy-Item "build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone/juceSonic.exe" "artifacts/juceSonic-Standalone-Windows-${{ matrix.arch }}.exe"
+          # Find and package Windows artifacts
+          $standalone = Get-ChildItem -Path build -Recurse -Filter "juceSonic.exe" | Where-Object { $_.Directory.Name -eq "Standalone" } | Select-Object -First 1
+          if ($standalone) {
+            Copy-Item $standalone.FullName "artifacts/juceSonic-Standalone-Windows-${{ matrix.arch }}.exe"
+          }
           
-          # Zip VST3 bundle
-          Compress-Archive -Path "build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/VST3/juceSonic.vst3" -DestinationPath "artifacts/juceSonic-VST3-Windows-${{ matrix.arch }}.zip"
+          $vst3 = Get-ChildItem -Path build -Recurse -Filter "juceSonic.vst3" -Directory | Select-Object -First 1
+          if ($vst3) {
+            Compress-Archive -Path $vst3.FullName -DestinationPath "artifacts/juceSonic-VST3-Windows-${{ matrix.arch }}.zip"
+          }
 
       - name: Package artifacts (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Copy Linux artifacts
-          cp build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone/juceSonic artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
-          chmod +x artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
+          # Find and package Linux binaries
+          STANDALONE=$(find build -name "juceSonic" -type f -executable | grep Standalone | head -1)
+          if [ -n "$STANDALONE" ]; then
+            cp "$STANDALONE" artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
+            chmod +x artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
+          fi
           
-          # Tar VST3 bundle
-          cd build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/VST3
-          tar czf ../../../../artifacts/juceSonic-VST3-Linux-${{ matrix.arch }}.tar.gz juceSonic.vst3
+          VST3=$(find build -name "juceSonic.vst3" -type d | head -1)
+          if [ -n "$VST3" ]; then
+            cd "$(dirname "$VST3")"
+            tar czf "$OLDPWD/artifacts/juceSonic-VST3-Linux-${{ matrix.arch }}.tar.gz" juceSonic.vst3
+            cd "$OLDPWD"
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
