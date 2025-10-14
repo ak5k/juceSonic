@@ -74,6 +74,19 @@
             "MIMode": "lldb",
             "preLaunchTask": "Debug: Config and Build",
             "miDebuggerPath": "/home/linuxbrew/.linuxbrew/bin/lldb"
+        },
+        {
+            "name": "(lldb) Debug Standalone - macOS",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/juceSonic_artefacts/Standalone/juceSonic.app/Contents/MacOS/juceSonic",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Debug: Config and Build"
         }
     ]
 }

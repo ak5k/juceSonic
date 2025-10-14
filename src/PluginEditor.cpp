@@ -60,9 +60,10 @@ void AudioPluginAudioProcessorEditor::destroyJsfxUI()
 
 void AudioPluginAudioProcessorEditor::timerCallback()
 {
-#ifndef _WIN32
-    // On Linux, pump the SWELL message loop to process window events, redraws, and timers
+#if defined(__linux__) || defined(SWELL_TARGET_GDK)
+    // On Linux with GDK, pump the SWELL message loop to process window events, redraws, and timers
     // This is needed for JSFX UI to work properly
+    // Note: Not needed on macOS - Cocoa handles the message loop automatically
     extern void SWELL_RunMessageLoop();
     SWELL_RunMessageLoop();
 #endif
