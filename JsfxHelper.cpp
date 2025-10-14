@@ -99,11 +99,18 @@ void JsfxHelper::registerJsfxWindowClasses()
     wc.lpszClassName = "REAPERvertvu";
     RegisterClassA(&wc);
 
-    // Register WDLCursesWindow class (debug window)
-    wc.lpszClassName = "WDLCursesWindow";
-    RegisterClassA(&wc);
+    // Register WDLCursesWindow class using proper curses registration
+    // The WDL curses system has its own registration function
+    extern void curses_registerChildClass(HINSTANCE hInstance);
+    curses_registerChildClass(g_hInst);
 
-    DBG("JSFX Helper: Window classes registered");
+#ifndef _WIN32
+    // On non-Windows platforms, SWELL handles this via curses_ControlCreator
+    extern HWND curses_ControlCreator(HWND parent, const char *cname, int idx, const char *classname, int style, int x, int y, int w, int h);
+    // TODO: Register curses_ControlCreator with SWELL
+#endif
+
+    DBG("JSFX Helper: Window classes registered (including WDL curses)");
 }
 
 void* JsfxHelper::createJsfxUI(SX_Instance* instance, void* parentWindow)
@@ -167,6 +174,9 @@ void JsfxHelper::showJsfxUI(void* uiHandle, bool show)
 
 void JsfxHelper::cleanup()
 {
-    // Cleanup can be implemented here if needed
-    DBG("JSFX Helper: Cleanup completed");
+    // Unregister WDL curses window class
+    extern void curses_unregisterChildClass(HINSTANCE hInstance);
+    curses_unregisterChildClass(g_hInst);
+    
+    DBG("JSFX Helper: Cleanup completed (unregistered curses class)");
 }
