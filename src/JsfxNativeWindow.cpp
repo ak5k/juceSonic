@@ -166,10 +166,23 @@ JsfxNativeWindow::JsfxNativeWindow(SX_Instance* instance, const juce::String& ti
         // Position child at origin of parent's client area (0,0)
         SetWindowPos(hwnd, HWND_TOP, 0, 0, childWidth, childHeight, SWP_NOZORDER);
 
+        // Center the parent window on screen
+        // Get screen dimensions
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        int x = (screenWidth - childWidth) / 2;
+        int y = (screenHeight - childHeight) / 2;
+
+        // Ensure window is not off-screen
+        if (x < 0)
+            x = 0;
+        if (y < 0)
+            y = 0;
+
         // Since SWELL doesn't seem to add window decorations that we can measure,
         // just make the parent window client area match the child size
         // The client area IS the full window with SWELL (no decorations offset)
-        SetWindowPos(parentWindow, HWND_TOP, 100, 100, childWidth, childHeight, SWP_SHOWWINDOW);
+        SetWindowPos(parentWindow, HWND_TOP, x, y, childWidth, childHeight, SWP_SHOWWINDOW);
 
         // Child window is shown as part of parent
         ShowWindow(hwnd, SW_SHOW);

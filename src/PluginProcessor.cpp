@@ -3,9 +3,6 @@
 #include "JsfxHelper.h"
 #include "PluginEditor.h"
 
-// JUCE binary data for slider bitmap
-#include "BinaryData.h"
-
 // Minimal slider automation callback used by JSFX UI when user tweaks sliders
 static void JsfxSliderAutomateThunk(void* ctx, int parmidx, bool done)
 {
@@ -58,19 +55,6 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     // Set slider class name for JSFX controls
     extern const char* g_config_slider_classname;
     g_config_slider_classname = "jsfx_slider";
-
-    // Create and set the slider bitmap from JUCE binary data
-    void* sliderBitmap =
-        JsfxHelper::createSliderBitmap(BinaryData::cockos_hslider_bmp, BinaryData::cockos_hslider_bmpSize);
-    if (sliderBitmap)
-    {
-        JsfxHelper::setSliderBitmap(sliderBitmap, false); // Set horizontal slider bitmap
-        DBG("Successfully loaded slider bitmap from JUCE binary data");
-    }
-    else
-    {
-        DBG("Warning: Failed to create slider bitmap from JUCE binary data");
-    }
 
     // Register JSFX window classes through helper
     JsfxHelper::registerJsfxWindowClasses();

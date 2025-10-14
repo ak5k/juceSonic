@@ -46,64 +46,79 @@ void JsfxHelper::initialize()
     Meters_Init(g_hInst, true);     // reg=true to register
 
     DBG("JSFX Helper: Standalone controls initialized (sliders and meters)");
-}
 
-void* JsfxHelper::createSliderBitmap(const void* data, int dataSize)
-{
-#ifdef _WIN32
-    // Create a memory stream from the binary data
-    juce::MemoryInputStream stream(data, dataSize, false);
+    // Create a cross-platform slider thumb bitmap using JUCE
+    // Store it globally and use Win32/SWELL API to create the bitmap
+    extern void Sliders_SetBitmap(HBITMAP hBitmap, bool isVert);
 
-    // Load the image from the stream
-    auto image = juce::ImageFileFormat::loadFrom(stream);
-    if (!image.isValid())
-        return nullptr;
+    // Create a simple gray slider thumb using JUCE graphics
+    // Original cockos_hslider.bmp was 23x14 pixels
+    static const int thumbWidth = 23;
+    static const int thumbHeight = 14;
 
-    // Convert JUCE Image to Windows HBITMAP
-    HDC screenDC = GetDC(nullptr);
-    HDC memDC = CreateCompatibleDC(screenDC);
+    // Global image that persists for the lifetime of the application
+    static juce::Image globalThumbImage(juce::Image::ARGB, thumbWidth, thumbHeight, true);
+    static HBITMAP globalSliderBitmap = nullptr;
 
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = image.getWidth();
-    bmi.bmiHeader.biHeight = -image.getHeight(); // Negative for top-down DIB
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
-    void* bitmapData;
-    HBITMAP hBitmap = CreateDIBSection(screenDC, &bmi, DIB_RGB_COLORS, &bitmapData, nullptr, 0);
-
-    if (hBitmap && bitmapData)
+    if (!globalSliderBitmap)
     {
-        // Copy pixel data from JUCE Image to bitmap
-        juce::Image::BitmapData imgData(image, juce::Image::BitmapData::readOnly);
+        juce::Graphics g(globalThumbImage);
 
-        for (int y = 0; y < image.getHeight(); ++y)
+        // Fill with transparent background
+        g.fillAll(juce::Colours::transparentBlack);
+
+        // Draw a simple rounded rectangle thumb
+        g.setColour(juce::Colour(0xff808080)); // Medium gray
+        g.fillRoundedRectangle(1.0f, 1.0f, thumbWidth - 2.0f, thumbHeight - 2.0f, 2.0f);
+
+        // Add a subtle highlight on top
+        g.setColour(juce::Colour(0xffa0a0a0)); // Lighter gray
+        g.fillRoundedRectangle(2.0f, 2.0f, thumbWidth - 4.0f, thumbHeight / 2.0f - 1.0f, 1.5f);
+
+        // Add a border
+        g.setColour(juce::Colour(0xff404040)); // Dark gray
+        g.drawRoundedRectangle(1.0f, 1.0f, thumbWidth - 2.0f, thumbHeight - 2.0f, 2.0f, 1.0f);
+
+        DBG("JSFX Helper: Created slider thumb image in memory");
+
+        // Create bitmap using Win32/SWELL CreateBitmap API
+        // On Windows: standard Win32 CreateBitmap
+        // On Linux/Mac: SWELL's CreateBitmap (requires 32-bit ARGB format)
+        juce::Image::BitmapData bitmap(globalThumbImage, juce::Image::BitmapData::readOnly);
+
+        // Allocate memory for bitmap bits (32-bit ARGB/BGRA)
+        std::vector<uint8_t> bitmapBits(thumbWidth * thumbHeight * 4);
+
+        for (int y = 0; y < thumbHeight; ++y)
         {
-            uint32_t* destRow = static_cast<uint32_t*>(bitmapData) + (y * image.getWidth());
-            for (int x = 0; x < image.getWidth(); ++x)
+            for (int x = 0; x < thumbWidth; ++x)
             {
-                juce::Colour pixel = imgData.getPixelColour(x, y);
-                // Convert ARGB to BGRA for Windows bitmap
-                destRow[x] =
-                    (pixel.getAlpha() << 24) | (pixel.getRed() << 16) | (pixel.getGreen() << 8) | pixel.getBlue();
+                const uint8_t* pixel = bitmap.getPixelPointer(x, y);
+                uint8_t r = pixel[0];
+                uint8_t g = pixel[1];
+                uint8_t b = pixel[2];
+                uint8_t a = pixel[3];
+
+                // Win32/SWELL expects BGRA format (4 bytes per pixel)
+                int idx = (y * thumbWidth + x) * 4;
+                bitmapBits[idx + 0] = b; // Blue
+                bitmapBits[idx + 1] = g; // Green
+                bitmapBits[idx + 2] = r; // Red
+                bitmapBits[idx + 3] = a; // Alpha
             }
         }
+
+        // Create the bitmap with CreateBitmap (32-bit for both Windows and SWELL)
+        globalSliderBitmap = CreateBitmap(thumbWidth, thumbHeight, 1, 32, bitmapBits.data());
+
+        if (globalSliderBitmap)
+            DBG("JSFX Helper: Created cross-platform slider thumb bitmap using Win32/SWELL API");
     }
 
-    DeleteDC(memDC);
-    ReleaseDC(nullptr, screenDC);
-
-    return hBitmap;
-#else
-    // SWELL doesn't support CreateDIBSection, and slider bitmaps are optional
-    // JSFX will use default rendering if no bitmaps are provided
-    (void)data;
-    (void)dataSize;
-    DBG("JSFX Helper: Slider bitmaps not supported on this platform - using defaults");
-    return nullptr;
-#endif
+    if (globalSliderBitmap)
+        Sliders_SetBitmap(globalSliderBitmap, false);
+    else
+        DBG("JSFX Helper: Failed to create slider bitmap");
 }
 
 void JsfxHelper::setSliderBitmap(void* bitmap, bool isVertical)
@@ -153,8 +168,8 @@ void JsfxHelper::registerJsfxWindowClasses()
     extern void curses_registerChildClass(HINSTANCE hInstance);
     curses_registerChildClass(g_hInst);
 #else
-    // On non-Windows platforms with SWELL, custom control registration is handled automatically
-    // SWELL uses control creators instead of RegisterClass
+    // On non-Windows platforms with SWELL, custom control registration is handled via
+    // SWELL_RegisterCustomControlCreator
     extern HWND curses_ControlCreator(
         HWND parent,
         const char* cname,
@@ -166,7 +181,13 @@ void JsfxHelper::registerJsfxWindowClasses()
         int w,
         int h
     );
-    // TODO: Register curses_ControlCreator with SWELL
+
+    // Register the curses control creator with SWELL so it can create WDLCursesWindow controls
+    extern void SWELL_RegisterCustomControlCreator(
+        HWND(*proc)(HWND, const char*, int, const char*, int, int, int, int, int)
+    );
+    SWELL_RegisterCustomControlCreator(curses_ControlCreator);
+    DBG("JSFX Helper: Registered curses control creator with SWELL");
 #endif
 
     DBG("JSFX Helper: Window classes registered (including WDL curses)");

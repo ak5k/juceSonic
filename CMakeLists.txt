@@ -153,12 +153,6 @@ target_compile_definitions(${PROJECT_NAME}
 # static library. These source files can be of any kind (wav data, images, fonts, icons etc.).
 # Conversion to binary-data will happen when your target is built.
 
-# Add the slider bitmap as binary data
-juce_add_binary_data(AudioPluginData 
-    SOURCES 
-        build/_deps/jsfx-src/jsfx/standalone-helpers/cockos_hslider.bmp
-)
-
 # `target_link_libraries` links libraries and JUCE modules to other libraries or executables. Here,
 # we're linking our executable target to the `juce::juce_audio_utils` module. Inter-module
 # dependencies are resolved automatically, so `juce_core`, `juce_events` and so on will also be
@@ -167,7 +161,6 @@ juce_add_binary_data(AudioPluginData
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-        AudioPluginData           # Link to our binary data target
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC

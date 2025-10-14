@@ -16,11 +16,7 @@ public:
     // Initialize JSFX system (localization, controls, bitmaps)
     static void initialize();
 
-    // Create HBITMAP from JUCE binary data for slider controls
-    // Returns platform-specific handle that can be used with JSFX
-    static void* createSliderBitmap(const void* data, int dataSize);
-
-    // Set up slider bitmap for JSFX controls
+    // Set up slider bitmap for JSFX controls (for compatibility, but unused)
     static void setSliderBitmap(void* bitmap, bool isVertical);
 
     // Initialize JSFX sliders with platform-specific instance handle
