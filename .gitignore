@@ -2,8 +2,8 @@
 !.gitignore
 !.vscode/
 !cmakelists.txt
-!*.h
-!*.cpp
+!src/*.h
+!src/*.cpp
 !jsfx.patch
 !fix-jsfx-includes.sh
 !Effects/

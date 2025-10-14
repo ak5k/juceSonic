@@ -78,13 +78,8 @@ juce_add_plugin(${PROJECT_NAME}
 # Finally, we supply a list of source files that will be built into the target. This is a standard
 # CMake command.
 
-target_sources(${PROJECT_NAME}
-    PRIVATE
-        PluginEditor.cpp
-        PluginProcessor.cpp
-        JsfxNativeWindow.cpp
-        JsfxHelper.cpp
-        )
+file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/*.h)
+target_sources(${PROJECT_NAME} PRIVATE ${SOURCE_FILES})
 
 # `target_compile_definitions` adds some preprocessor definitions to our target. In a Projucer
 # project, these might be passed in the 'Preprocessor Definitions' field. JUCE modules also make use
