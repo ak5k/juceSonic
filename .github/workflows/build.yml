@@ -83,6 +83,7 @@ jobs:
       - name: Install Linux ARM64 cross-compilation tools
         if: runner.os == 'Linux' && matrix.arch == 'aarch64'
         run: |
+          sudo dpkg --add-architecture arm64
           sudo apt-get update
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
@@ -101,7 +102,6 @@ jobs:
             libwebkit2gtk-4.0-dev:arm64 \
             libglu1-mesa-dev:arm64 \
             mesa-common-dev:arm64
-          sudo dpkg --add-architecture arm64
 
       - name: Setup Ninja (macOS)
         if: runner.os == 'macOS'
