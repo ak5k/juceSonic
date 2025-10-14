@@ -71,12 +71,11 @@ jobs:
             libx11-dev \
             libxcomposite-dev \
             libxcursor-dev \
-            libxcursor-dev \
             libxext-dev \
             libxinerama-dev \
             libxrandr-dev \
             libxrender-dev \
-            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
             libglu1-mesa-dev \
             mesa-common-dev
 
@@ -99,7 +98,7 @@ jobs:
             libxinerama-dev:arm64 \
             libxrandr-dev:arm64 \
             libxrender-dev:arm64 \
-            libwebkit2gtk-4.0-dev:arm64 \
+            libwebkit2gtk-4.1-dev:arm64 \
             libglu1-mesa-dev:arm64 \
             mesa-common-dev:arm64
 
@@ -145,12 +144,12 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           # Create zip files for macOS bundles
-          cd build/juceSonic_artefacts/Standalone
-          zip -r ../../../../artifacts/juceSonic-Standalone-macOS-universal.zip juceSonic.app
+          cd build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone
+          zip -r ../../../../../artifacts/juceSonic-Standalone-macOS-universal.zip juceSonic.app
           cd ../VST3
-          zip -r ../../../../artifacts/juceSonic-VST3-macOS-universal.zip juceSonic.vst3
+          zip -r ../../../../../artifacts/juceSonic-VST3-macOS-universal.zip juceSonic.vst3
           cd ../AU
-          zip -r ../../../../artifacts/juceSonic-AU-macOS-universal.zip juceSonic.component
+          zip -r ../../../../../artifacts/juceSonic-AU-macOS-universal.zip juceSonic.component
 
       - name: Package artifacts (Windows)
         if: runner.os == 'Windows'
@@ -165,12 +164,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           # Copy Linux artifacts
-          cp build/juceSonic_artefacts/Standalone/juceSonic artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
+          cp build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone/juceSonic artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
           chmod +x artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
           
           # Tar VST3 bundle
-          cd build/juceSonic_artefacts/VST3
-          tar czf ../../../artifacts/juceSonic-VST3-Linux-${{ matrix.arch }}.tar.gz juceSonic.vst3
+          cd build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/VST3
+          tar czf ../../../../artifacts/juceSonic-VST3-Linux-${{ matrix.arch }}.tar.gz juceSonic.vst3
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
