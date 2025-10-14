@@ -1,0 +1,254 @@
+name: Build
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+  release:
+    types: [created]
+
+env:
+  BUILD_TYPE: ${{ startsWith(github.ref, 'refs/tags/') && 'Release' || 'Debug' }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Universal Binary (arm64 + x86_64)
+          - name: macOS Universal
+            os: macos-latest
+            arch: universal
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+            artifact_path: |
+              build/juceSonic_artefacts/Standalone/juceSonic.app
+              build/juceSonic_artefacts/VST3/juceSonic.vst3
+              build/juceSonic_artefacts/AU/juceSonic.component
+            
+          # Windows x64
+          - name: Windows x64
+            os: windows-latest
+            arch: x64
+            cmake_args: -A x64
+            artifact_path: |
+              build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone/juceSonic.exe
+              build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/VST3/juceSonic.vst3
+          
+          # Windows ARM64
+          - name: Windows ARM64
+            os: windows-latest
+            arch: arm64
+            cmake_args: -A ARM64
+            artifact_path: |
+              build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone/juceSonic.exe
+              build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/VST3/juceSonic.vst3
+          
+          # Linux x86_64
+          - name: Linux x86_64
+            os: ubuntu-latest
+            arch: x86_64
+            cmake_args: ""
+            artifact_path: |
+              build/juceSonic_artefacts/Standalone/juceSonic
+              build/juceSonic_artefacts/VST3/juceSonic.vst3
+          
+          # Linux ARM64 (using cross-compilation)
+          - name: Linux ARM64
+            os: ubuntu-latest
+            arch: aarch64
+            cmake_args: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+            artifact_path: |
+              build/juceSonic_artefacts/Standalone/juceSonic
+              build/juceSonic_artefacts/VST3/juceSonic.vst3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Linux dependencies (x86_64)
+        if: runner.os == 'Linux' && matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            ladspa-sdk \
+            libcurl4-openssl-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libwebkit2gtk-4.0-dev \
+            libglu1-mesa-dev \
+            mesa-common-dev
+
+      - name: Install Linux ARM64 cross-compilation tools
+        if: runner.os == 'Linux' && matrix.arch == 'aarch64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            libasound2-dev:arm64 \
+            libjack-jackd2-dev:arm64 \
+            libcurl4-openssl-dev:arm64 \
+            libfreetype6-dev:arm64 \
+            libx11-dev:arm64 \
+            libxcomposite-dev:arm64 \
+            libxcursor-dev:arm64 \
+            libxext-dev:arm64 \
+            libxinerama-dev:arm64 \
+            libxrandr-dev:arm64 \
+            libxrender-dev:arm64 \
+            libwebkit2gtk-4.0-dev:arm64 \
+            libglu1-mesa-dev:arm64 \
+            mesa-common-dev:arm64
+          sudo dpkg --add-architecture arm64
+
+      - name: Setup Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v ninja &> /dev/null; then
+            brew install ninja
+          fi
+
+      - name: Setup Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v ninja &> /dev/null; then
+            sudo apt-get install -y ninja-build
+          fi
+
+      - name: Setup Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+            choco install ninja
+          }
+
+      - name: Configure CMake (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -B build -G Ninja ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Create artifact directory
+        run: |
+          mkdir -p artifacts
+
+      - name: Package artifacts (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Create zip files for macOS bundles
+          cd build/juceSonic_artefacts/Standalone
+          zip -r ../../../../artifacts/juceSonic-Standalone-macOS-universal.zip juceSonic.app
+          cd ../VST3
+          zip -r ../../../../artifacts/juceSonic-VST3-macOS-universal.zip juceSonic.vst3
+          cd ../AU
+          zip -r ../../../../artifacts/juceSonic-AU-macOS-universal.zip juceSonic.component
+
+      - name: Package artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Copy Windows artifacts
+          Copy-Item "build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone/juceSonic.exe" "artifacts/juceSonic-Standalone-Windows-${{ matrix.arch }}.exe"
+          
+          # Zip VST3 bundle
+          Compress-Archive -Path "build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/VST3/juceSonic.vst3" -DestinationPath "artifacts/juceSonic-VST3-Windows-${{ matrix.arch }}.zip"
+
+      - name: Package artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Copy Linux artifacts
+          cp build/juceSonic_artefacts/Standalone/juceSonic artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
+          chmod +x artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
+          
+          # Tar VST3 bundle
+          cd build/juceSonic_artefacts/VST3
+          tar czf ../../../artifacts/juceSonic-VST3-Linux-${{ matrix.arch }}.tar.gz juceSonic.vst3
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: juceSonic-${{ matrix.name }}-${{ env.BUILD_TYPE }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  create-release:
+    name: Create Draft Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+          merge-multiple: true
+
+      - name: Display structure of downloaded files
+        run: ls -R all-artifacts
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          files: all-artifacts/**/*
+          body: |
+            ## juceSonic ${{ github.ref_name }}
+            
+            ### Downloads
+            
+            #### macOS (Universal - Apple Silicon + Intel)
+            - Standalone Application
+            - VST3 Plugin
+            - Audio Unit (AU) Plugin
+            
+            #### Windows
+            - x64: Standalone + VST3
+            - ARM64: Standalone + VST3
+            
+            #### Linux
+            - x86_64: Standalone + VST3
+            - ARM64: Standalone + VST3
+            
+            ### Installation
+            
+            **macOS:**
+            - Standalone: Extract and copy to Applications
+            - VST3: Extract to `~/Library/Audio/Plug-Ins/VST3/`
+            - AU: Extract to `~/Library/Audio/Plug-Ins/Components/`
+            
+            **Windows:**
+            - Standalone: Run the .exe file
+            - VST3: Extract to `C:\Program Files\Common Files\VST3\`
+            
+            **Linux:**
+            - Standalone: Make executable and run
+            - VST3: Extract to `~/.vst3/`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

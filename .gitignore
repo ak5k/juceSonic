@@ -1,7 +1,9 @@
 *
+!.github/
+!.github/** 
 !.gitignore
 !.vscode/
-!.vscode/*
+!.vscode/**         
 !cmakelists.txt
 !src/
 !src/*.h
