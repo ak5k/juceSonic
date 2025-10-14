@@ -83,6 +83,7 @@ target_sources(${PROJECT_NAME}
         PluginEditor.cpp
         PluginProcessor.cpp
         JsfxNativeWindow.cpp
+        JsfxHelper.cpp
         )
 
 # `target_compile_definitions` adds some preprocessor definitions to our target. In a Projucer

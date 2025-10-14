@@ -48,19 +48,15 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 {
     stopTimer();
-#ifdef _WIN32
     // Ensure native JSFX UI is torn down before editor destruction
     destroyJsfxUI();
-#endif
 }
 
-#ifdef _WIN32
 void AudioPluginAudioProcessorEditor::destroyJsfxUI()
 {
     if (jsfxWindow)
         jsfxWindow.reset();
 }
-#endif
 
 void AudioPluginAudioProcessorEditor::timerCallback()
 {
@@ -124,10 +120,8 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
             auto file = fc.getResult();
             if (file != juce::File{})
             {
-            // Ensure any native window is closed before reloading a new JSFX
-#ifdef _WIN32
+                // Ensure any native window is closed before reloading a new JSFX
                 destroyJsfxUI();
-#endif
 
                 if (processorRef.loadJSFX(file))
                 {
@@ -163,11 +157,8 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
         {
             if (result == 1) // Yes button
             {
-            // Ensure any native window is closed before unloading JSFX
-
-#ifdef _WIN32
+                // Ensure any native window is closed before unloading JSFX
                 destroyJsfxUI();
-#endif
 
                 processorRef.unloadJSFX();
                 rebuildParameterSliders();
@@ -236,19 +227,13 @@ void AudioPluginAudioProcessorEditor::openJSFXUI()
         return;
     }
 
-    // Open JSFX native UI in its own window on Windows
-#ifdef _WIN32
-    {
-        // Close any existing window
-        destroyJsfxUI();
-        auto* sx = processorRef.getSXInstancePtr();
-        jsfxWindow = std::make_unique<JsfxNativeWindow>(sx, processorRef.getCurrentJSFXName() + " - UI");
-        jsfxWindow->setAlwaysOnTop(false);
-        jsfxWindow->setVisible(true);
-    }
-#else
-    // Non-Windows: Native UI not supported in this build. No-op.
-#endif
+    // Open JSFX native UI in its own window (cross-platform via SWELL)
+    // Close any existing window
+    destroyJsfxUI();
+    auto* sx = processorRef.getSXInstancePtr();
+    jsfxWindow = std::make_unique<JsfxNativeWindow>(sx, processorRef.getCurrentJSFXName() + " - UI");
+    jsfxWindow->setAlwaysOnTop(false);
+    jsfxWindow->setVisible(true);
 }
 
 // Windows-specific embedded UI helpers removed; using separate window instead

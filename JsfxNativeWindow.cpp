@@ -4,9 +4,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
+// SWELL provides Win32 API compatibility on all platforms
+#include "build/_deps/jsfx-src/WDL/swell/swell.h"
 
 class JsfxNativeWindow::HostComponent : public juce::Component
 {
@@ -24,7 +23,6 @@ public:
 
     void createNative()
     {
-#ifdef _WIN32
         if (nativeHwnd || !sxInstance)
             return;
         HWND parent = (HWND)getWindowHandle();
@@ -51,12 +49,10 @@ public:
             );
             ShowWindow(nativeHwnd, SW_SHOWNA);
         }
-#endif
     }
 
     void destroyNative()
     {
-#ifdef _WIN32
         if (nativeHwnd)
         {
             if (sxInstance)
@@ -64,18 +60,15 @@ public:
             DestroyWindow(nativeHwnd);
             nativeHwnd = nullptr;
         }
-#endif
     }
 
     void resized() override
     {
-#ifdef _WIN32
         if (nativeHwnd)
         {
             auto r = getLocalBounds();
             SetWindowPos(nativeHwnd, NULL, 0, 0, r.getWidth(), r.getHeight(), SWP_NOZORDER | SWP_NOACTIVATE);
         }
-#endif
     }
 
     void paint(juce::Graphics& g) override
@@ -85,9 +78,7 @@ public:
 
 private:
     SX_Instance* sxInstance = nullptr;
-#ifdef _WIN32
     HWND nativeHwnd = nullptr;
-#endif
 };
 
 JsfxNativeWindow::JsfxNativeWindow(SX_Instance* instance, const juce::String& title)

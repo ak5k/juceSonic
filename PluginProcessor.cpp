@@ -1,20 +1,13 @@
 #include "PluginProcessor.h"
 
+#include "JsfxHelper.h"
 #include "PluginEditor.h"
 
-#ifdef _WIN32
-#include <commctrl.h>
-#include <windows.h>
-#endif
-
-// WDL localization (required for JSFX UI dialogs)
-#include "build/_deps/jsfx-src/WDL/localize/localize.h"
 // JSFX UI host integration (host context, UI creation)
 #include "build/_deps/jsfx-src/jsfx/sfxui.h"
 // JUCE binary data for slider bitmap
 #include "BinaryData.h"
 
-#ifdef _WIN32
 // Minimal slider automation callback used by JSFX UI when user tweaks sliders
 static void JsfxSliderAutomateThunk(void* ctx, int parmidx, bool done)
 {
@@ -26,58 +19,6 @@ static void JsfxSliderAutomateThunk(void* ctx, int parmidx, bool done)
     // For now keep it minimal; parameter syncing is handled elsewhere.
     juce::ignoreUnused(parmidx);
 }
-
-// Create HBITMAP from JUCE binary data for JSFX slider thumb
-static HBITMAP CreateBitmapFromJUCEBinaryData(const void* data, int dataSize)
-{
-    // Create a memory stream from the binary data
-    juce::MemoryInputStream stream(data, dataSize, false);
-
-    // Load the image from the stream
-    auto image = juce::ImageFileFormat::loadFrom(stream);
-    if (!image.isValid())
-        return nullptr;
-
-    // Convert JUCE Image to Windows HBITMAP
-    // Create a compatible DC and bitmap
-    HDC screenDC = GetDC(nullptr);
-    HDC memDC = CreateCompatibleDC(screenDC);
-
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = image.getWidth();
-    bmi.bmiHeader.biHeight = -image.getHeight(); // Negative for top-down DIB
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
-    void* bitmapData;
-    HBITMAP hBitmap = CreateDIBSection(screenDC, &bmi, DIB_RGB_COLORS, &bitmapData, nullptr, 0);
-
-    if (hBitmap && bitmapData)
-    {
-        // Copy pixel data from JUCE Image to Windows bitmap
-        juce::Image::BitmapData imgData(image, juce::Image::BitmapData::readOnly);
-
-        for (int y = 0; y < image.getHeight(); ++y)
-        {
-            uint32_t* destRow = static_cast<uint32_t*>(bitmapData) + (y * image.getWidth());
-            for (int x = 0; x < image.getWidth(); ++x)
-            {
-                juce::Colour pixel = imgData.getPixelColour(x, y);
-                // Convert ARGB to BGRA for Windows bitmap
-                destRow[x] =
-                    (pixel.getAlpha() << 24) | (pixel.getRed() << 16) | (pixel.getGreen() << 8) | pixel.getBlue();
-            }
-        }
-    }
-
-    DeleteDC(memDC);
-    ReleaseDC(nullptr, screenDC);
-
-    return hBitmap;
-}
-#endif
 
 //==============================================================================
 juce::AudioProcessorValueTreeState::ParameterLayout AudioPluginAudioProcessor::createParameterLayout()
@@ -107,36 +48,22 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
       )
     , apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
-    // Get the module handle of THIS DLL
-    g_hInst = (HINSTANCE)juce::Process::getCurrentModuleInstanceHandle();
+    // Initialize JSFX system using helper (isolates Win32/SWELL code from JUCE)
+    JsfxHelper::initialize();
 
-#ifdef _WIN32
-    // Initialize WDL localization system (required for JSFX UI dialogs)
-    WDL_LoadLanguagePack("", NULL);
-    DBG("WDL localization initialized");
+    // Initialize JSFX sliders with platform-specific module handle
+    JsfxHelper::initializeSliders(juce::Process::getCurrentModuleInstanceHandle(), true, 0);
 
-    // Initialize common controls for the JSFX UI dialog
-    INITCOMMONCONTROLSEX icc;
-    icc.dwSize = sizeof(INITCOMMONCONTROLSEX);
-    icc.dwICC = ICC_WIN95_CLASSES | ICC_STANDARD_CLASSES | ICC_BAR_CLASSES;
-    InitCommonControlsEx(&icc);
-
-    // Register and use the custom JSFX slider control class.
-    // This matches sfxui.cpp expectations (uses extra window bytes and TBM_* messages).
-    extern void Sliders_Init(HINSTANCE hInst, bool reg, int hslider_bitmap_id);
-    extern void Sliders_SetBitmap(HBITMAP hBitmap, bool isVert);
-
-    Sliders_Init(g_hInst, true, 0);
+    // Set slider class name for JSFX controls
+    extern const char* g_config_slider_classname;
     g_config_slider_classname = "jsfx_slider";
 
     // Create and set the slider bitmap from JUCE binary data
-    HBITMAP sliderBitmap =
-        CreateBitmapFromJUCEBinaryData(BinaryData::cockos_hslider_bmp, BinaryData::cockos_hslider_bmpSize);
+    void* sliderBitmap =
+        JsfxHelper::createSliderBitmap(BinaryData::cockos_hslider_bmp, BinaryData::cockos_hslider_bmpSize);
     if (sliderBitmap)
     {
-        Sliders_SetBitmap(sliderBitmap, false); // Set horizontal slider bitmap
-        // Note: We could also set a vertical bitmap if needed:
-        // Sliders_SetBitmap(sliderBitmap, true);
+        JsfxHelper::setSliderBitmap(sliderBitmap, false); // Set horizontal slider bitmap
         DBG("Successfully loaded slider bitmap from JUCE binary data");
     }
     else
@@ -144,32 +71,8 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         DBG("Warning: Failed to create slider bitmap from JUCE binary data");
     }
 
-    // Register stub window classes for JSFX custom controls
-    // These are normally provided by REAPER, but we need to register them ourselves
-    // Use ANSI version since JSFX dialog templates use ANSI strings
-    // Register globally (CS_GLOBALCLASS) so they work in child dialogs
-    WNDCLASSA wc = {0};
-    wc.style = CS_GLOBALCLASS;
-    wc.lpfnWndProc = DefWindowProcA;
-    wc.hInstance = g_hInst;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
-
-    // Register REAPERknob class (knob control)
-    wc.lpszClassName = "REAPERknob";
-    RegisterClassA(&wc);
-
-    // Register REAPERvertvu class (VU meter)
-    wc.lpszClassName = "REAPERvertvu";
-    RegisterClassA(&wc);
-
-    // Register WDLCursesWindow class (debug window)
-    wc.lpszClassName = "WDLCursesWindow";
-    RegisterClassA(&wc);
-
-    DBG("JSFX initialization complete");
-
-#endif
+    // Register JSFX window classes through helper
+    JsfxHelper::registerJsfxWindowClasses();
 
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
     appDataDir = appDataDir.getChildFile(JucePlugin_Name);
