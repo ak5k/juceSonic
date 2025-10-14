@@ -58,15 +58,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          submodules: recursive
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-          
-      - name: Checkout submodules
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          git submodule update --init --recursive
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Install Linux dependencies (x86_64)
         if: runner.os == 'Linux' && matrix.arch == 'x86_64'
