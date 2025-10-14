@@ -58,9 +58,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}
+      
+      - name: Checkout submodules with PAT
+        run: |
+          git config --global url."https://${{ secrets.PAT_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git submodule sync --recursive
+          git submodule update --init --recursive
 
       - name: Install Linux dependencies (x86_64)
         if: runner.os == 'Linux' && matrix.arch == 'x86_64'
