@@ -252,3 +252,7 @@ else()
             jsfx
     )
 endif()
+
+if(APPLE AND NOT CMAKE_GENERATOR STREQUAL "Ninja")
+    message(FATAL_ERROR "use ninja")
+endif()

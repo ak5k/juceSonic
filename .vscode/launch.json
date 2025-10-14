@@ -79,7 +79,7 @@
             "name": "(lldb) Debug Standalone - macOS",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/juceSonic_artefacts/Standalone/juceSonic.app/Contents/MacOS/juceSonic",
+            "program": "${workspaceFolder}/build/juceSonic_artefacts//Standalone/juceSonic.app/Contents/MacOS/juceSonic",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
