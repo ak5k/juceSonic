@@ -1,8 +1,8 @@
 #include "PluginEditor.h"
 
+#include "JsfxNativeWindow.h"
 #include "PluginProcessor.h"
 #include "build/_deps/jsfx-src/jsfx/sfxui.h"
-#include "JsfxNativeWindow.h"
 
 #include <memory>
 
