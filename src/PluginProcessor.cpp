@@ -44,13 +44,8 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     , apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
     // Initialize JSFX system using helper (isolates Win32/SWELL code from JUCE)
+    // This initializes platform layer, controls (sliders/meters), and creates bitmaps
     JsfxHelper::initialize();
-
-    // Initialize JSFX sliders and meters
-    // Note: g_hInst is set in JsfxHelper::initialize() and is platform-appropriate
-    extern HINSTANCE g_hInst;
-    JsfxHelper::initializeSliders(g_hInst, true, 0);
-    JsfxHelper::initializeMeters(g_hInst, true);
 
     // Set slider class name for JSFX controls
     extern const char* g_config_slider_classname;

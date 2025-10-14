@@ -12,9 +12,26 @@
 
 // g_hInst is defined in jsfx_api.cpp, we just use the extern declaration from sfxui.h
 
-// Forward declare standalone-helper initialization functions
+// Forward declarations for JSFX/WDL functions used throughout this file
 extern void Sliders_Init(HINSTANCE hInst, bool reg, int hslider_bitmap_id);
 extern void Meters_Init(HINSTANCE hInst, bool reg);
+extern void Sliders_SetBitmap(HBITMAP hBitmap, bool isVert);
+extern HWND sx_createUI(SX_Instance* instance, HINSTANCE hInst, HWND parent, void* hostctx);
+extern void sx_deleteUI(SX_Instance* instance);
+
+#ifndef _WIN32
+// SWELL-specific functions (non-Windows platforms)
+extern void SWELL_Internal_PostMessage_Init();
+extern void* SWELL_ExtendedAPI(const char* key, void* value);
+extern HWND curses_ControlCreator(HWND, const char*, int, const char*, int, int, int, int, int);
+extern void SWELL_RegisterCustomControlCreator(HWND (*)(HWND, const char*, int, const char*, int, int, int, int, int));
+extern void
+    SWELL_UnregisterCustomControlCreator(HWND (*)(HWND, const char*, int, const char*, int, int, int, int, int));
+#else
+// Windows-specific functions
+extern void curses_registerChildClass(HINSTANCE hInstance);
+extern void curses_unregisterChildClass(HINSTANCE hInstance);
+#endif
 
 void JsfxHelper::initialize()
 {
@@ -22,17 +39,21 @@ void JsfxHelper::initialize()
 #ifdef _WIN32
     g_hInst = (HINSTANCE)juce::Process::getCurrentModuleInstanceHandle();
 
+    if (!g_hInst)
+    {
+        DBG("JSFX Helper: ERROR - Failed to get module instance handle");
+        return;
+    }
+
     // Initialize WDL localization system (Windows only)
     WDL_LoadLanguagePack("", NULL);
     DBG("JSFX Helper: WDL localization initialized");
 #else
     // On Linux/Mac with SWELL, initialize SWELL subsystems
     // JUCE has already initialized GTK, so we just initialize SWELL's message handling
-    extern void SWELL_Internal_PostMessage_Init();
     SWELL_Internal_PostMessage_Init();
 
     // Set an application name for SWELL
-    extern void* SWELL_ExtendedAPI(const char* key, void* value);
     SWELL_ExtendedAPI("APPNAME", (void*)"juceSonic");
 
     // On Linux/Mac with SWELL, just use a dummy instance handle
@@ -49,7 +70,6 @@ void JsfxHelper::initialize()
 
     // Create a cross-platform slider thumb bitmap using JUCE
     // Store it globally and use Win32/SWELL API to create the bitmap
-    extern void Sliders_SetBitmap(HBITMAP hBitmap, bool isVert);
 
     // Create a simple gray slider thumb using JUCE graphics
     // Original cockos_hslider.bmp was 23x14 pixels
@@ -112,36 +132,25 @@ void JsfxHelper::initialize()
         globalSliderBitmap = CreateBitmap(thumbWidth, thumbHeight, 1, 32, bitmapBits.data());
 
         if (globalSliderBitmap)
+        {
             DBG("JSFX Helper: Created cross-platform slider thumb bitmap using Win32/SWELL API");
+        }
+        else
+        {
+            DBG("JSFX Helper: ERROR - CreateBitmap failed for slider thumb");
+            return;
+        }
     }
 
     if (globalSliderBitmap)
+    {
         Sliders_SetBitmap(globalSliderBitmap, false);
+        DBG("JSFX Helper: Slider bitmap registered with controls");
+    }
     else
-        DBG("JSFX Helper: Failed to create slider bitmap");
-}
-
-void JsfxHelper::setSliderBitmap(void* bitmap, bool isVertical)
-{
-#ifdef _WIN32
-    extern void Sliders_SetBitmap(HBITMAP hBitmap, bool isVert);
-    Sliders_SetBitmap(static_cast<HBITMAP>(bitmap), isVertical);
-#else
-    (void)bitmap;
-    (void)isVertical;
-#endif
-}
-
-void JsfxHelper::initializeSliders(void* moduleHandle, bool registerControls, int bitmapId)
-{
-    extern void Sliders_Init(HINSTANCE hInst, bool reg, int hslider_bitmap_id);
-    Sliders_Init(static_cast<HINSTANCE>(moduleHandle), registerControls, bitmapId);
-}
-
-void JsfxHelper::initializeMeters(void* moduleHandle, bool registerControls)
-{
-    extern void Meters_Init(HINSTANCE hInst, bool reg);
-    Meters_Init(static_cast<HINSTANCE>(moduleHandle), registerControls);
+    {
+        DBG("JSFX Helper: ERROR - No slider bitmap available to register");
+    }
 }
 
 void JsfxHelper::registerJsfxWindowClasses()
@@ -165,27 +174,11 @@ void JsfxHelper::registerJsfxWindowClasses()
 
     // Register WDLCursesWindow class using proper curses registration
     // The WDL curses system has its own registration function
-    extern void curses_registerChildClass(HINSTANCE hInstance);
     curses_registerChildClass(g_hInst);
 #else
     // On non-Windows platforms with SWELL, custom control registration is handled via
     // SWELL_RegisterCustomControlCreator
-    extern HWND curses_ControlCreator(
-        HWND parent,
-        const char* cname,
-        int idx,
-        const char* classname,
-        int style,
-        int x,
-        int y,
-        int w,
-        int h
-    );
-
     // Register the curses control creator with SWELL so it can create WDLCursesWindow controls
-    extern void SWELL_RegisterCustomControlCreator(
-        HWND(*proc)(HWND, const char*, int, const char*, int, int, int, int, int)
-    );
     SWELL_RegisterCustomControlCreator(curses_ControlCreator);
     DBG("JSFX Helper: Registered curses control creator with SWELL");
 #endif
@@ -200,8 +193,6 @@ void* JsfxHelper::createJsfxUI(SX_Instance* instance, void* parentWindow)
 
     // sx_createUI creates a child window that needs a SWELL parent window
     // On Linux, parentWindow should be a SWELL HWND, not a raw GTK widget
-    extern HWND sx_createUI(SX_Instance * instance, HINSTANCE hInst, HWND parent, void* hostctx);
-
     HWND parent = static_cast<HWND>(parentWindow);
     HWND uiWindow = sx_createUI(instance, g_hInst, parent, instance->m_hostctx);
 
@@ -215,8 +206,6 @@ void JsfxHelper::destroyJsfxUI(SX_Instance* instance, void* uiHandle)
 
     // Destroy JSFX UI - sx_deleteUI handles the window destruction internally
     // so we don't need to call DestroyWindow separately
-    extern void sx_deleteUI(SX_Instance * instance);
-
     sx_deleteUI(instance);
 
     // Note: sx_deleteUI already calls DestroyWindow on the UI window,
@@ -256,15 +245,16 @@ void JsfxHelper::showJsfxUI(void* uiHandle, bool show)
 void JsfxHelper::cleanup()
 {
     // Unregister JSFX controls
-    extern void Sliders_Init(HINSTANCE hInst, bool reg, int hslider_bitmap_id);
-    extern void Meters_Init(HINSTANCE hInst, bool reg);
-
     Sliders_Init(g_hInst, false, 0); // Unregister sliders
     Meters_Init(g_hInst, false);     // Unregister meters
 
-    // Unregister WDL curses window class
-    extern void curses_unregisterChildClass(HINSTANCE hInstance);
+    // Unregister WDL curses window class (platform-specific)
+#ifdef _WIN32
     curses_unregisterChildClass(g_hInst);
+#else
+    // On non-Windows, unregister the custom control creator we registered
+    SWELL_UnregisterCustomControlCreator(curses_ControlCreator);
+#endif
 
     DBG("JSFX Helper: Cleanup completed (unregistered curses class, sliders, and meters)");
 }

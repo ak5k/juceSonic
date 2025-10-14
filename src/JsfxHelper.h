@@ -16,15 +16,6 @@ public:
     // Initialize JSFX system (localization, controls, bitmaps)
     static void initialize();
 
-    // Set up slider bitmap for JSFX controls (for compatibility, but unused)
-    static void setSliderBitmap(void* bitmap, bool isVertical);
-
-    // Initialize JSFX sliders with platform-specific instance handle
-    static void initializeSliders(void* moduleHandle, bool registerControls, int bitmapId);
-
-    // Initialize JSFX meters with platform-specific instance handle
-    static void initializeMeters(void* moduleHandle, bool registerControls);
-
     // Register custom JSFX window classes
     static void registerJsfxWindowClasses();
 
