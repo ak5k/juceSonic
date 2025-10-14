@@ -5,8 +5,6 @@
 !.vscode/
 !.vscode/**         
 !cmakelists.txt
-!cmake/
-!cmake/**
 !src/
 !src/*.h
 !src/*.cpp

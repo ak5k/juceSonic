@@ -44,12 +44,6 @@ jobs:
             os: ubuntu-latest
             arch: x86_64
             cmake_args: ""
-          
-          # Linux ARM64
-          - name: Linux-ARM64
-            os: ubuntu-latest
-            arch: aarch64
-            cmake_args: -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/cmake/linux-arm64.cmake
 
     steps:
       - name: Checkout code
@@ -78,28 +72,6 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libglu1-mesa-dev \
             mesa-common-dev
-
-      - name: Install Linux ARM64 cross-compilation tools
-        if: runner.os == 'Linux' && matrix.arch == 'aarch64'
-        run: |
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update -qq
-          sudo apt-get install -qq aptitude > /dev/null
-          sudo aptitude install -yR \
-            g++-aarch64-linux-gnu \
-            libasound2-dev:arm64 \
-            libcurl4-openssl-dev:arm64 \
-            libfreetype6-dev:arm64 \
-            libx11-dev:arm64 \
-            libxcomposite-dev:arm64 \
-            libxcursor-dev:arm64 \
-            libxext-dev:arm64 \
-            libxinerama-dev:arm64 \
-            libxrandr-dev:arm64 \
-            libxrender-dev:arm64 \
-            libwebkit2gtk-4.1-dev:arm64 \
-            libglu1-mesa-dev:arm64 \
-            mesa-common-dev:arm64 > /dev/null
 
       - name: Setup Ninja (macOS)
         if: runner.os == 'macOS'
