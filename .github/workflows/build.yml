@@ -26,46 +26,30 @@ jobs:
             os: macos-latest
             arch: universal
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-            artifact_path: |
-              build/juceSonic_artefacts/Standalone/juceSonic.app
-              build/juceSonic_artefacts/VST3/juceSonic.vst3
-              build/juceSonic_artefacts/AU/juceSonic.component
             
           # Windows x64
           - name: Windows x64
             os: windows-latest
             arch: x64
             cmake_args: -A x64
-            artifact_path: |
-              build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone/juceSonic.exe
-              build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/VST3/juceSonic.vst3
           
           # Windows ARM64
           - name: Windows ARM64
             os: windows-latest
             arch: arm64
             cmake_args: -A ARM64
-            artifact_path: |
-              build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/Standalone/juceSonic.exe
-              build/juceSonic_artefacts/${{ env.BUILD_TYPE }}/VST3/juceSonic.vst3
           
           # Linux x86_64
           - name: Linux x86_64
             os: ubuntu-latest
             arch: x86_64
             cmake_args: ""
-            artifact_path: |
-              build/juceSonic_artefacts/Standalone/juceSonic
-              build/juceSonic_artefacts/VST3/juceSonic.vst3
           
           # Linux ARM64 (using cross-compilation)
           - name: Linux ARM64
             os: ubuntu-latest
             arch: aarch64
             cmake_args: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
-            artifact_path: |
-              build/juceSonic_artefacts/Standalone/juceSonic
-              build/juceSonic_artefacts/VST3/juceSonic.vst3
 
     steps:
       - name: Checkout code
