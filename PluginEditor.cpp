@@ -1,6 +1,10 @@
 #include "PluginEditor.h"
 
 #include "PluginProcessor.h"
+#include "build/_deps/jsfx-src/jsfx/sfxui.h"
+#include "JsfxNativeWindow.h"
+
+#include <memory>
 
 //==============================================================================
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
@@ -44,12 +48,19 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 {
     stopTimer();
-
-    // Clean up JSFX UI window if it exists
-    auto* sxInstance = processorRef.getSXInstancePtr();
-    if (sxInstance)
-        JesusonicAPI.sx_deleteUI(sxInstance);
+#ifdef _WIN32
+    // Ensure native JSFX UI is torn down before editor destruction
+    destroyJsfxUI();
+#endif
 }
+
+#ifdef _WIN32
+void AudioPluginAudioProcessorEditor::destroyJsfxUI()
+{
+    if (jsfxWindow)
+        jsfxWindow.reset();
+}
+#endif
 
 void AudioPluginAudioProcessorEditor::timerCallback()
 {
@@ -92,6 +103,7 @@ void AudioPluginAudioProcessorEditor::resized()
     wetSlider.setBounds(buttonArea.removeFromLeft(150));
 
     statusLabel.setBounds(bounds.removeFromTop(30));
+    // Split remaining space: top half for JSFX UI (if any), bottom half for parameters
     viewport.setBounds(bounds);
 }
 
@@ -112,6 +124,11 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
             auto file = fc.getResult();
             if (file != juce::File{})
             {
+            // Ensure any native window is closed before reloading a new JSFX
+#ifdef _WIN32
+                destroyJsfxUI();
+#endif
+
                 if (processorRef.loadJSFX(file))
                 {
                     rebuildParameterSliders();
@@ -146,6 +163,12 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
         {
             if (result == 1) // Yes button
             {
+            // Ensure any native window is closed before unloading JSFX
+
+#ifdef _WIN32
+                destroyJsfxUI();
+#endif
+
                 processorRef.unloadJSFX();
                 rebuildParameterSliders();
             }
@@ -213,29 +236,19 @@ void AudioPluginAudioProcessorEditor::openJSFXUI()
         return;
     }
 
-    DBG("Calling sx_createUI with g_hInst=" << juce::String::toHexString((juce::pointer_sized_int)g_hInst));
-
-    // Create the JSFX UI window as a standalone window (NULL parent)
-    HWND uiWindow = JesusonicAPI.sx_createUI(sxInstance, g_hInst, NULL, nullptr);
-
-    DBG("sx_createUI returned: " << juce::String::toHexString((juce::pointer_sized_int)uiWindow));
-
-    if (uiWindow)
+    // Open JSFX native UI in its own window on Windows
+#ifdef _WIN32
     {
-        // Show the window
-        ShowWindow(uiWindow, SW_SHOW);
-        SetForegroundWindow(uiWindow);
-        DBG("UI window shown successfully");
+        // Close any existing window
+        destroyJsfxUI();
+        auto* sx = processorRef.getSXInstancePtr();
+        jsfxWindow = std::make_unique<JsfxNativeWindow>(sx, processorRef.getCurrentJSFXName() + " - UI");
+        jsfxWindow->setAlwaysOnTop(false);
+        jsfxWindow->setVisible(true);
     }
-    else
-    {
-        DWORD error = GetLastError();
-        DBG("CreateDialog failed with error: " << error);
-
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::MessageBoxIconType::InfoIcon,
-            "No UI Available",
-            "This JSFX effect does not have a graphical user interface.\nError code: " + juce::String((int)error)
-        );
-    }
+#else
+    // Non-Windows: Native UI not supported in this build. No-op.
+#endif
 }
+
+// Windows-specific embedded UI helpers removed; using separate window instead

@@ -3,6 +3,11 @@
 #include "PluginProcessor.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+class JsfxNativeWindow;
 
 //==============================================================================
 class ParameterSlider : public juce::Component
@@ -180,7 +185,7 @@ private:
 
     juce::TextButton loadButton{"Load JSFX"};
     juce::TextButton unloadButton{"Unload"};
-    juce::TextButton uiButton{"Show UI"};
+    juce::TextButton uiButton{"Show JSFX UI"};
     juce::Slider wetSlider;
     juce::Label wetLabel;
     juce::Viewport viewport;
@@ -189,6 +194,10 @@ private:
 
     juce::OwnedArray<ParameterSlider> parameterSliders;
     std::unique_ptr<juce::FileChooser> fileChooser;
+#ifdef _WIN32
+    std::unique_ptr<JsfxNativeWindow> jsfxWindow;
+    void destroyJsfxUI();
+#endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

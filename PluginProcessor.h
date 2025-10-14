@@ -1,7 +1,8 @@
 #pragma once
 
+#include <jsfx.h>
 //
-#include <jsfx_api.h>
+
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_dsp/juce_dsp.h>
 

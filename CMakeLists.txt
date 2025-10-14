@@ -9,12 +9,15 @@
 # information can be found in the CMake docs.
 
 cmake_minimum_required(VERSION 3.22)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # The top-level CMakeLists.txt file for a project must contain a literal, direct call to the
 # `project()` command. `project()` sets up some helpful variables that describe source/binary
 # directories, and the current project version. This is a standard CMake command.
 
-project(juceSonic VERSION 0.0.1)
+project(juceSonic VERSION 0.0.1 LANGUAGES CXX C)
 
 # If you've installed JUCE somehow (via a package manager, or directly using the CMake install
 # target), you'll need to tell this project that it depends on the installed copy of JUCE. If you've
@@ -38,25 +41,28 @@ add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory
 # Check the readme at `docs/CMake API.md` in the JUCE repo for the full list.
 
 juce_add_plugin(${PROJECT_NAME}
-    # VERSION ...                               # Set this if the plugin version is different to the project version
-    # ICON_BIG ...                              # ICON_* arguments specify a path to an image file to use as an icon for the Standalone
-    # ICON_SMALL ...
-    # COMPANY_NAME ...                          # Specify the name of the plugin's author
-    # IS_SYNTH TRUE/FALSE                       # Is this a synth or an effect?
-    # NEEDS_MIDI_INPUT TRUE/FALSE               # Does the plugin need midi input?
-    # NEEDS_MIDI_OUTPUT TRUE/FALSE              # Does the plugin need midi output?
-    # IS_MIDI_EFFECT TRUE/FALSE                 # Is this plugin a MIDI effect?
-    # EDITOR_WANTS_KEYBOARD_FOCUS TRUE/FALSE    # Does the editor need keyboard focus?
-    COPY_PLUGIN_AFTER_BUILD TRUE                # Should the plugin be installed to a default location after building?
-    PLUGIN_MANUFACTURER_CODE Juce               # A four-character manufacturer id with at least one upper-case character
-    PLUGIN_CODE Dem0                            # A unique four-character plugin id with exactly one upper-case character
+    COMPANY_NAME "ak5k"
+    COMPANY_WEBSITE "https://github.com/ak5k"
+    COMPANY_EMAIL ""
+    
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    
+    COPY_PLUGIN_AFTER_BUILD TRUE
+    PLUGIN_MANUFACTURER_CODE Ak5k               # A four-character manufacturer id with at least one upper-case character
+    PLUGIN_CODE Jsfx                            # A unique four-character plugin id with exactly one upper-case character
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
 
     NEEDS_WEB_BROWSER FALSE
     NEEDS_CURL FALSE
 
-    FORMATS AU VST3 Standalone                  # The formats to build. Other valid formats are: AAX Unity VST AU AUv3
-    PRODUCT_NAME ${PROJECT_NAME})        # The name of the final executable, which can differ from the target name
+    VST3_CATEGORIES Fx
+    
+    FORMATS AU VST3 Standalone
+    PRODUCT_NAME ${PROJECT_NAME})
     
 
 # `juce_generate_juce_header` will create a JuceHeader.h for a given target, which will be generated
@@ -75,7 +81,9 @@ juce_add_plugin(${PROJECT_NAME}
 target_sources(${PROJECT_NAME}
     PRIVATE
         PluginEditor.cpp
-        PluginProcessor.cpp)
+        PluginProcessor.cpp
+        JsfxNativeWindow.cpp
+        )
 
 # `target_compile_definitions` adds some preprocessor definitions to our target. In a Projucer
 # project, these might be passed in the 'Preprocessor Definitions' field. JUCE modules also make use
@@ -98,7 +106,11 @@ target_compile_definitions(${PROJECT_NAME}
 # static library. These source files can be of any kind (wav data, images, fonts, icons etc.).
 # Conversion to binary-data will happen when your target is built.
 
-# juce_add_binary_data(AudioPluginData SOURCES ...)
+# Add the slider bitmap as binary data
+juce_add_binary_data(AudioPluginData 
+    SOURCES 
+        build/_deps/jsfx-src/jsfx/standalone-helpers/cockos_hslider.bmp
+)
 
 # `target_link_libraries` links libraries and JUCE modules to other libraries or executables. Here,
 # we're linking our executable target to the `juce::juce_audio_utils` module. Inter-module
@@ -108,7 +120,7 @@ target_compile_definitions(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-        # AudioPluginData           # If we'd created a binary data target, we'd link to it here
+        AudioPluginData           # Link to our binary data target
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -116,128 +128,60 @@ target_link_libraries(${PROJECT_NAME}
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
-# Reset jsfx submodule to HEAD and apply patch (adds Windows headers, removes DLL exports)
-# message(STATUS "Resetting jsfx submodule...")
-# Reset jsfx submodule to HEAD and apply patch (adds Windows headers, removes DLL exports)
-message(STATUS "Resetting jsfx submodule...")
-execute_process(
-    COMMAND git reset --hard 
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/jsfx
-    RESULT_VARIABLE RESET_RESULT
-    OUTPUT_QUIET ERROR_QUIET
-)
-if(NOT RESET_RESULT EQUAL 0)
-    message(WARNING "Failed to reset jsfx submodule")
-endif()
 
-message(STATUS "Applying jsfx.patch...")
-execute_process(
-    COMMAND git apply --ignore-whitespace ${CMAKE_CURRENT_SOURCE_DIR}/jsfx.patch
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/jsfx
-    RESULT_VARIABLE PATCH_APPLY_RESULT
-)
-if(NOT PATCH_APPLY_RESULT EQUAL 0)
-    message(WARNING "Failed to apply jsfx.patch")
-endif()
+# ==============================================================================
+# JSFX Integration - Using jsfx-cmake submodule
+# ==============================================================================
 
-add_library(lice STATIC)
-target_include_directories(lice
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/lice/glew/include"
-    )
-file(GLOB LICE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/lice/glew/src/glew.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/lice/glew/src/glewinfo.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/lice/*.cpp"
-)
-target_sources(lice PRIVATE ${LICE_SOURCES})
-target_link_libraries(lice
-    PRIVATE
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_lto_flags
-        )
+# Add jsfx-cmake submodule (handles all WDL/SWELL/curses complexity)
+set(JSFX_BUILD_EXAMPLES OFF CACHE BOOL "Don't build jsfx examples" FORCE)
+add_subdirectory(jsfx-cmake)
 
-add_library(jsfx OBJECT)
-target_include_directories(jsfx
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/lice/glew/include"
-    )
-file(GLOB JSFX_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/eel2/nseel-*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/fft.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/localize/localize.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/win32_curses/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/wingui/wndsize.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/jsfx/*.cpp"
-    )
-target_link_libraries(jsfx
-    PRIVATE
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_lto_flags
-        )
-target_link_libraries(jsfx PRIVATE lice)
-
-target_sources(jsfx PRIVATE ${JSFX_SOURCES})
-if(APPLE)
-    target_link_libraries(jsfx PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/eel2/asm-nseel-multi-macho.o")
-else()
-    target_link_libraries(jsfx PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/WDL/eel2/asm-nseel-x64.obj")
-endif()
-
-if(UNIX)
-    target_compile_options(jsfx PRIVATE -fPIC)
-    set_target_properties(jsfx PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    target_compile_options(lice PRIVATE -fPIC)
-    set_target_properties(lice PROPERTIES POSITION_INDEPENDENT_CODE ON)
-endif()
-
-target_compile_definitions(jsfx
-    PRIVATE
-        WDL_FFT_REALSIZE=8
-        FORCE_WIN32_CURSES
-)
-
-set(MY_MSVC_WARNINGS
-    /wd4018
-    /wd4100
-    /wd4127
-    /wd4244
-    /wd4245
-    /wd4267
-    /wd4273
-    /wd4456
-    /wd4505
-    /wd4701
-    /wd4702
-    /wd4996 
-    /wd4838
-    /wd4311
-    /wd5055
-    /wd4273
-)
-
-if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE ${MY_MSVC_WARNINGS})
-    target_compile_options(lice PRIVATE ${MY_MSVC_WARNINGS})
-    target_compile_options(jsfx PRIVATE ${MY_MSVC_WARNINGS}) # Uncomment if jsfx is enabled
-endif()
-
-target_include_directories(${PROJECT_NAME}
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/jsfx"
-    )
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-        jsfx
-)
-
-# Add JSFX UI resources directly to each plugin format target (resources can't be in static libraries)
+# On Windows, explicitly add JSFX resource file to the plugin targets
+# This ensures the dialog templates are compiled into the VST3/Standalone DLL
 if(WIN32)
-    foreach(target_name IN ITEMS ${PROJECT_NAME}_VST3 ${PROJECT_NAME}_Standalone ${PROJECT_NAME}_AU)
-        if(TARGET ${target_name})
-            target_sources(${target_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/jsfx/res.rc")
+    # The jsfx source directory is in build/_deps after FetchContent
+    set(JSFX_RES_FILE "${CMAKE_CURRENT_BINARY_DIR}/_deps/jsfx-src/jsfx/res.rc")
+    set(JSFX_RES_INCLUDE "${CMAKE_CURRENT_BINARY_DIR}/_deps/jsfx-src/jsfx")
+    
+    # Add to SharedCode library
+    target_sources(${PROJECT_NAME}
+        PRIVATE
+            ${JSFX_RES_FILE}
+    )
+    target_include_directories(${PROJECT_NAME}
+        PRIVATE
+            ${JSFX_RES_INCLUDE}
+    )
+    
+    # Add to format-specific targets (VST3, Standalone) after juce_add_plugin creates them
+    # These are named ${PROJECT_NAME}_VST3, ${PROJECT_NAME}_Standalone, etc.
+    foreach(target ${PROJECT_NAME}_VST3 ${PROJECT_NAME}_Standalone)
+        if(TARGET ${target})
+            target_sources(${target}
+                PRIVATE
+                    ${JSFX_RES_FILE}
+            )
+            target_include_directories(${target}
+                PRIVATE
+                    ${JSFX_RES_INCLUDE}
+            )
         endif()
     endforeach()
+endif()
+
+# Link JSFX to main plugin target
+# Use linker groups to handle circular dependencies between our code and jsfx_core
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME}
+        PRIVATE
+            -Wl,--start-group
+            jsfx
+            -Wl,--end-group
+    )
+else()
+    target_link_libraries(${PROJECT_NAME}
+        PRIVATE
+            jsfx
+    )
 endif()
