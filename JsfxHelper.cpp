@@ -106,7 +106,17 @@ void JsfxHelper::registerJsfxWindowClasses()
 
 #ifndef _WIN32
     // On non-Windows platforms, SWELL handles this via curses_ControlCreator
-    extern HWND curses_ControlCreator(HWND parent, const char *cname, int idx, const char *classname, int style, int x, int y, int w, int h);
+    extern HWND curses_ControlCreator(
+        HWND parent,
+        const char* cname,
+        int idx,
+        const char* classname,
+        int style,
+        int x,
+        int y,
+        int w,
+        int h
+    );
     // TODO: Register curses_ControlCreator with SWELL
 #endif
 
@@ -177,6 +187,6 @@ void JsfxHelper::cleanup()
     // Unregister WDL curses window class
     extern void curses_unregisterChildClass(HINSTANCE hInstance);
     curses_unregisterChildClass(g_hInst);
-    
+
     DBG("JSFX Helper: Cleanup completed (unregistered curses class)");
 }
