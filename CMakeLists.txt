@@ -43,6 +43,21 @@ if(NOT SUBMODULES_INITIALIZED)
             set(INIT_SUCCESS FALSE)
         else()
             message(STATUS "Git submodules initialized successfully")
+            
+            # Checkout submodules to their default branches (main or master) instead of detached HEAD
+            message(STATUS "Checking out submodules to their default branches...")
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} submodule foreach "git checkout main 2>/dev/null || git checkout master 2>/dev/null || echo 'Could not checkout default branch for' $name"
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                RESULT_VARIABLE SUBMODULE_CHECKOUT_RESULT
+                OUTPUT_VARIABLE SUBMODULE_CHECKOUT_OUTPUT
+            )
+            if(SUBMODULE_CHECKOUT_RESULT EQUAL "0")
+                message(STATUS "Submodules checked out to their default branches")
+                message(STATUS "${SUBMODULE_CHECKOUT_OUTPUT}")
+            else()
+                message(WARNING "Some submodules may not have been checked out to their default branches")
+            endif()
         endif()
     else()
         message(WARNING "Git not found or not a git repository. Submodules will not be initialized automatically.")
