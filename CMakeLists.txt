@@ -17,7 +17,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # `project()` command. `project()` sets up some helpful variables that describe source/binary
 # directories, and the current project version. This is a standard CMake command.
 
-project(juceSonic VERSION 0.0.1 LANGUAGES CXX C)
+project(juceSonic VERSION 0.1.0 LANGUAGES CXX C)
 
 # ==============================================================================
 # Submodule and Dependency Initialization (runs only on first successful configure)
