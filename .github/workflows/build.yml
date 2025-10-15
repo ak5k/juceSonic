@@ -240,37 +240,6 @@ jobs:
           tag_name: ${{ steps.release_name.outputs.name }}
           name: juceSonic ${{ steps.release_name.outputs.name }}
           files: all-artifacts/**/*
-          body: |
-            ## juceSonic ${{ steps.release_name.outputs.name }}
-            
-            ### Downloads
-            
-            #### macOS (Universal - Apple Silicon + Intel)
-            - Standalone Application
-            - VST3 Plugin
-            - Audio Unit (AU) Plugin
-            
-            #### Windows
-            - x64: Standalone + VST3
-            - ARM64: Standalone + VST3
-            
-            #### Linux
-            - x86_64: Standalone + VST3
-            - ARM64: Standalone + VST3 (for Raspberry Pi, ARM servers, etc.)
-            
-            ### Installation
-            
-            **macOS:**
-            - Standalone: Extract and copy to Applications
-            - VST3: Extract to `~/Library/Audio/Plug-Ins/VST3/`
-            - AU: Extract to `~/Library/Audio/Plug-Ins/Components/`
-            
-            **Windows:**
-            - Standalone: Run the .exe file
-            - VST3: Extract to `C:\Program Files\Common Files\VST3\`
-            
-            **Linux:**
-            - Standalone: Make executable and run
-            - VST3: Extract to `~/.vst3/`
+        
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

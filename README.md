@@ -4,7 +4,7 @@ JUCE plugin wrapper for JSFX
 
 ## Building
 
-Requires CMake 3.31+ and Ninja.
+Requires CMake 3.28+ and Ninja.
 
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
