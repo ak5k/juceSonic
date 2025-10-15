@@ -1,0 +1,276 @@
+name: Build
+
+on:
+  push:
+    branches: [ master, main ]
+    tags:
+      - '*'
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Debug
+          - Release
+
+env:
+  BUILD_TYPE: ${{ github.event.inputs.build_type || (startsWith(github.ref, 'refs/tags/') && 'Release' || 'Debug') }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Universal Binary (arm64 + x86_64)
+          - name: macOS-Universal
+            os: macos-latest
+            arch: universal
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+            
+          # Windows x64
+          - name: Windows-x64
+            os: windows-latest
+            arch: x64
+            cmake_args: -A x64
+          
+          # Windows ARM64
+          - name: Windows-ARM64
+            os: windows-latest
+            arch: arm64
+            cmake_args: -A ARM64
+          
+          # Linux x86_64
+          - name: Linux-x86_64
+            os: ubuntu-latest
+            arch: x86_64
+            cmake_args: ""
+          
+          # # Linux ARM64 (cross-compiled)
+          # - name: Linux-ARM64
+          #   os: ubuntu-latest
+          #   arch: arm64
+          #   cross_compile: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Linux dependencies (x86_64)
+        if: runner.os == 'Linux' && matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            ladspa-sdk \
+            libcurl4-openssl-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libwebkit2gtk-4.1-dev \
+            libglu1-mesa-dev \
+            mesa-common-dev
+
+      - name: Cross-compile for Linux
+        if: runner.os == 'Linux' && matrix.cross_compile
+        run: |
+          # Make the cross-compile script executable
+          chmod +x cross-compile.sh
+          
+          # Run the cross-compile script with the target architecture
+          ./cross-compile.sh ${{ matrix.arch }}
+
+      - name: Setup Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v ninja &> /dev/null; then
+            brew install ninja
+          fi
+
+      - name: Setup Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v ninja &> /dev/null; then
+            sudo apt-get install -y ninja-build
+          fi
+
+      - name: Setup Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+            choco install ninja
+          }
+
+      - name: Configure CMake (macOS/Linux)
+        if: runner.os != 'Windows' && !matrix.cross_compile
+        run: |
+          cmake -B build -G Ninja ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" ${{ matrix.cmake_args }}
+
+      - name: Build
+        if: ${{ !matrix.cross_compile }}
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Create artifact directory
+        run: |
+          mkdir -p artifacts
+
+      - name: Package artifacts (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Find and package macOS bundles
+          STANDALONE=$(find build -name "juceSonic.app" -type d | head -1)
+          if [ -n "$STANDALONE" ]; then
+            cd "$(dirname "$STANDALONE")"
+            zip -r "$OLDPWD/artifacts/juceSonic-Standalone-macOS-universal.zip" juceSonic.app
+            cd "$OLDPWD"
+          fi
+          
+          VST3=$(find build -name "juceSonic.vst3" -type d | head -1)
+          if [ -n "$VST3" ]; then
+            cd "$(dirname "$VST3")"
+            zip -r "$OLDPWD/artifacts/juceSonic-VST3-macOS-universal.zip" juceSonic.vst3
+            cd "$OLDPWD"
+          fi
+          
+          AU=$(find build -name "juceSonic.component" -type d | head -1)
+          if [ -n "$AU" ]; then
+            cd "$(dirname "$AU")"
+            zip -r "$OLDPWD/artifacts/juceSonic-AU-macOS-universal.zip" juceSonic.component
+            cd "$OLDPWD"
+          fi
+
+      - name: Package artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Find and package Windows artifacts
+          $standalone = Get-ChildItem -Path build -Recurse -Filter "juceSonic.exe" | Where-Object { $_.Directory.Name -eq "Standalone" } | Select-Object -First 1
+          if ($standalone) {
+            Copy-Item $standalone.FullName "artifacts/juceSonic-Standalone-Windows-${{ matrix.arch }}.exe"
+          }
+          
+          $vst3 = Get-ChildItem -Path build -Recurse -Filter "juceSonic.vst3" -Directory | Select-Object -First 1
+          if ($vst3) {
+            Compress-Archive -Path $vst3.FullName -DestinationPath "artifacts/juceSonic-VST3-Windows-${{ matrix.arch }}.zip"
+          }
+
+      - name: Package artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Determine build directory based on whether it's cross-compiled
+          if [ "${{ matrix.cross_compile }}" == "true" ]; then
+            BUILD_DIR="build-${{ matrix.arch }}"
+          else
+            BUILD_DIR="build"
+          fi
+          
+          # Find and package Linux binaries
+          STANDALONE=$(find "$BUILD_DIR" -name "juceSonic" -type f -executable | grep Standalone | head -1)
+          if [ -n "$STANDALONE" ]; then
+            cp "$STANDALONE" artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
+            chmod +x artifacts/juceSonic-Standalone-Linux-${{ matrix.arch }}
+          fi
+          
+          VST3=$(find "$BUILD_DIR" -name "juceSonic.vst3" -type d | head -1)
+          if [ -n "$VST3" ]; then
+            cd "$(dirname "$VST3")"
+            tar czf "$OLDPWD/artifacts/juceSonic-VST3-Linux-${{ matrix.arch }}.tar.gz" juceSonic.vst3
+            cd "$OLDPWD"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: juceSonic-${{ runner.os }}-${{ matrix.arch }}-${{ env.BUILD_TYPE }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  create-release:
+    name: Create Draft Release
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_type == 'Release')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: all-artifacts
+          merge-multiple: true
+
+      - name: Display structure of downloaded files
+        run: ls -R all-artifacts
+
+      - name: Generate release name
+        id: release_name
+        run: |
+          if [ "${{ github.ref_type }}" == "tag" ]; then
+            echo "name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=manual-release-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ steps.release_name.outputs.name }}
+          name: juceSonic ${{ steps.release_name.outputs.name }}
+          files: all-artifacts/**/*
+          body: |
+            ## juceSonic ${{ steps.release_name.outputs.name }}
+            
+            ### Downloads
+            
+            #### macOS (Universal - Apple Silicon + Intel)
+            - Standalone Application
+            - VST3 Plugin
+            - Audio Unit (AU) Plugin
+            
+            #### Windows
+            - x64: Standalone + VST3
+            - ARM64: Standalone + VST3
+            
+            #### Linux
+            - x86_64: Standalone + VST3
+            - ARM64: Standalone + VST3 (for Raspberry Pi, ARM servers, etc.)
+            
+            ### Installation
+            
+            **macOS:**
+            - Standalone: Extract and copy to Applications
+            - VST3: Extract to `~/Library/Audio/Plug-Ins/VST3/`
+            - AU: Extract to `~/Library/Audio/Plug-Ins/Components/`
+            
+            **Windows:**
+            - Standalone: Run the .exe file
+            - VST3: Extract to `C:\Program Files\Common Files\VST3\`
+            
+            **Linux:**
+            - Standalone: Make executable and run
+            - VST3: Extract to `~/.vst3/`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

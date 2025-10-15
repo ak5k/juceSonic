@@ -1,0 +1,16 @@
+*
+!.github/
+!.github/** 
+!.gitignore
+!.vscode/
+!.vscode/**         
+!README.md
+!LICENSE
+!cmakelists.txt
+!cross-compile.sh
+!src/
+!src/*.h
+!src/*.cpp
+!Effects/%
+!jsfx/
+!jsfx/**
