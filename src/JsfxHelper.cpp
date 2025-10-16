@@ -2,12 +2,18 @@
 
 #include "JsfxLogger.h"
 
+// Forward declaration to avoid circular dependency
+class AudioPluginAudioProcessor;
+
 // JSFX and SWELL includes - isolated from JUCE code
 #ifdef _WIN32
 // Include localize.h on Windows only (uses Windows-specific types)
 #include <WDL/localize/localize.h>
 #endif
 #include <jsfx.h>
+
+// External declaration for JSFX API (defined in PluginProcessor.cpp)
+extern jsfxAPI JesusonicAPI;
 
 // JUCE includes for image processing
 #include <juce_graphics/juce_graphics.h>
@@ -294,9 +300,8 @@ void* JsfxHelper::createJsfxUI(SX_Instance* instance, void* parentWindow)
     if (!instance)
         return nullptr;
 
-    // Set the host context to a pointer to this JsfxHelper instance
-    // This enables JSFX UI features like the Params button
-    instance->m_hostctx = this;
+    // Set the host context to the instance itself
+    instance->m_hostctx = instance;
 
     // sx_createUI creates a child window that needs a SWELL parent window
     // On Linux, parentWindow should be a SWELL HWND, not a raw GTK widget
@@ -444,6 +449,12 @@ void* JsfxHelper::getHostAPIFunction(const char* functionName)
 
     if (strcmp(functionName, "fxGetSetPinmapperFlags") == 0)
         return (void*)&hostGetSetPinmapperFlags;
+
+    // Preset support disabled - was causing UI freeze issues
+    // if (strcmp(functionName, "fxLoadReaperPreset") == 0)
+    //     return (void*)&hostLoadReaperPreset;
+    // if (strcmp(functionName, "fxGetReaperPresetNamesRaw") == 0)
+    //     return (void*)&hostGetReaperPresetNamesRaw;
 
     // Return nullptr for functions we don't implement
     return nullptr;

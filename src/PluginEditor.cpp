@@ -138,6 +138,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     addAndMakeVisible(statusLabel);
     statusLabel.setJustificationType(juce::Justification::centred);
+    statusLabel.setFont(juce::FontOptions(18.0f).withStyle("Bold"));
     statusLabel.setText("No JSFX loaded", juce::dontSendNotification);
 
     addAndMakeVisible(viewport);
@@ -209,11 +210,7 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     juce::String statusText = "No JSFX loaded";
     if (!processorRef.getCurrentJSFXName().isEmpty())
     {
-        statusText = "Loaded: "
-                   + processorRef.getCurrentJSFXName()
-                   + " ("
-                   + juce::String(processorRef.getNumActiveParameters())
-                   + " parameters)";
+        statusText = processorRef.getCurrentJSFXName();
     }
     statusLabel.setText(statusText, juce::dontSendNotification);
 

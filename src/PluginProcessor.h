@@ -196,13 +196,12 @@ private:
     std::atomic<int> writeIndex{1};  // Index used by UI thread for writing
     // Third buffer (index 2) is the swap buffer
 
-    void applyRoutingToBuffer(
-        juce::AudioBuffer<float>& buffer,
-        const juce::AudioBuffer<float>& sidechainBuffer,
-        double* tempPtr,
-        int numSamples,
-        int totalJsfxChannels
-    );
+    // MIDI support
+    static double midiSendRecvCallback(void* ctx, int action, double* ts, double* msg1, double* msg23, double* midibus);
+    juce::MidiBuffer* currentMidiInputBuffer = nullptr;   // Set during processBlock
+    std::unique_ptr<juce::MidiBuffer::Iterator> midiInputIterator; // Iterator for reading MIDI sequentially
+    juce::MidiBuffer currentMidiOutputBuffer;              // Accumulated during processBlock
+    std::vector<unsigned char> midiTempBuffer;             // Temp storage for MIDI messages
 
     // Note: Global properties management moved to PersistentFileChooser utility
 
