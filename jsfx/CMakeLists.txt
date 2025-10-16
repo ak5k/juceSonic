@@ -23,6 +23,30 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(jsfx)
 message(STATUS "JSFX source available at: ${jsfx_SOURCE_DIR}")
 
+# Patch effectproc.cpp to remove hardcoded "Effects" directory requirement
+# This allows loading JSFX files directly from their source location
+file(READ "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp" EFFECTPROC_CONTENT)
+string(FIND "${EFFECTPROC_CONTENT}" "sx->m_effectdir.Append" EFFECTS_DIR_FOUND)
+if(NOT EFFECTS_DIR_FOUND EQUAL -1)
+    message(STATUS "Patching effectproc.cpp to remove hardcoded Effects directory")
+    # Patch Windows path
+    string(REPLACE 
+        "  sx->m_datadir.Append(\"\\\\Data\");\n  sx->m_effectdir.Append(\"\\\\Effects\");"
+        "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
+        EFFECTPROC_CONTENT
+        "${EFFECTPROC_CONTENT}")
+    # Patch Unix path
+    string(REPLACE 
+        "  sx->m_datadir.Append(\"/Data\");\n  sx->m_effectdir.Append(\"/Effects\");"
+        "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
+        EFFECTPROC_CONTENT
+        "${EFFECTPROC_CONTENT}")
+    file(WRITE "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp" "${EFFECTPROC_CONTENT}")
+    message(STATUS "effectproc.cpp patched successfully")
+else()
+    message(STATUS "effectproc.cpp already patched or pattern not found")
+endif()
+
 # Patch curses.h and related files to avoid macro conflicts with C++ STL
 # Rename problematic macros to prevent C++ conflicts
 file(READ "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h" CURSES_CONTENT)

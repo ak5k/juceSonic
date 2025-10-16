@@ -567,25 +567,20 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
 
     unloadJSFX();
 
-    auto effectName = jsfxFile.getFileNameWithoutExtension();
-    juce::File appDataDir = juce::File(jsfxRootDir);
-    juce::File effectsDir = appDataDir.getChildFile("Effects");
+    // Use the JSFX file's location directly - no copying needed!
+    // This allows:
+    // - Live updates to source files
+    // - No disk space duplication
+    // - Proper dependency resolution from source directory (*.jsfx-inc, *.png, *.rpl)
+    juce::File sourceDir = jsfxFile.getParentDirectory();
+    juce::String fileName = jsfxFile.getFileName();
 
-    if (!effectsDir.exists())
-        effectsDir.createDirectory();
-
-    // Always copy to filename without extension (JSFX API expects no extension)
-    juce::File targetFile = effectsDir.getChildFile(effectName);
-
-    if (jsfxFile != targetFile)
-        jsfxFile.copyFileTo(targetFile);
-
+    // sx_createInstance expects (dir_root, relative_path_to_file)
+    // With our JSFX patch, we pass the parent directory as dir_root and just the filename
+    // This sets m_effectdir = sourceDir, allowing relative imports to work
     bool wantWak = false;
-    sxInstance = JesusonicAPI.sx_createInstance(
-        appDataDir.getFullPathName().toRawUTF8(),
-        ("Effects/" + effectName).toRawUTF8(),
-        &wantWak
-    );
+    sxInstance =
+        JesusonicAPI.sx_createInstance(sourceDir.getFullPathName().toRawUTF8(), fileName.toRawUTF8(), &wantWak);
 
     if (!sxInstance)
         return false;
@@ -596,7 +591,7 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     // Use 'this' as host context so we can route callbacks if needed
     sx_set_host_ctx(sxInstance, this, JsfxSliderAutomateThunk);
 
-    currentJSFXName = effectName;
+    currentJSFXName = jsfxFile.getFileNameWithoutExtension();
 
     JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
 
