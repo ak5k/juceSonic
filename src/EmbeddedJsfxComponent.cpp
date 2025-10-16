@@ -1,8 +1,45 @@
+/*
+ * EmbeddedJsfxComponent - Platform-specific JSFX UI hosting
+ * 
+ * WINDOWS: JSFX UI is embedded as a child window using the JUCE window handle
+ * MACOS:   JSFX UI is embedded as a child window using the JUCE window handle  
+ * LINUX:   JSFX UI opens as an independent floating window (SWELL limitation)
+ *          - Cannot be embedded in GTK hierarchy
+ *          - Window is subclassed to prevent crash during destruction
+ */
+
 #include "EmbeddedJsfxComponent.h"
 
 #include "JsfxHelper.h"
 
 #include <jsfx/sfxui.h>
+
+#ifndef _WIN32
+#include <WDL/swell/swell.h>
+extern HINSTANCE g_hInst; // Defined in jsfx_api.cpp
+
+#ifdef __linux__
+// Linux-specific: Subclass JSFX window to prevent crash during destruction
+// JSFX tries to send WM_USER+1030 to parent during WM_DESTROY, but we have no parent
+static WNDPROC g_originalJsfxProc = nullptr;
+
+static LRESULT CALLBACK SafeJsfxWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    if (msg == WM_DESTROY)
+    {
+        // Prevent attempt to notify NULL parent
+        return 0;
+    }
+    
+    if (g_originalJsfxProc)
+        return CallWindowProc(g_originalJsfxProc, hwnd, msg, wParam, lParam);
+    
+    return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+#endif
+#endif
+
+
 
 EmbeddedJsfxComponent::EmbeddedJsfxComponent(SX_Instance* instance, JsfxHelper& helper)
     : sxInstance(instance)
@@ -11,7 +48,6 @@ EmbeddedJsfxComponent::EmbeddedJsfxComponent(SX_Instance* instance, JsfxHelper& 
     // Make component transparent - the native window does all the painting
     setOpaque(false);
 
-    // We don't need HWNDComponent - we'll get the parent window handle directly
     // Try to create immediately after being added to hierarchy
     juce::MessageManager::callAsync(
         [this]()
@@ -19,13 +55,15 @@ EmbeddedJsfxComponent::EmbeddedJsfxComponent(SX_Instance* instance, JsfxHelper& 
             if (!nativeCreated && isVisible())
             {
                 createNative();
+#ifndef __linux__
                 if (!nativeCreated)
                 {
-                    // If immediate creation failed, start timer
+                    // If immediate creation failed, start timer (Windows/Mac only)
                     createRetryCount = 0;
                     startTimer(50);
                     DBG("EmbeddedJsfxComponent: Constructor - starting timer to wait for parent window");
                 }
+#endif
             }
         }
     );
@@ -37,6 +75,10 @@ EmbeddedJsfxComponent::~EmbeddedJsfxComponent()
     destroyNative();
 }
 
+
+
+
+
 void EmbeddedJsfxComponent::createNative()
 {
     if (nativeCreated || nativeUIHandle || !sxInstance)
@@ -46,7 +88,13 @@ void EmbeddedJsfxComponent::createNative()
         return;
     }
 
-    // Get the native window handle of this component's top-level window
+#ifdef __linux__
+    // On Linux, create as standalone floating window (no parent)
+    // We'll handle the parent message issue in destroyNative
+    DBG("EmbeddedJsfxComponent: Creating JSFX UI as floating window on Linux (no parent)");
+    nativeUIHandle = jsfxHelper.createJsfxUI(sxInstance, nullptr);
+#else
+    // On Windows/Mac, get the native window handle and embed properly
     void* parentHandle = getWindowHandle();
 
     if (!parentHandle)
@@ -58,6 +106,7 @@ void EmbeddedJsfxComponent::createNative()
     DBG("EmbeddedJsfxComponent: Creating JSFX UI with parent HWND: "
         + juce::String::toHexString((juce::pointer_sized_int)parentHandle));
     nativeUIHandle = jsfxHelper.createJsfxUI(sxInstance, parentHandle);
+#endif
     if (!nativeUIHandle)
     {
         DBG("EmbeddedJsfxComponent: Failed to create JSFX UI");
@@ -96,8 +145,34 @@ void EmbeddedJsfxComponent::createNative()
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
+#elif defined(__linux__)
+    // Linux: standalone floating window with decorations
+    HWND hwnd = static_cast<HWND>(nativeUIHandle);
+    GetClientRect(hwnd, &r);
+    jsfxWindowWidth = r.right - r.left;
+    jsfxWindowHeight = r.bottom - r.top;
+
+    DBG("EmbeddedJsfxComponent: JSFX UI initial size: "
+        + juce::String(jsfxWindowWidth)
+        + "x"
+        + juce::String(jsfxWindowHeight));
+
+    // Notify parent about the native UI size
+    if (onNativeCreated)
+        onNativeCreated(jsfxWindowWidth, jsfxWindowHeight);
+
+    // Subclass the window to prevent crash during WM_DESTROY
+    g_originalJsfxProc = (WNDPROC)GetWindowLongPtr(hwnd, GWLP_WNDPROC);
+    SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)SafeJsfxWindowProc);
+    
+    // Show the window explicitly - make sure it's not hidden
+    SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    ShowWindow(hwnd, SW_SHOW);
+    UpdateWindow(hwnd);
+    
+    DBG("EmbeddedJsfxComponent: Linux JSFX window subclassed and shown");
 #else
-    // SWELL: child dimensions (macOS/Linux)
+    // macOS: embedded in parent window
     HWND hwnd = static_cast<HWND>(nativeUIHandle);
     GetClientRect(hwnd, &r);
     jsfxWindowWidth = r.right - r.left;
@@ -113,6 +188,7 @@ void EmbeddedJsfxComponent::createNative()
         onNativeCreated(jsfxWindowWidth, jsfxWindowHeight);
 
     ShowWindow(hwnd, SW_SHOW);
+    UpdateWindow(hwnd);
 #endif
 }
 
@@ -125,15 +201,9 @@ void EmbeddedJsfxComponent::destroyNative()
 
     if (nativeUIHandle)
     {
-        // Hide the window before destroying
-#ifdef _WIN32
         HWND hwnd = static_cast<HWND>(nativeUIHandle);
         ShowWindow(hwnd, SW_HIDE);
-#else
-        HWND hwnd = static_cast<HWND>(nativeUIHandle);
-        ShowWindow(hwnd, SW_HIDE);
-#endif
-
+        
         jsfxHelper.destroyJsfxUI(sxInstance, nativeUIHandle);
         nativeUIHandle = nullptr;
     }
@@ -144,16 +214,18 @@ void EmbeddedJsfxComponent::destroyNative()
 
 void EmbeddedJsfxComponent::resized()
 {
+#ifndef __linux__
+    // On Windows/Mac, reposition the embedded window
+    // On Linux, window is independent floating window - no resizing needed
     if (nativeCreated && nativeUIHandle)
     {
         auto bounds = getLocalBounds();
         auto parentComp = getParentComponent();
+        
         if (parentComp)
         {
-            // Get position relative to parent window
             auto topLeft = parentComp->getLocalPoint(this, bounds.getTopLeft());
-
-#ifdef _WIN32
+            
             HWND hwnd = static_cast<HWND>(nativeUIHandle);
             SetWindowPos(
                 hwnd,
@@ -164,29 +236,9 @@ void EmbeddedJsfxComponent::resized()
                 bounds.getHeight(),
                 SWP_NOZORDER
             );
-            DBG("EmbeddedJsfxComponent: Resized to "
-                + juce::String(bounds.getWidth())
-                + "x"
-                + juce::String(bounds.getHeight())
-                + " at ("
-                + juce::String(topLeft.getX())
-                + ","
-                + juce::String(topLeft.getY())
-                + ")");
-#else
-            HWND hwnd = static_cast<HWND>(nativeUIHandle);
-            SetWindowPos(
-                hwnd,
-                NULL,
-                topLeft.getX(),
-                topLeft.getY(),
-                bounds.getWidth(),
-                bounds.getHeight(),
-                SWP_NOZORDER
-            );
-#endif
         }
     }
+#endif
 }
 
 void EmbeddedJsfxComponent::paint(juce::Graphics& g)
@@ -199,46 +251,40 @@ void EmbeddedJsfxComponent::visibilityChanged()
 {
     if (isVisible() && !nativeCreated)
     {
-        // Start a timer to retry creation until HWND is available
+#ifndef __linux__
+        // Start a timer to retry creation until HWND is available (Windows/Mac only)
         createRetryCount = 0;
-        startTimer(50); // Check every 50ms
+        startTimer(50);
         DBG("EmbeddedJsfxComponent: visibilityChanged - starting timer to wait for native peer");
+#endif
     }
     else if (!isVisible() && nativeCreated && nativeUIHandle)
     {
         // Hide the native JSFX window
         DBG("EmbeddedJsfxComponent: visibilityChanged - hiding native JSFX window");
-#ifdef _WIN32
         HWND hwnd = static_cast<HWND>(nativeUIHandle);
         ShowWindow(hwnd, SW_HIDE);
-#else
-        HWND hwnd = static_cast<HWND>(nativeUIHandle);
-        ShowWindow(hwnd, SW_HIDE);
-#endif
     }
     else if (isVisible() && nativeCreated && nativeUIHandle)
     {
         // Show the native JSFX window again
         DBG("EmbeddedJsfxComponent: visibilityChanged - showing native JSFX window");
-#ifdef _WIN32
         HWND hwnd = static_cast<HWND>(nativeUIHandle);
         ShowWindow(hwnd, SW_SHOW);
-#else
-        HWND hwnd = static_cast<HWND>(nativeUIHandle);
-        ShowWindow(hwnd, SW_SHOW);
-#endif
     }
 }
 
 void EmbeddedJsfxComponent::timerCallback()
 {
+    // Only used on Windows/Mac for delayed window creation
     if (!isVisible() || nativeCreated)
     {
         stopTimer();
         return;
     }
 
-    // Check if parent window handle is now available
+#ifndef __linux__
+    // Check if parent window handle is now available (Windows/Mac only)
     void* parentHandle = getWindowHandle();
     if (parentHandle != nullptr)
     {
@@ -276,4 +322,5 @@ void EmbeddedJsfxComponent::timerCallback()
                 + ")");
         }
     }
+#endif
 }

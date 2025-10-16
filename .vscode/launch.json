@@ -39,7 +39,7 @@
             "name": "(gdb) Debug Standalone - Linux",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/juceSonic_artefacts/Standalone/juceSonic",
+            "program": "${workspaceFolder}/build/juceSonic_artefacts/Debug/Standalone/juceSonic",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

@@ -5,9 +5,13 @@
 struct SX_Instance;
 class JsfxHelper;
 
-// Cross-platform embedded JSFX UI host. Uses juce::HWNDComponent on Windows
-// and juce::NSViewComponent on macOS to host the native JSFX dialog inside
-// a JUCE component.
+/**
+ * Cross-platform JSFX UI host component.
+ * 
+ * Platform-specific behavior:
+ * - Windows/Mac: Embeds JSFX window using JUCE's native window handle
+ * - Linux: Creates independent floating window (SWELL/GTK limitation)
+ */
 class EmbeddedJsfxComponent
     : public juce::Component
     , private juce::Timer

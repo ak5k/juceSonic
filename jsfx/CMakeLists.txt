@@ -243,27 +243,6 @@ if(EXISTS "${SLIDER_CONTROL_FILE}")
     endif()
 endif()
 
-# Patch wndsize.cpp to not assert when dialog items don't exist
-# On Mac/SWELL, some dialog items may not be created the same way as Windows
-set(WNDSIZE_FILE "${jsfx_SOURCE_DIR}/WDL/wingui/wndsize.cpp")
-if(EXISTS "${WNDSIZE_FILE}")
-    file(READ "${WNDSIZE_FILE}" WNDSIZE_CONTENT)
-    # Check if already patched
-    string(FIND "${WNDSIZE_CONTENT}" "// Tolerate missing dialog items on SWELL" WNDSIZE_PATCH_FOUND)
-    if(WNDSIZE_PATCH_FOUND EQUAL -1)
-        # Replace the init_item function to not assert when GetDlgItem returns NULL
-        # This is necessary because on Mac/SWELL, dialog items may not exist or be created differently
-        string(REPLACE 
-            "void WDL_WndSizer::init_item(int dlg_id, float left_scale, float top_scale, float right_scale, float bottom_scale, RECT *initr)\n{\n  if (WDL_NORMALLY(m_hwnd))\n  {\n    HWND h = GetDlgItem(m_hwnd, dlg_id);\n    if (WDL_NORMALLY(h))\n      init_itemhwnd(h, left_scale, top_scale, right_scale, bottom_scale, initr);\n  }\n}"
-            "void WDL_WndSizer::init_item(int dlg_id, float left_scale, float top_scale, float right_scale, float bottom_scale, RECT *initr)\n{\n  // Tolerate missing dialog items on SWELL (Mac/Linux) where items may not exist\n  if (m_hwnd)\n  {\n    HWND h = GetDlgItem(m_hwnd, dlg_id);\n    if (h)\n      init_itemhwnd(h, left_scale, top_scale, right_scale, bottom_scale, initr);\n  }\n}"
-            WNDSIZE_CONTENT "${WNDSIZE_CONTENT}")
-        
-        file(WRITE "${WNDSIZE_FILE}" "${WNDSIZE_CONTENT}")
-        message(STATUS "Applied WDL_NORMALLY assertion fix to wndsize.cpp")
-    else()
-        message(STATUS "wndsize.cpp already patched, skipping")
-    endif()
-endif()
 
 # Create JSFX as a static library (not INTERFACE) to encapsulate all internal details
 add_library(${PROJECT_NAME} STATIC)

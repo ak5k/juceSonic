@@ -286,13 +286,13 @@ void JsfxHelper::registerJsfxWindowClasses()
     curses_registerChildClass(g_hInst);
 #else
     // On non-Windows platforms with SWELL, custom control registration is handled via
-    // SWELL_RegisterCustomControlCreator
-    // Register the curses control creator with SWELL so it can create WDLCursesWindow controls
-    SWELL_RegisterCustomControlCreator(curses_ControlCreator);
-    JsfxLogger::debug("JsfxHelper", "Registered curses control creator with SWELL");
+    // SWELL_RegisterCustomControlCreator in sx_provideAPIFunctionGetter
+    // JSFX will call SWELL_RegisterCustomControlCreator(curses_ControlCreator) itself
+    // when it calls our getHostAPIFunction with "Mac_CustomControlCreator"
+    JsfxLogger::debug("JsfxHelper", "SWELL control creator will be registered by JSFX via API getter");
 #endif
 
-    JsfxLogger::debug("JsfxHelper", "Window classes registered (including WDL curses)");
+    JsfxLogger::debug("JsfxHelper", "Window classes registered");
 }
 
 void* JsfxHelper::createJsfxUI(SX_Instance* instance, void* parentWindow)
@@ -449,6 +449,16 @@ void* JsfxHelper::getHostAPIFunction(const char* functionName)
 
     if (strcmp(functionName, "fxGetSetPinmapperFlags") == 0)
         return (void*)&hostGetSetPinmapperFlags;
+
+#ifndef _WIN32
+    // On Mac/Linux with SWELL, JSFX requests Mac_CustomControlCreator
+    // We provide the curses_ControlCreator instead (already declared as extern)
+    if (strcmp(functionName, "Mac_CustomControlCreator") == 0)
+    {
+        extern HWND curses_ControlCreator(HWND, const char*, int, const char*, int, int, int, int, int);
+        return (void*)curses_ControlCreator;
+    }
+#endif
 
     // Preset support disabled - was causing UI freeze issues
     // if (strcmp(functionName, "fxLoadReaperPreset") == 0)
