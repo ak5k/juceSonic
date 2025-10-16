@@ -19,10 +19,108 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(unloadButton);
     unloadButton.onClick = [this]() { unloadJSFXFile(); };
 
+    addAndMakeVisible(editButton);
+    editButton.setEnabled(false); // Disabled until JSFX is loaded
+    editButton.onClick = [this]()
+    {
+        auto* instance = processorRef.getSXInstancePtr();
+        if (!instance)
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                "No JSFX Loaded",
+                "Please load a JSFX file first before editing."
+            );
+            return;
+        }
+
+        // Create editor window if needed
+        if (!jsfxEditorWindow)
+            jsfxEditorWindow = std::make_unique<JsfxEditorWindow>();
+
+        // Toggle: if already open, close it; otherwise open it
+        if (jsfxEditorWindow->isOpen())
+        {
+            jsfxEditorWindow->close();
+            editButton.setButtonText("Edit");
+        }
+        else
+        {
+            jsfxEditorWindow->open(instance);
+            editButton.setButtonText("Close Editor");
+        }
+    };
+
     addAndMakeVisible(uiButton);
     uiButton.onClick = [this]()
     {
-        // Toggle between JUCE controls and embedded JSFX UI
+#ifdef __linux__
+        // Linux: Toggle between JUCE controls and LICE-rendered JSFX UI
+        if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
+        {
+            // Hide LICE renderer, show parameters
+            jsfxLiceRenderer->setVisible(false);
+            nativeWindowButton.setVisible(false);
+            viewport.setVisible(true);
+            uiButton.setButtonText("Show UI");
+
+            // Make resizable only vertically for JUCE controls
+            setResizeLimits(700, 170, 700, 1080);
+
+            // Resize to fit parameter sliders
+            int numParams = processorRef.getNumActiveParameters();
+            int sliderHeight = 60;
+            int totalHeight = 40 + 30 + (numParams * sliderHeight) + 20;
+            totalHeight = juce::jlimit(170, 800, totalHeight);
+            int totalWidth = 700;
+
+            setSize(totalWidth, totalHeight);
+            resized();
+            return;
+        }
+
+        // Create LICE renderer if needed
+        if (!jsfxLiceRenderer)
+        {
+            auto* sx = processorRef.getSXInstancePtr();
+            if (!sx)
+            {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "No JSFX Loaded",
+                    "Please load a JSFX file first before opening the UI."
+                );
+                return;
+            }
+
+            jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
+            addAndMakeVisible(*jsfxLiceRenderer);
+
+            // Get recommended size from JSFX
+            auto recommended = jsfxLiceRenderer->getRecommendedBounds();
+            int jsfxWidth = recommended.getWidth();
+            int jsfxHeight = recommended.getHeight();
+
+            // Resize editor to match
+            int totalHeight = 40 + 30 + jsfxHeight;
+            int totalWidth = juce::jmax(700, jsfxWidth);
+            totalHeight = juce::jlimit(170, 1080, totalHeight);
+            totalWidth = juce::jlimit(600, 1920, totalWidth);
+
+            setSize(totalWidth, totalHeight);
+            // Make fully resizable when showing LICE renderer
+            setResizeLimits(400, 300, 1920, 1080);
+        }
+
+        viewport.setVisible(false);
+        jsfxLiceRenderer->setVisible(true);
+        nativeWindowButton.setVisible(true);
+        uiButton.setButtonText("Hide UI");
+        // Make fully resizable when showing LICE renderer
+        setResizeLimits(400, 300, 1920, 1080);
+        resized();
+#else
+        // Windows/Mac: Toggle between JUCE controls and embedded JSFX UI
         if (embeddedJsfx && embeddedJsfx->isVisible())
         {
             // Currently showing embedded JSFX - hide it and show parameters
@@ -119,10 +217,38 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
             resized(); // Trigger layout
         }
+#endif
     };
 
     addAndMakeVisible(ioMatrixButton);
     ioMatrixButton.onClick = [this]() { toggleIOMatrix(); };
+
+#ifdef __linux__
+    // Linux: Add button to open native JSFX window
+    addAndMakeVisible(nativeWindowButton);
+    nativeWindowButton.setVisible(false); // Hidden until LICE renderer is showing
+    nativeWindowButton.onClick = [this]()
+    {
+        auto* sx = processorRef.getSXInstancePtr();
+        if (!sx)
+            return;
+
+        if (jsfxNativeWindow && jsfxNativeWindow->isNativeCreated())
+        {
+            // Toggle visibility
+            bool currentlyVisible = jsfxNativeWindow->isVisible();
+            jsfxNativeWindow->setVisible(!currentlyVisible);
+            nativeWindowButton.setButtonText(currentlyVisible ? "Open Native UI" : "Close Native UI");
+        }
+        else
+        {
+            // Create native window
+            jsfxNativeWindow = std::make_unique<EmbeddedJsfxComponent>(sx, processorRef);
+            jsfxNativeWindow->createNative();
+            nativeWindowButton.setButtonText("Close Native UI");
+        }
+    };
+#endif
 
     // Wet amount slider
     addAndMakeVisible(wetLabel);
@@ -159,6 +285,10 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     rebuildParameterSliders();
 
+    // If JSFX is already loaded at startup, enable the Edit button
+    if (processorRef.getSXInstancePtr() != nullptr)
+        editButton.setEnabled(true);
+
     // If we should be showing JSFX UI and there's a JSFX loaded, show it
     if (showingJsfxUI && processorRef.getSXInstancePtr() != nullptr)
     {
@@ -174,7 +304,13 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 {
     // Save editor state to processor
     auto& state = processorRef.getAPVTS().state;
+
+#ifdef __linux__
+    state.setProperty("editorShowingJsfxUI", jsfxLiceRenderer && jsfxLiceRenderer->isVisible(), nullptr);
+#else
     state.setProperty("editorShowingJsfxUI", embeddedJsfx && embeddedJsfx->isVisible(), nullptr);
+#endif
+
     state.setProperty("editorWidth", getWidth(), nullptr);
     state.setProperty("editorHeight", getHeight(), nullptr);
 
@@ -187,7 +323,28 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 
 void AudioPluginAudioProcessorEditor::destroyJsfxUI()
 {
-    // Cleanup embedded JSFX component if needed
+    // Close the editor window if it's open
+    if (jsfxEditorWindow)
+        jsfxEditorWindow->close();
+
+#ifdef __linux__
+    // Linux: Cleanup LICE renderer and optional native window
+    if (jsfxLiceRenderer)
+    {
+        DBG("PluginEditor: Destroying JSFX LICE renderer");
+        jsfxLiceRenderer->setVisible(false);
+        jsfxLiceRenderer.reset();
+    }
+
+    if (jsfxNativeWindow)
+    {
+        DBG("PluginEditor: Destroying JSFX native window");
+        jsfxNativeWindow->setVisible(false);
+        jsfxNativeWindow->destroyNative();
+        jsfxNativeWindow.reset();
+    }
+#else
+    // Windows/Mac: Cleanup embedded JSFX component
     if (embeddedJsfx)
     {
         DBG("PluginEditor: Destroying embedded JSFX UI");
@@ -195,6 +352,7 @@ void AudioPluginAudioProcessorEditor::destroyJsfxUI()
         embeddedJsfx->destroyNative(); // Properly destroy the native JSFX window first
         embeddedJsfx.reset();
     }
+#endif
 }
 
 void AudioPluginAudioProcessorEditor::timerCallback()
@@ -215,6 +373,36 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     // Update wet slider if it changed elsewhere
     if (std::abs(wetSlider.getValue() - processorRef.getWetAmount()) > 0.001)
         wetSlider.setValue(processorRef.getWetAmount(), juce::dontSendNotification);
+
+    // Sync Edit button text with editor window state
+    if (jsfxEditorWindow)
+    {
+        if (jsfxEditorWindow->isOpen())
+        {
+            if (editButton.getButtonText() != "Close Editor")
+                editButton.setButtonText("Close Editor");
+        }
+        else
+        {
+            if (editButton.getButtonText() != "Edit")
+                editButton.setButtonText("Edit");
+        }
+    }
+
+    // Sync I/O Matrix button text with window state
+    if (ioMatrixWindow)
+    {
+        if (ioMatrixWindow->isVisible())
+        {
+            if (ioMatrixButton.getButtonText() != "Close I/O Matrix")
+                ioMatrixButton.setButtonText("Close I/O Matrix");
+        }
+        else
+        {
+            if (ioMatrixButton.getButtonText() != "I/O Matrix")
+                ioMatrixButton.setButtonText("I/O Matrix");
+        }
+    }
 }
 
 //==============================================================================
@@ -233,9 +421,17 @@ void AudioPluginAudioProcessorEditor::resized()
     buttonArea.removeFromLeft(5);
     unloadButton.setBounds(buttonArea.removeFromLeft(100));
     buttonArea.removeFromLeft(5);
+    editButton.setBounds(buttonArea.removeFromLeft(100));
+    buttonArea.removeFromLeft(5);
     uiButton.setBounds(buttonArea.removeFromLeft(100));
     buttonArea.removeFromLeft(5);
     ioMatrixButton.setBounds(buttonArea.removeFromLeft(100));
+
+#ifdef __linux__
+    buttonArea.removeFromLeft(5);
+    nativeWindowButton.setBounds(buttonArea.removeFromLeft(120));
+#endif
+
     buttonArea.removeFromLeft(10);
     wetLabel.setBounds(buttonArea.removeFromLeft(50));
     buttonArea.removeFromLeft(5);
@@ -243,10 +439,16 @@ void AudioPluginAudioProcessorEditor::resized()
 
     statusLabel.setBounds(bounds.removeFromTop(30));
 
-    // Give remaining space to both components - visibility controls which shows
+    // Give remaining space to components - visibility controls which shows
     viewport.setBounds(bounds);
+
+#ifdef __linux__
+    if (jsfxLiceRenderer)
+        jsfxLiceRenderer->setBounds(bounds);
+#else
     if (embeddedJsfx)
         embeddedJsfx->setBounds(bounds);
+#endif
 }
 
 void AudioPluginAudioProcessorEditor::loadJSFXFile()
@@ -270,10 +472,32 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                     rebuildParameterSliders();
                     JsfxLogger::info("Editor", "JSFX loaded successfully");
 
-                    // Automatically show the embedded JSFX UI
+                    // Automatically show the JSFX UI if it has @gfx section
                     auto* sx = processorRef.getSXInstancePtr();
-                    if (sx)
+                    if (sx && sx->gfx_hasCode())
                     {
+#ifdef __linux__
+                        // On Linux, use LICE rendering component
+                        jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
+                        addAndMakeVisible(*jsfxLiceRenderer);
+                        viewport.setVisible(false);
+                        nativeWindowButton.setVisible(true);
+                        uiButton.setButtonText("Hide UI");
+                        uiButton.setEnabled(true);   // Enable UI button for toggling
+                        editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
+
+                        // Get recommended size from JSFX
+                        auto bounds = jsfxLiceRenderer->getRecommendedBounds();
+                        int totalHeight = 40 + 30 + bounds.getHeight();
+                        int totalWidth = juce::jmax(700, bounds.getWidth());
+                        totalHeight = juce::jlimit(300, 1080, totalHeight);
+                        totalWidth = juce::jlimit(400, 1920, totalWidth);
+
+                        // Make fully resizable
+                        setResizeLimits(400, 300, 1920, 1080);
+                        setSize(totalWidth, totalHeight);
+                        resized();
+#else
                         embeddedJsfx = std::make_unique<EmbeddedJsfxComponent>(sx, processorRef);
 
                         // Resize editor to match JSFX UI size when it's created
@@ -297,6 +521,28 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                         addAndMakeVisible(*embeddedJsfx);
                         viewport.setVisible(false);
                         uiButton.setButtonText("Hide UI");
+                        uiButton.setEnabled(true);   // Enable UI button for toggling
+                        editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
+                        resized();
+#endif
+                    }
+                    else
+                    {
+                        // No @gfx section, show JUCE parameter controls
+                        viewport.setVisible(true);
+                        uiButton.setButtonText("Show UI");
+                        uiButton.setEnabled(false);  // Disable UI button if no @gfx
+                        editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
+
+                        // Make resizable only vertically for JUCE controls
+                        setResizeLimits(700, 170, 700, 1080);
+
+                        // Resize to fit parameters
+                        int numParams = processorRef.getNumActiveParameters();
+                        int sliderHeight = 60;
+                        int totalHeight = 40 + 30 + (numParams * sliderHeight) + 20;
+                        totalHeight = juce::jlimit(170, 800, totalHeight);
+                        setSize(700, totalHeight);
                         resized();
                     }
                 }
@@ -340,9 +586,11 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
                 processorRef.unloadJSFX();
                 rebuildParameterSliders();
 
-                // Reset UI state - show parameters, update button
+                // Reset UI state - show parameters, update buttons
                 viewport.setVisible(true);
                 uiButton.setButtonText("Show UI");
+                uiButton.setEnabled(false);
+                editButton.setEnabled(false); // Disable Edit button when no JSFX loaded
                 resized();
             }
         }
@@ -363,12 +611,15 @@ void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
     }
 
     int totalHeight = numParams * 40;
-    parameterContainer.setSize(viewport.getMaximumVisibleWidth(), totalHeight);
+    // Use a fixed width that matches the editor width (700 pixels)
+    // This prevents the scrollbar from appearing due to width issues
+    const int fixedWidth = 680; // Leave some margin
+    parameterContainer.setSize(fixedWidth, totalHeight);
 
     int y = 0;
     for (auto* slider : parameterSliders)
     {
-        slider->setBounds(0, y, viewport.getMaximumVisibleWidth() - 20, 35);
+        slider->setBounds(0, y, fixedWidth, 35);
         y += 40;
     }
 
@@ -401,6 +652,7 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
     if (ioMatrixWindow && ioMatrixWindow->isVisible())
     {
         ioMatrixWindow->setVisible(false);
+        ioMatrixButton.setButtonText("I/O Matrix");
         return;
     }
 
@@ -509,6 +761,7 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
 
     ioMatrixWindow->setVisible(true);
     ioMatrixWindow->toFront(true);
+    ioMatrixButton.setButtonText("Close I/O Matrix");
 }
 
 // Windows-specific embedded UI helpers removed; using separate window instead

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "EmbeddedJsfxComponent.h"
+#include "JsfxEditorWindow.h"
+#include "JsfxLiceComponent.h"
 #include "PluginProcessor.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -205,6 +207,7 @@ private:
     juce::TextButton loadButton{"Load JSFX"};
     juce::TextButton unloadButton{"Unload"};
     juce::TextButton uiButton{"Show UI"};
+    juce::TextButton editButton{"Editor"};
     juce::TextButton ioMatrixButton{"I/O Matrix"};
     juce::Slider wetSlider;
     juce::Label wetLabel;
@@ -214,8 +217,20 @@ private:
 
     juce::OwnedArray<ParameterSlider> parameterSliders;
     std::unique_ptr<PersistentFileChooser> fileChooser;
+
+#ifdef __linux__
+    // Linux: Use LICE framebuffer rendering + optional native window
+    std::unique_ptr<JsfxLiceComponent> jsfxLiceRenderer;
+    std::unique_ptr<EmbeddedJsfxComponent> jsfxNativeWindow; // Optional floating window
+    juce::TextButton nativeWindowButton{"Open Native UI"};
+#else
+    // Windows/Mac: Use embedded native window
     std::unique_ptr<EmbeddedJsfxComponent> embeddedJsfx;
+#endif
+
     std::unique_ptr<IOMatrixWindow> ioMatrixWindow;
+    std::unique_ptr<JsfxEditorWindow> jsfxEditorWindow;
+
     void destroyJsfxUI();
     void toggleIOMatrix();
 
