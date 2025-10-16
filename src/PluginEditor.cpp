@@ -209,9 +209,7 @@ void AudioPluginAudioProcessorEditor::timerCallback()
 
     juce::String statusText = "No JSFX loaded";
     if (!processorRef.getCurrentJSFXName().isEmpty())
-    {
         statusText = processorRef.getCurrentJSFXName();
-    }
     statusLabel.setText(statusText, juce::dontSendNotification);
 
     // Update wet slider if it changed elsewhere

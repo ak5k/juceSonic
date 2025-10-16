@@ -8,7 +8,11 @@
 #include <algorithm>
 
 // Forward declaration for JSFX MIDI function (not in jsfxAPI struct but exists in effectproc.cpp)
-extern void sx_set_midi_ctx(SX_Instance* sx, double (*midi_sendrecv)(void* ctx, int action, double* ts, double* msg1, double* msg23, double* midibus), void* midi_ctxdata);
+extern void sx_set_midi_ctx(
+    SX_Instance* sx,
+    double (*midi_sendrecv)(void* ctx, int action, double* ts, double* msg1, double* msg23, double* midibus),
+    void* midi_ctxdata
+);
 
 // Minimal slider automation callback used by JSFX UI when user tweaks sliders
 static void JsfxSliderAutomateThunk(void* ctx, int parmidx, bool done)
@@ -210,7 +214,7 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     // Clean up previous audio state
     bypassDelayLine.reset();
     tempBuffer.clear();
-    
+
     // Initialize audio state for new configuration
     lastSampleRate = sampleRate;
     tempBuffer.setSize(1, samplesPerBlock * getTotalNumInputChannels());
@@ -240,10 +244,10 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     {
         auto bus = getBusesLayout();
         int juceOutputs = bus.getMainOutputChannels();
-        
+
         DBG("=== ROUTING INITIALIZATION IN PREPARE ===");
         DBG("JUCE bus layout: " << bus.getMainInputChannels() << " inputs, " << juceOutputs << " outputs");
-        
+
         // Initialize all routing configs with diagonal routing
         for (int i = 0; i < 3; ++i)
         {
@@ -251,9 +255,12 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
             routingConfigs[i].numJsfxOutputs = juceOutputs;
             routingConfigs[i].setDiagonal();
         }
-        
-        DBG("Routing matrix initialized: " << routingConfigs[0].numJsfxOutputs 
-            << " JSFX outputs -> " << routingConfigs[0].numJuceOutputs << " JUCE outputs");
+
+        DBG("Routing matrix initialized: "
+            << routingConfigs[0].numJsfxOutputs
+            << " JSFX outputs -> "
+            << routingConfigs[0].numJuceOutputs
+            << " JUCE outputs");
     }
 }
 
@@ -323,7 +330,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     int numSamples = buffer.getNumSamples();
     int mainChannels = buffer.getNumChannels();
-    
+
     // DEBUG: Log channel configuration
     static bool loggedOnce = false;
     if (!loggedOnce && midiMessages.getNumEvents() > 0)
@@ -486,12 +493,16 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             if (absSample > maxSample)
                 maxSample = absSample;
         }
-        
+
         DBG("=== JSFX AUDIO OUTPUT CHECK ===");
         DBG("JSFX buffer size: " << (numSamples * totalJsfxChannels) << " samples");
         DBG("Peak level from JSFX: " << maxSample);
-        DBG("Routing config: " << routing.numJsfxOutputs << " JSFX outputs -> " << routing.numJuceOutputs << " JUCE outputs");
-        
+        DBG("Routing config: "
+            << routing.numJsfxOutputs
+            << " JSFX outputs -> "
+            << routing.numJuceOutputs
+            << " JUCE outputs");
+
         // Check routing matrix
         for (int jsfxOut = 0; jsfxOut < totalJsfxChannels && jsfxOut < routing.numJsfxOutputs; ++jsfxOut)
         {
@@ -509,7 +520,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 routingStr += "(none)";
             DBG(routingStr);
         }
-        
+
         audioCheckLogged = true;
     }
 
@@ -528,7 +539,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Transfer MIDI output from JSFX back to host
     midiMessages.clear();
     midiMessages.addEvents(currentMidiOutputBuffer, 0, numSamples, 0);
-    
+
     // Clear MIDI input pointer to prevent dangling reference
     currentMidiInputBuffer = nullptr;
 }
@@ -729,7 +740,7 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     // Register MIDI callback (not in jsfxAPI struct, call directly)
     sx_set_midi_ctx(sxInstance, &midiSendRecvCallback, this);
     DBG("MIDI context registered with JSFX instance: " << currentJSFXName);
-    
+
     // Check if this JSFX is marked as an instrument (receives MIDI)
     INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
     bool isInstrument = (flags & 1) != 0;
@@ -854,12 +865,18 @@ void AudioPluginAudioProcessor::updateParameterMapping()
 
 //==============================================================================
 // MIDI callback for JSFX - called during sx_processSamples
-double AudioPluginAudioProcessor::midiSendRecvCallback(void* ctx, int action, 
-                                                       double* ts, double* msg1, 
-                                                       double* msg23, double* midibus)
+double AudioPluginAudioProcessor::midiSendRecvCallback(
+    void* ctx,
+    int action,
+    double* ts,
+    double* msg1,
+    double* msg23,
+    double* midibus
+)
 {
     auto* processor = static_cast<AudioPluginAudioProcessor*>(ctx);
-    if (!processor) return 0.0;
+    if (!processor)
+        return 0.0;
 
     juce::ignoreUnused(midibus); // Not handling multi-bus MIDI yet
 
@@ -881,7 +898,7 @@ double AudioPluginAudioProcessor::midiSendRecvCallback(void* ctx, int action,
         // We provide a persistent buffer, JSFX writes to it, and we process it later.
         // But that's complex. Let me try a simpler approach: Pre-allocate buffer and process
         // it immediately after return using a flag.
-        
+
         if (!msg1 || !msg23 || !ts)
             return 0.0;
 
@@ -895,10 +912,10 @@ double AudioPluginAudioProcessor::midiSendRecvCallback(void* ctx, int action,
         // Allocate buffer for JSFX to write to
         processor->midiTempBuffer.resize(length);
         unsigned char* buffer = processor->midiTempBuffer.data();
-        
+
         // Return buffer pointer to JSFX
         *reinterpret_cast<unsigned char**>(msg23) = buffer;
-        
+
         // Return success - JSFX will now write to buffer
         // NOTE: After this returns, JSFX writes to buffer, but we can't process it here.
         // This is a fundamental design issue with the callback API.
@@ -911,43 +928,48 @@ double AudioPluginAudioProcessor::midiSendRecvCallback(void* ctx, int action,
         // Match VST2 implementation: Iterate through MIDI buffer sequentially
         // JSFX calls this repeatedly to get all MIDI events one by one
         // Returns timestamp in *ts, status in *msg1, data bytes in *msg23
-        
+
         if (!processor->currentMidiInputBuffer || !processor->midiInputIterator || !msg1 || !msg23 || !ts)
             return 0.0;
 
         // Get next MIDI message from iterator
         juce::MidiMessage message;
         int samplePosition;
-        
+
         if (processor->midiInputIterator->getNextEvent(message, samplePosition))
         {
             // Return MIDI data in JSFX format:
             // *ts = sample position (deltaFrames)
             // *msg1 = status byte
             // *msg23 = data bytes packed as (data1 + (data2 << 8))
-            
+
             *ts = static_cast<double>(samplePosition);
-            
+
             const uint8_t* rawData = message.getRawData();
             int numBytes = message.getRawDataSize();
-            
+
             if (numBytes >= 1)
             {
                 *msg1 = static_cast<double>(rawData[0]); // Status byte
-                
+
                 int data1 = (numBytes >= 2) ? rawData[1] : 0;
                 int data2 = (numBytes >= 3) ? rawData[2] : 0;
                 *msg23 = static_cast<double>(data1 + (data2 << 8));
-                
+
                 // DEBUG: Log MIDI data
-                DBG("MIDI callback: Sending to JSFX - sample=" << samplePosition 
-                    << " status=0x" << juce::String::toHexString((int)rawData[0])
-                    << " data1=" << data1 << " data2=" << data2);
-                
+                DBG("MIDI callback: Sending to JSFX - sample="
+                    << samplePosition
+                    << " status=0x"
+                    << juce::String::toHexString((int)rawData[0])
+                    << " data1="
+                    << data1
+                    << " data2="
+                    << data2);
+
                 return 1.0; // Success - event available
             }
         }
-        
+
         // No more MIDI events
         return 0.0;
     }
