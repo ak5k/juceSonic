@@ -7,54 +7,27 @@ class JsfxHelper;
 
 #ifdef _WIN32
 #include <windows.h>
+#endif
 
-// On Windows, use a DocumentWindow to host the embedded JSFX UI
-class JsfxNativeWindow : public juce::DocumentWindow
-{
-public:
-    JsfxNativeWindow(SX_Instance* instance, const juce::String& title, JsfxHelper& helper);
-    ~JsfxNativeWindow() override;
-
-    void closeButtonPressed() override;
-    void setVisible(bool shouldBeVisible) override;
-
-    // Called by HostComponent when JSFX dialog size is determined
-    void resizeForDialog(int width, int height);
-
-    // Allow HostComponent access to the helper
-    JsfxHelper& jsfxHelper;
-
-    // Message handler for JSFX messages (WM_USER+1030 for I/O button)
-    // Works on all platforms via SWELL Win32 API emulation
-    static LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
-    // Callback for when I/O button is clicked
-    std::function<void()> onIOButtonClicked;
-
-    // I/O button handler (called from static windowProc)
-    void handleJsfxIORequest(SX_Instance* jsfxInstance, HWND jsfxDialog);
-
-private:
-    class HostComponent;
-    std::unique_ptr<HostComponent> host;
-    SX_Instance* sxInstance = nullptr;
-
-    // Store original window procedure for subclassing
-    WNDPROC originalWndProc = nullptr;
-
-    void setupWindowMessageHandler();
-    void removeWindowMessageHandler();
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxNativeWindow)
-};
-#else
-// On Linux/macOS, use SWELL Win32 API emulation
-// Forward declare HWND - actual definition comes from SWELL headers
+// Forward declare HWND for cross-platform compatibility
+#ifndef _WIN32
 struct HWND__;
 typedef HWND__* HWND;
+#endif
 
-// On Linux/macOS, simple wrapper that manages the SWELL HWND
-// SWELL creates its own top-level window using Win32 API emulation
+/**
+ * Cross-platform native JSFX UI window wrapper
+ *
+ * Creates a resizable native window that hosts the JSFX UI dialog:
+ * - Windows: Standalone Win32 window with WS_OVERLAPPEDWINDOW style
+ * - Linux/macOS: SWELL window (Win32 API emulation)
+ *
+ * Architecture:
+ * - Parent window: Resizable container with title bar and borders
+ * - Child dialog: JSFX UI created by sx_createUI()
+ * - WM_SIZE handler: Automatically resizes child to match parent
+ * - I/O button: Handled via WM_USER+1030 message
+ */
 class JsfxNativeWindow
 {
 public:
@@ -64,20 +37,19 @@ public:
     void setVisible(bool shouldBeVisible);
     void setAlwaysOnTop(bool shouldBeOnTop);
 
-    // Callback for when I/O button is clicked (cross-platform)
+    // Callback for I/O button click (optional - provides custom I/O matrix UI)
     std::function<void()> onIOButtonClicked;
 
-    // Allow access to helper for message handling
+    // Public access for message handling
     JsfxHelper& jsfxHelper;
+    void* nativeUIHandle = nullptr;     // HWND of JSFX child dialog
+    void* parentWindowHandle = nullptr; // HWND of parent window
 
-    // I/O button handler (called from static dialog proc)
+    // I/O button handler (called from window/dialog proc)
     void handleJsfxIORequest(SX_Instance* jsfxInstance, HWND jsfxDialog);
 
 private:
     SX_Instance* sxInstance = nullptr;
-    void* nativeUIHandle = nullptr;     // HWND of JSFX child dialog
-    void* parentWindowHandle = nullptr; // HWND of parent window
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxNativeWindow)
 };
-#endif

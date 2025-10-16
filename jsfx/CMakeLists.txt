@@ -267,7 +267,7 @@ target_sources(jsfx PRIVATE
     ${jsfx_SOURCE_DIR}/jsfx/sfxui.cpp
     ${jsfx_SOURCE_DIR}/jsfx/sfx_edit.cpp
 
-    # stub 
+    # stubs
     ${CMAKE_CURRENT_SOURCE_DIR}/jsfx_stubs.cpp
     
     # WDL GUI sources
