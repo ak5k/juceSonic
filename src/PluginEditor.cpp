@@ -1,8 +1,8 @@
 #include "PluginEditor.h"
 
+#include "EmbeddedJsfxComponent.h"
 #include "IOMatrixComponent.h"
 #include "JsfxLogger.h"
-#include "JsfxNativeWindow.h"
 #include "PersistentFileChooser.h"
 #include "PluginProcessor.h"
 
@@ -20,7 +20,106 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     unloadButton.onClick = [this]() { unloadJSFXFile(); };
 
     addAndMakeVisible(uiButton);
-    uiButton.onClick = [this]() { openJSFXUI(); };
+    uiButton.onClick = [this]()
+    {
+        // Toggle between JUCE controls and embedded JSFX UI
+        if (embeddedJsfx && embeddedJsfx->isVisible())
+        {
+            // Currently showing embedded JSFX - hide it and show parameters
+            embeddedJsfx->setVisible(false);
+            viewport.setVisible(true);
+            uiButton.setButtonText("Show UI");
+
+            // Make resizable only vertically for JUCE controls
+            setResizeLimits(700, 170, 700, 1080);
+
+            // Resize to fit parameter sliders - reset to default JUCE controls size
+            int numParams = processorRef.getNumActiveParameters();
+            int sliderHeight = 60;                                       // Each slider is about 60px tall
+            int totalHeight = 40 + 30 + (numParams * sliderHeight) + 20; // buttons + status + sliders + padding
+            totalHeight = juce::jlimit(170, 800, totalHeight);           // Reasonable limits
+            int totalWidth = 700; // Default width for JUCE controls
+
+            DBG("PluginEditor: Resizing for JUCE controls: "
+                + juce::String(totalWidth)
+                + "x"
+                + juce::String(totalHeight));
+            setSize(totalWidth, totalHeight);
+            resized();
+            return;
+        }
+
+        // If no embedded component yet, create and initialize
+        if (!embeddedJsfx)
+        {
+            auto* sx = processorRef.getSXInstancePtr();
+            if (!sx)
+            {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "No JSFX Loaded",
+                    "Please load a JSFX file first before opening the UI."
+                );
+                return;
+            }
+
+            embeddedJsfx = std::make_unique<EmbeddedJsfxComponent>(sx, processorRef);
+
+            // Resize editor to match JSFX UI size when it's created
+            embeddedJsfx->onNativeCreated = [this](int jsfxWidth, int jsfxHeight)
+            {
+                // Button bar (40) + status label (30) + JSFX UI height
+                int totalHeight = 40 + 30 + jsfxHeight;
+                int totalWidth = juce::jmax(700, jsfxWidth);
+
+                // Constrain to our resize limits
+                totalHeight = juce::jlimit(170, 1080, totalHeight);
+                totalWidth = juce::jlimit(600, 1920, totalWidth);
+
+                DBG("PluginEditor: Resizing to match JSFX UI: "
+                    + juce::String(totalWidth)
+                    + "x"
+                    + juce::String(totalHeight));
+                setSize(totalWidth, totalHeight);
+            };
+
+            // Make resizable in both dimensions for JSFX UI
+            setResizeLimits(600, 170, 1920, 1080);
+            
+            addAndMakeVisible(*embeddedJsfx);
+            viewport.setVisible(false);
+            uiButton.setButtonText("Hide UI");
+            resized(); // Trigger layout - native will be created via timer
+        }
+        else
+        {
+            // Show it again - resize to JSFX initial size
+            viewport.setVisible(false);
+            embeddedJsfx->setVisible(true);
+            uiButton.setButtonText("Hide UI");
+
+            // Make resizable in both dimensions for JSFX UI
+            setResizeLimits(600, 170, 1920, 1080);
+
+            // Resize to JSFX initial dimensions
+            if (embeddedJsfx->getJsfxWindowWidth() > 0 && embeddedJsfx->getJsfxWindowHeight() > 0)
+            {
+                int totalHeight = 40 + 30 + embeddedJsfx->getJsfxWindowHeight();
+                int totalWidth = juce::jmax(700, embeddedJsfx->getJsfxWindowWidth());
+
+                totalHeight = juce::jlimit(170, 1080, totalHeight);
+                totalWidth = juce::jlimit(600, 1920, totalWidth);
+
+                DBG("PluginEditor: Resizing to show JSFX UI: "
+                    + juce::String(totalWidth)
+                    + "x"
+                    + juce::String(totalHeight));
+                setSize(totalWidth, totalHeight);
+            }
+
+            resized(); // Trigger layout
+        }
+    };
 
     addAndMakeVisible(ioMatrixButton);
     ioMatrixButton.onClick = [this]() { toggleIOMatrix(); };
@@ -44,26 +143,57 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(viewport);
     viewport.setViewedComponent(&parameterContainer, false);
 
-    setSize(700, 500);
+    // Make the editor resizable with constraints
+    // Min height: 40px buttons + 30px status + 100px content = 170px
+    setResizable(true, true);
+    setResizeLimits(600, 170, 1920, 1080);
+
+    // Restore editor state from processor
+    auto& state = processorRef.getAPVTS().state;
+    bool showingJsfxUI = state.getProperty("editorShowingJsfxUI", true);
+    int editorWidth = state.getProperty("editorWidth", 700);
+    int editorHeight = state.getProperty("editorHeight", 500);
+
+    setSize(editorWidth, editorHeight);
 
     rebuildParameterSliders();
+
+    // If we should be showing JSFX UI and there's a JSFX loaded, show it
+    if (showingJsfxUI && processorRef.getSXInstancePtr() != nullptr)
+    {
+        // Trigger the UI button to show JSFX (will be created via timer)
+        uiButton.triggerClick();
+    }
+
     // 30fps = ~33ms interval (also pumps SWELL message loop on Linux)
     startTimer(33);
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 {
+    // Save editor state to processor
+    auto& state = processorRef.getAPVTS().state;
+    state.setProperty("editorShowingJsfxUI", embeddedJsfx && embeddedJsfx->isVisible(), nullptr);
+    state.setProperty("editorWidth", getWidth(), nullptr);
+    state.setProperty("editorHeight", getHeight(), nullptr);
+
     // Stop timer first to prevent callbacks during destruction
     stopTimer();
 
     // Ensure native JSFX UI is torn down before editor destruction
-    destroyJsfxUI();
+    destroyJsfxUI(); // This now properly destroys the native window too
 }
 
 void AudioPluginAudioProcessorEditor::destroyJsfxUI()
 {
-    if (jsfxWindow)
-        jsfxWindow.reset();
+    // Cleanup embedded JSFX component if needed
+    if (embeddedJsfx)
+    {
+        DBG("PluginEditor: Destroying embedded JSFX UI");
+        embeddedJsfx->setVisible(false);
+        embeddedJsfx->destroyNative(); // Properly destroy the native JSFX window first
+        embeddedJsfx.reset();
+    }
 }
 
 void AudioPluginAudioProcessorEditor::timerCallback()
@@ -117,8 +247,11 @@ void AudioPluginAudioProcessorEditor::resized()
     wetSlider.setBounds(buttonArea.removeFromLeft(150));
 
     statusLabel.setBounds(bounds.removeFromTop(30));
-    // Split remaining space: top half for JSFX UI (if any), bottom half for parameters
+
+    // Give remaining space to both components - visibility controls which shows
     viewport.setBounds(bounds);
+    if (embeddedJsfx)
+        embeddedJsfx->setBounds(bounds);
 }
 
 void AudioPluginAudioProcessorEditor::loadJSFXFile()
@@ -141,6 +274,36 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                 {
                     rebuildParameterSliders();
                     JsfxLogger::info("Editor", "JSFX loaded successfully");
+
+                    // Automatically show the embedded JSFX UI
+                    auto* sx = processorRef.getSXInstancePtr();
+                    if (sx)
+                    {
+                        embeddedJsfx = std::make_unique<EmbeddedJsfxComponent>(sx, processorRef);
+
+                        // Resize editor to match JSFX UI size when it's created
+                        embeddedJsfx->onNativeCreated = [this](int jsfxWidth, int jsfxHeight)
+                        {
+                            // Button bar (40) + status label (30) + JSFX UI height
+                            int totalHeight = 40 + 30 + jsfxHeight;
+                            int totalWidth = juce::jmax(700, jsfxWidth);
+
+                            // Constrain to our resize limits
+                            totalHeight = juce::jlimit(170, 1080, totalHeight);
+                            totalWidth = juce::jlimit(600, 1920, totalWidth);
+
+                            DBG("PluginEditor: Resizing to match JSFX UI: "
+                                + juce::String(totalWidth)
+                                + "x"
+                                + juce::String(totalHeight));
+                            setSize(totalWidth, totalHeight);
+                        };
+
+                        addAndMakeVisible(*embeddedJsfx);
+                        viewport.setVisible(false);
+                        uiButton.setButtonText("Hide UI");
+                        resized();
+                    }
                 }
                 else
                 {
@@ -181,6 +344,11 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
 
                 processorRef.unloadJSFX();
                 rebuildParameterSliders();
+
+                // Reset UI state - show parameters, update button
+                viewport.setVisible(true);
+                uiButton.setButtonText("Show UI");
+                resized();
             }
         }
     );
@@ -231,32 +399,6 @@ void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
 
         setSize(700, newHeight);
     }
-}
-
-void AudioPluginAudioProcessorEditor::openJSFXUI()
-{
-    auto* sxInstance = processorRef.getSXInstancePtr();
-    if (!sxInstance)
-    {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::MessageBoxIconType::WarningIcon,
-            "No JSFX Loaded",
-            "Please load a JSFX file first before opening the UI."
-        );
-        return;
-    }
-
-    // Open JSFX native UI in its own window (cross-platform via SWELL)
-    // Close any existing window
-    destroyJsfxUI();
-    auto* sx = processorRef.getSXInstancePtr();
-    jsfxWindow = std::make_unique<JsfxNativeWindow>(sx, processorRef.getCurrentJSFXName() + " - UI", processorRef);
-
-    // Connect I/O button to show I/O Matrix
-    jsfxWindow->onIOButtonClicked = [this]() { toggleIOMatrix(); };
-
-    jsfxWindow->setAlwaysOnTop(false);
-    jsfxWindow->setVisible(true);
 }
 
 void AudioPluginAudioProcessorEditor::toggleIOMatrix()

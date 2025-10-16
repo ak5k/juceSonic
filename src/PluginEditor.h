@@ -1,10 +1,10 @@
 #pragma once
 
+#include "EmbeddedJsfxComponent.h"
 #include "PluginProcessor.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
-class JsfxNativeWindow;
 class PersistentFileChooser;
 
 //==============================================================================
@@ -199,7 +199,6 @@ private:
     void loadJSFXFile();
     void unloadJSFXFile();
     void rebuildParameterSliders();
-    void openJSFXUI();
 
     AudioPluginAudioProcessor& processorRef;
 
@@ -215,7 +214,7 @@ private:
 
     juce::OwnedArray<ParameterSlider> parameterSliders;
     std::unique_ptr<PersistentFileChooser> fileChooser;
-    std::unique_ptr<JsfxNativeWindow> jsfxWindow;
+    std::unique_ptr<EmbeddedJsfxComponent> embeddedJsfx;
     std::unique_ptr<IOMatrixWindow> ioMatrixWindow;
     void destroyJsfxUI();
     void toggleIOMatrix();
