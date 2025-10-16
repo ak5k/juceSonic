@@ -7,7 +7,7 @@ class JsfxHelper;
 
 /**
  * Cross-platform JSFX UI host component.
- * 
+ *
  * Platform-specific behavior:
  * - Windows/Mac: Embeds JSFX window using JUCE's native window handle
  * - Linux: Creates independent floating window (SWELL/GTK limitation)

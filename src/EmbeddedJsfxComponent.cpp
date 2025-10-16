@@ -1,8 +1,8 @@
 /*
  * EmbeddedJsfxComponent - Platform-specific JSFX UI hosting
- * 
+ *
  * WINDOWS: JSFX UI is embedded as a child window using the JUCE window handle
- * MACOS:   JSFX UI is embedded as a child window using the JUCE window handle  
+ * MACOS:   JSFX UI is embedded as a child window using the JUCE window handle
  * LINUX:   JSFX UI opens as an independent floating window (SWELL limitation)
  *          - Cannot be embedded in GTK hierarchy
  *          - Window is subclassed to prevent crash during destruction
@@ -30,16 +30,14 @@ static LRESULT CALLBACK SafeJsfxWindowProc(HWND hwnd, UINT msg, WPARAM wParam, L
         // Prevent attempt to notify NULL parent
         return 0;
     }
-    
+
     if (g_originalJsfxProc)
         return CallWindowProc(g_originalJsfxProc, hwnd, msg, wParam, lParam);
-    
+
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 #endif
 #endif
-
-
 
 EmbeddedJsfxComponent::EmbeddedJsfxComponent(SX_Instance* instance, JsfxHelper& helper)
     : sxInstance(instance)
@@ -53,18 +51,16 @@ EmbeddedJsfxComponent::EmbeddedJsfxComponent(SX_Instance* instance, JsfxHelper& 
         [this]()
         {
             if (!nativeCreated && isVisible())
-            {
                 createNative();
 #ifndef __linux__
-                if (!nativeCreated)
-                {
-                    // If immediate creation failed, start timer (Windows/Mac only)
-                    createRetryCount = 0;
-                    startTimer(50);
-                    DBG("EmbeddedJsfxComponent: Constructor - starting timer to wait for parent window");
-                }
-#endif
+            if (!nativeCreated)
+            {
+                // If immediate creation failed, start timer (Windows/Mac only)
+                createRetryCount = 0;
+                startTimer(50);
+                DBG("EmbeddedJsfxComponent: Constructor - starting timer to wait for parent window");
             }
+#endif
         }
     );
 }
@@ -74,10 +70,6 @@ EmbeddedJsfxComponent::~EmbeddedJsfxComponent()
     stopTimer();
     destroyNative();
 }
-
-
-
-
 
 void EmbeddedJsfxComponent::createNative()
 {
@@ -164,12 +156,12 @@ void EmbeddedJsfxComponent::createNative()
     // Subclass the window to prevent crash during WM_DESTROY
     g_originalJsfxProc = (WNDPROC)GetWindowLongPtr(hwnd, GWLP_WNDPROC);
     SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)SafeJsfxWindowProc);
-    
+
     // Show the window explicitly - make sure it's not hidden
     SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
-    
+
     DBG("EmbeddedJsfxComponent: Linux JSFX window subclassed and shown");
 #else
     // macOS: embedded in parent window
@@ -203,7 +195,7 @@ void EmbeddedJsfxComponent::destroyNative()
     {
         HWND hwnd = static_cast<HWND>(nativeUIHandle);
         ShowWindow(hwnd, SW_HIDE);
-        
+
         jsfxHelper.destroyJsfxUI(sxInstance, nativeUIHandle);
         nativeUIHandle = nullptr;
     }
@@ -221,11 +213,11 @@ void EmbeddedJsfxComponent::resized()
     {
         auto bounds = getLocalBounds();
         auto parentComp = getParentComponent();
-        
+
         if (parentComp)
         {
             auto topLeft = parentComp->getLocalPoint(this, bounds.getTopLeft());
-            
+
             HWND hwnd = static_cast<HWND>(nativeUIHandle);
             SetWindowPos(
                 hwnd,
