@@ -38,7 +38,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
             int sliderHeight = 60;                                       // Each slider is about 60px tall
             int totalHeight = 40 + 30 + (numParams * sliderHeight) + 20; // buttons + status + sliders + padding
             totalHeight = juce::jlimit(170, 800, totalHeight);           // Reasonable limits
-            int totalWidth = 700; // Default width for JUCE controls
+            int totalWidth = 700;                                        // Default width for JUCE controls
 
             DBG("PluginEditor: Resizing for JUCE controls: "
                 + juce::String(totalWidth)
@@ -85,7 +85,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
             // Make resizable in both dimensions for JSFX UI
             setResizeLimits(600, 170, 1920, 1080);
-            
+
             addAndMakeVisible(*embeddedJsfx);
             viewport.setVisible(false);
             uiButton.setButtonText("Hide UI");
