@@ -4,7 +4,6 @@
 #include "JsfxLogger.h"
 #include "PersistentFileChooser.h"
 #include "PluginProcessor.h"
-#include "PresetParser.h"
 #include "ReaperPresetConverter.h"
 
 #include <memory>
