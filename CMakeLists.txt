@@ -216,9 +216,9 @@ add_subdirectory(jsfx)
 # On Windows, explicitly add JSFX resource file to the plugin targets
 # This ensures the dialog templates are compiled into the VST3/Standalone DLL
 if(WIN32)
-    # The jsfx source directory is in build/_deps after FetchContent
-    set(JSFX_RES_FILE "${CMAKE_CURRENT_BINARY_DIR}/_deps/jsfx-src/jsfx/res.rc")
-    set(JSFX_RES_INCLUDE "${CMAKE_CURRENT_BINARY_DIR}/_deps/jsfx-src/jsfx")
+    # The jsfx source directory is now a git submodule
+    set(JSFX_RES_FILE "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/jsfx/jsfx/res.rc")
+    set(JSFX_RES_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/jsfx/jsfx/jsfx")
     
     # Add to SharedCode library
     target_sources(${PROJECT_NAME}

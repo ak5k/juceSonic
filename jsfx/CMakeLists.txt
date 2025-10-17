@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.28)
 project(jsfx VERSION 0.1.0 LANGUAGES C CXX)
 
 # On macOS, build universal binaries (arm64 + x86_64)
@@ -7,21 +7,14 @@ if(APPLE)
     message(STATUS "Building universal binary for macOS (arm64 + x86_64)")
 endif()
 
-include(FetchContent)
+# Use JSFX from git submodule instead of FetchContent
+set(jsfx_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/jsfx")
+message(STATUS "JSFX source directory: ${jsfx_SOURCE_DIR}")
 
-# Fetch JSFX first, before any patches
-# The jsfx repo has no CMakeLists.txt, so MakeAvailable just fetches without adding subdirectory
-FetchContent_Declare(
-    jsfx
-    GIT_REPOSITORY https://github.com/justinfrankel/jsfx.git
-    GIT_TAG main
-    GIT_SHALLOW TRUE
-)
-
-# This will fetch the content and make jsfx_SOURCE_DIR available
-# Since there's no CMakeLists.txt in jsfx repo, it won't try to add_subdirectory
-FetchContent_MakeAvailable(jsfx)
-message(STATUS "JSFX source available at: ${jsfx_SOURCE_DIR}")
+# Check if submodule is initialized
+if(NOT EXISTS "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp")
+    message(FATAL_ERROR "JSFX submodule not initialized. Run: git submodule update --init --recursive")
+endif()
 
 # Patch effectproc.cpp to remove hardcoded "Effects" directory requirement
 # This allows loading JSFX files directly from their source location

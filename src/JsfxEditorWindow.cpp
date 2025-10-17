@@ -22,7 +22,7 @@ extern "C" INT_PTR _ZN11SX_Instance13_watchDlgProcEP6HWND__jml(HWND hwndDlg, UIN
 #else
 // Windows uses native CreateDialogParam
 #include <WDL/swell/swell.h>
-#include "../build/_deps/jsfx-src/jsfx/sfxui.h"
+#include "../jsfx/jsfx/jsfx/sfxui.h"
 
 #endif
 
