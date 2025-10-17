@@ -5,7 +5,7 @@
 /**
  * Abstract interface for converting preset files to/from ValueTree format.
  *
- * This is the Strategy pattern interface that allows LibraryManager to work
+ * This is the Strategy pattern interface that allows LibraryBrowser to work
  * with different preset formats without knowing their implementation details.
  *
  * Each concrete converter (ReaperPresetConverter, etc.) implements this interface
