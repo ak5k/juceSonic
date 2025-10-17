@@ -57,7 +57,24 @@ LibraryBrowser::LibraryBrowser()
     comboBox.setTextWhenNothingSelected("(No preset loaded)");
     comboBox.setTextWhenNoChoicesAvailable("No presets available");
     comboBox.setLookAndFeel(&lookAndFeel);
-    comboBox.onChange = [this]() { onPresetSelected(); };
+
+    // Enable text editing for search functionality
+    comboBox.setEditableText(true);
+
+    // onChange fires both when item selected AND when text changes
+    comboBox.onChange = [this]()
+    {
+        // If selected item index is valid, user selected from menu
+        if (comboBox.getSelectedItemIndex() >= 0)
+        {
+            onPresetSelected();
+        }
+        else
+        {
+            // User is typing - trigger search
+            onSearchTextChanged();
+        }
+    };
 
     mouseListener = std::make_unique<BrowserMouseListener>(this);
     comboBox.addMouseListener(mouseListener.get(), false);
@@ -293,4 +310,107 @@ void LibraryBrowser::resized()
 
     // ComboBox takes the rest
     comboBox.setBounds(area);
+}
+
+void LibraryBrowser::onSearchTextChanged()
+{
+    auto searchText = comboBox.getText();
+
+    // If search is empty, show all presets
+    if (searchText.isEmpty())
+    {
+        menuCacheValid = false;
+        buildHierarchicalMenu();
+        menuCacheValid = true;
+    }
+    else
+    {
+        // Build filtered menu (don't cache search results)
+        buildFilteredMenu(searchText);
+
+        // Show the filtered results immediately
+        comboBox.showPopup();
+    }
+}
+
+void LibraryBrowser::buildFilteredMenu(const juce::String& searchText)
+{
+    comboBox.clear();
+    presetIndices.clear();
+
+    if (!libraryManager)
+    {
+        DBG("LibraryBrowser::buildFilteredMenu - No library manager set");
+        return;
+    }
+
+    auto library = libraryManager->getLibrary(subLibraryName);
+    if (!library.isValid())
+    {
+        DBG("LibraryBrowser::buildFilteredMenu - Invalid library: " << subLibraryName);
+        return;
+    }
+
+    // Build popup menu with bank separators
+    juce::PopupMenu menu;
+    int menuItemId = 1;
+    auto lowerSearch = searchText.toLowerCase();
+
+    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    {
+        auto presetFile = library.getChild(fileIdx);
+
+        for (int bankIdx = 0; bankIdx < presetFile.getNumChildren(); ++bankIdx)
+        {
+            auto bank = presetFile.getChild(bankIdx);
+            auto bankNameVar = bank.getProperty("name");
+            juce::String bankName = bankNameVar.toString();
+
+            // First pass: check if this bank has any matching presets
+            bool bankHasMatches = false;
+            for (int presetIdx = 0; presetIdx < bank.getNumChildren(); ++presetIdx)
+            {
+                auto preset = bank.getChild(presetIdx);
+                auto presetNameVar = preset.getProperty("name");
+                juce::String presetName = presetNameVar.toString();
+
+                if (presetName.toLowerCase().contains(lowerSearch))
+                {
+                    bankHasMatches = true;
+                    break;
+                }
+            }
+
+            // If bank has matches, add section heading and presets
+            if (bankHasMatches)
+            {
+                // Add bank name as section header
+                juce::PopupMenu::Item header(bankName);
+                header.itemID = 0;
+                header.isSectionHeader = true;
+                menu.addItem(header);
+
+                for (int presetIdx = 0; presetIdx < bank.getNumChildren(); ++presetIdx)
+                {
+                    auto preset = bank.getChild(presetIdx);
+                    auto presetNameVar = preset.getProperty("name");
+                    juce::String presetName = presetNameVar.toString();
+
+                    // Case-insensitive substring match on preset name
+                    if (presetName.toLowerCase().contains(lowerSearch))
+                    {
+                        menu.addItem(menuItemId, presetName);
+                        presetIndices.push_back({fileIdx, bankIdx, presetIdx});
+                        menuItemId++;
+                    }
+                }
+            }
+        }
+    }
+
+    if (presetIndices.empty())
+        menu.addItem(-1, "(No matching presets)", false);
+
+    comboBox.getRootMenu()->clear();
+    *comboBox.getRootMenu() = menu;
 }

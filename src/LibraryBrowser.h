@@ -83,7 +83,9 @@ private:
     };
 
     void buildHierarchicalMenu();
+    void buildFilteredMenu(const juce::String& searchText);
     void onPresetSelected();
+    void onSearchTextChanged();
 
     // Lightweight index for preset lookup (avoids tree traversal on selection)
     struct PresetIndex
