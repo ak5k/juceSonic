@@ -2,3 +2,7 @@
 	path = JUCE
 	url = https://github.com/juce-framework/JUCE
 	ignore = dirty
+[submodule "jsfx/jsfx"]
+	path = jsfx/jsfx
+	url = https://github.com/justinfrankel/jsfx.git
+	ignore = dirty
