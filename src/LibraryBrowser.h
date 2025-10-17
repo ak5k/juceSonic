@@ -85,6 +85,19 @@ private:
     void buildHierarchicalMenu();
     void onPresetSelected();
 
+    // Lightweight index for preset lookup (avoids tree traversal on selection)
+    struct PresetIndex
+    {
+        int fileIdx;
+        int bankIdx;
+        int presetIdx;
+    };
+
+    std::vector<PresetIndex> presetIndices; // Maps menu item ID to tree location
+
+    // Cache validity flag - set to false when library data changes
+    bool menuCacheValid = false;
+
     LibraryManager* libraryManager = nullptr;
     juce::String subLibraryName = "Presets"; // Default sub-library name
     PresetSelectedCallback presetSelectedCallback;

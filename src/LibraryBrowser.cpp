@@ -27,9 +27,20 @@ void LibraryBrowser::BrowserMouseListener::mouseDown(const juce::MouseEvent& eve
 
     if (arrowBounds.contains(localPos))
     {
-        // User clicked arrow - show hierarchical menu
+        // User clicked arrow - show popup
+        // Only rebuild menu if cache is invalid (library changed)
+        if (!owner->menuCacheValid)
+        {
+            DBG("LibraryBrowser: Menu cache invalid, rebuilding...");
+            owner->buildHierarchicalMenu();
+            owner->menuCacheValid = true;
+        }
+        else
+        {
+            DBG("LibraryBrowser: Using cached menu");
+        }
+
         combo.hidePopup();
-        owner->buildHierarchicalMenu();
         combo.showPopup();
     }
 }
@@ -60,12 +71,14 @@ LibraryBrowser::~LibraryBrowser()
 void LibraryBrowser::setLibraryManager(LibraryManager* manager)
 {
     libraryManager = manager;
+    menuCacheValid = false; // Invalidate cache when manager changes
     updatePresetList();
 }
 
 void LibraryBrowser::setSubLibraryName(const juce::String& name)
 {
     subLibraryName = name;
+    menuCacheValid = false; // Invalidate cache when library name changes
     updatePresetList();
 }
 
@@ -81,14 +94,18 @@ void LibraryBrowser::setLabelText(const juce::String& text)
 
 void LibraryBrowser::updatePresetList()
 {
-    DBG("LibraryBrowser::updatePresetList called");
+    DBG("LibraryBrowser::updatePresetList called - invalidating cache");
+    menuCacheValid = false; // Invalidate cache when library data changes
     buildHierarchicalMenu();
+    menuCacheValid = true; // Mark as valid after rebuild
 }
 
 void LibraryBrowser::buildHierarchicalMenu()
 {
     DBG("LibraryBrowser::buildHierarchicalMenu - Starting");
     comboBox.clear();
+    presetIndices.clear();      // Clear the index
+    presetIndices.reserve(500); // Reserve space for typical preset count
 
     if (!libraryManager)
     {
@@ -98,6 +115,7 @@ void LibraryBrowser::buildHierarchicalMenu()
     }
 
     // Get the library we're browsing (e.g., "Presets")
+    // This returns a reference to the ValueTree, not a copy
     auto library = libraryManager->getLibrary(subLibraryName);
     if (!library.isValid())
     {
@@ -115,19 +133,27 @@ void LibraryBrowser::buildHierarchicalMenu()
     // We want to show: PresetBank as submenu > Presets
 
     // Iterate through PresetFiles
-    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    int numFiles = library.getNumChildren();
+    for (int fileIdx = 0; fileIdx < numFiles; ++fileIdx)
     {
         auto presetFile = library.getChild(fileIdx);
         DBG("  Processing PresetFile " << fileIdx << ", type: " << presetFile.getType().toString());
-        DBG("    Has " << presetFile.getNumChildren() << " children");
 
         // Iterate through banks in this file
-        for (int bankIdx = 0; bankIdx < presetFile.getNumChildren(); ++bankIdx)
+        int numBanks = presetFile.getNumChildren();
+        DBG("    Has " << numBanks << " banks");
+
+        for (int bankIdx = 0; bankIdx < numBanks; ++bankIdx)
         {
             auto bank = presetFile.getChild(bankIdx);
             DBG("    Processing Bank " << bankIdx << ", type: " << bank.getType().toString());
 
-            juce::String bankName = bank.getProperty("name").toString();
+            // Read bank name directly from property (no string copy until necessary)
+            auto bankNameVar = bank.getProperty("name");
+            if (bankNameVar.isVoid())
+                continue;
+
+            juce::String bankName = bankNameVar.toString();
             DBG("      Bank name: " << bankName);
 
             int numPresets = bank.getNumChildren();
@@ -140,29 +166,48 @@ void LibraryBrowser::buildHierarchicalMenu()
             {
                 // Single page - create submenu with all presets
                 juce::PopupMenu bankMenu;
-                for (int i = 0; i < numPresets; ++i)
+
+                for (int presetIdx = 0; presetIdx < numPresets; ++presetIdx)
                 {
-                    auto preset = bank.getChild(i);
-                    juce::String presetName = preset.getProperty("name").toString();
-                    bankMenu.addItem(itemId++, presetName);
+                    auto preset = bank.getChild(presetIdx);
+
+                    // Read preset name directly (no copy until menu creation)
+                    auto presetNameVar = preset.getProperty("name");
+                    if (presetNameVar.isVoid())
+                        continue;
+
+                    // Store index for fast lookup later
+                    presetIndices.push_back({fileIdx, bankIdx, presetIdx});
+
+                    bankMenu.addItem(itemId++, presetNameVar.toString());
                 }
+
                 comboBox.getRootMenu()->addSubMenu(bankName, bankMenu);
             }
             else
             {
                 // Multiple pages needed - split into chunks
                 int numPages = (numPresets + maxPresetsPerPage - 1) / maxPresetsPerPage;
+
                 for (int page = 0; page < numPages; ++page)
                 {
                     juce::PopupMenu pageMenu;
                     int startIdx = page * maxPresetsPerPage;
                     int endIdx = juce::jmin(startIdx + maxPresetsPerPage, numPresets);
 
-                    for (int i = startIdx; i < endIdx; ++i)
+                    for (int presetIdx = startIdx; presetIdx < endIdx; ++presetIdx)
                     {
-                        auto preset = bank.getChild(i);
-                        juce::String presetName = preset.getProperty("name").toString();
-                        pageMenu.addItem(itemId++, presetName);
+                        auto preset = bank.getChild(presetIdx);
+
+                        // Read preset name directly
+                        auto presetNameVar = preset.getProperty("name");
+                        if (presetNameVar.isVoid())
+                            continue;
+
+                        // Store index for fast lookup later
+                        presetIndices.push_back({fileIdx, bankIdx, presetIdx});
+
+                        pageMenu.addItem(itemId++, presetNameVar.toString());
                     }
 
                     juce::String pageName = bankName + " " + juce::String(page + 1);
@@ -172,7 +217,7 @@ void LibraryBrowser::buildHierarchicalMenu()
         }
     }
 
-    DBG("  Total items added: " << (itemId - 1));
+    DBG("  Total items indexed: " << presetIndices.size());
     DBG("  Enabling comboBox: " << (itemId > 1 ? "YES" : "NO"));
 
     comboBox.setEnabled(itemId > 1); // Enable if we have presets
@@ -184,41 +229,50 @@ void LibraryBrowser::onPresetSelected()
     if (selectedId == 0 || !libraryManager || !presetSelectedCallback)
         return;
 
-    // Find the preset by ID
-    // Structure: Library > PresetFile > PresetBank > Preset
+    // Convert menu item ID to array index (IDs start at 1)
+    int index = selectedId - 1;
+
+    // Bounds check
+    if (index < 0 || index >= static_cast<int>(presetIndices.size()))
+    {
+        DBG("LibraryBrowser::onPresetSelected - Invalid index: " << index);
+        return;
+    }
+
+    // Direct lookup using pre-built index (O(1) instead of O(n) tree traversal)
+    const auto& idx = presetIndices[index];
+
+    // Get the library (returns reference, no copy)
     auto library = libraryManager->getLibrary(subLibraryName);
     if (!library.isValid())
         return;
 
-    int currentId = 1;
+    // Navigate directly to the preset using cached indices
+    auto presetFile = library.getChild(idx.fileIdx);
+    if (!presetFile.isValid())
+        return;
 
-    // Iterate through PresetFiles
-    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    auto bank = presetFile.getChild(idx.bankIdx);
+    if (!bank.isValid())
+        return;
+
+    auto preset = bank.getChild(idx.presetIdx);
+    if (!preset.isValid())
+        return;
+
+    // Read properties directly (minimal string copies)
+    auto libraryNameVar = bank.getProperty("name");
+    auto presetNameVar = preset.getProperty("name");
+    auto presetDataVar = preset.getProperty("data");
+
+    if (libraryNameVar.isVoid() || presetNameVar.isVoid() || presetDataVar.isVoid())
     {
-        auto presetFile = library.getChild(fileIdx);
-
-        // Iterate through banks in this file
-        for (int bankIdx = 0; bankIdx < presetFile.getNumChildren(); ++bankIdx)
-        {
-            auto bank = presetFile.getChild(bankIdx);
-            juce::String libraryName = bank.getProperty("name").toString();
-
-            // Iterate through presets in this bank
-            for (int presetIdx = 0; presetIdx < bank.getNumChildren(); ++presetIdx)
-            {
-                if (currentId == selectedId)
-                {
-                    auto preset = bank.getChild(presetIdx);
-                    juce::String presetName = preset.getProperty("name").toString();
-                    juce::String presetData = preset.getProperty("data").toString();
-
-                    presetSelectedCallback(libraryName, presetName, presetData);
-                    return;
-                }
-                currentId++;
-            }
-        }
+        DBG("LibraryBrowser::onPresetSelected - Missing required properties");
+        return;
     }
+
+    // Only convert to strings when calling the callback
+    presetSelectedCallback(libraryNameVar.toString(), presetNameVar.toString(), presetDataVar.toString());
 }
 
 void LibraryBrowser::paint(juce::Graphics& g)
