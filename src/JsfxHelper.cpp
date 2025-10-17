@@ -460,12 +460,6 @@ void* JsfxHelper::getHostAPIFunction(const char* functionName)
     }
 #endif
 
-    // Preset support disabled - was causing UI freeze issues
-    // if (strcmp(functionName, "fxLoadReaperPreset") == 0)
-    //     return (void*)&hostLoadReaperPreset;
-    // if (strcmp(functionName, "fxGetReaperPresetNamesRaw") == 0)
-    //     return (void*)&hostGetReaperPresetNamesRaw;
-
     // Return nullptr for functions we don't implement
     return nullptr;
 }

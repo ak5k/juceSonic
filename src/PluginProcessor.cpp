@@ -328,33 +328,6 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     int numSamples = buffer.getNumSamples();
     int mainChannels = buffer.getNumChannels();
 
-    // DEBUG: Log channel configuration
-    static bool loggedOnce = false;
-    if (!loggedOnce && midiMessages.getNumEvents() > 0)
-    {
-        DBG("=== AUDIO ROUTING DEBUG ===");
-        DBG("Main buffer channels: " << mainChannels);
-        DBG("Input buses: " << getBusCount(true) << ", Output buses: " << getBusCount(false));
-        if (getBusCount(true) > 0)
-            DBG("Main input channels: " << getBus(true, 0)->getNumberOfChannels());
-        if (getBusCount(false) > 0)
-            DBG("Main output channels: " << getBus(false, 0)->getNumberOfChannels());
-        loggedOnce = true;
-    }
-
-    // DEBUG: Log incoming MIDI
-    if (midiMessages.getNumEvents() > 0)
-    {
-        DBG("=== processBlock: Received " << midiMessages.getNumEvents() << " MIDI events ===");
-        for (const auto metadata : midiMessages)
-        {
-            juce::String midiHex;
-            for (int i = 0; i < metadata.numBytes; ++i)
-                midiHex += juce::String::toHexString((int)metadata.data[i]) + " ";
-            DBG("  MIDI at sample " << metadata.samplePosition << ": " << midiHex);
-        }
-    }
-
     // Get sidechain buffer if available (bus index 1)
     // Check if sidechain bus exists first to avoid assertion
     bool hasSidechainBus = (getBusCount(true) > 1);
@@ -477,48 +450,6 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Apply OUTPUT routing matrix: JSFX channels -> JUCE outputs
     // Clear output buffer first
     buffer.clear();
-
-    // DEBUG: Check if JSFX produced audio
-    static bool audioCheckLogged = false;
-    if (!audioCheckLogged && midiMessages.getNumEvents() > 0)
-    {
-        float maxSample = 0.0f;
-        for (int i = 0; i < numSamples * totalJsfxChannels; ++i)
-        {
-            float absSample = std::abs(tempPtr[i]);
-            if (absSample > maxSample)
-                maxSample = absSample;
-        }
-
-        DBG("=== JSFX AUDIO OUTPUT CHECK ===");
-        DBG("JSFX buffer size: " << (numSamples * totalJsfxChannels) << " samples");
-        DBG("Peak level from JSFX: " << maxSample);
-        DBG("Routing config: "
-            << routing.numJsfxOutputs
-            << " JSFX outputs -> "
-            << routing.numJuceOutputs
-            << " JUCE outputs");
-
-        // Check routing matrix
-        for (int jsfxOut = 0; jsfxOut < totalJsfxChannels && jsfxOut < routing.numJsfxOutputs; ++jsfxOut)
-        {
-            juce::String routingStr = "  JSFX output " + juce::String(jsfxOut) + " routed to JUCE outputs: ";
-            bool anyRouted = false;
-            for (int juceOut = 0; juceOut < mainChannels && juceOut < routing.numJuceOutputs; ++juceOut)
-            {
-                if (routing.outputRouting[jsfxOut][juceOut])
-                {
-                    routingStr += juce::String(juceOut) + " ";
-                    anyRouted = true;
-                }
-            }
-            if (!anyRouted)
-                routingStr += "(none)";
-            DBG(routingStr);
-        }
-
-        audioCheckLogged = true;
-    }
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
@@ -1020,16 +951,6 @@ double AudioPluginAudioProcessor::midiSendRecvCallback(
                 int data1 = (numBytes >= 2) ? rawData[1] : 0;
                 int data2 = (numBytes >= 3) ? rawData[2] : 0;
                 *msg23 = static_cast<double>(data1 + (data2 << 8));
-
-                // DEBUG: Log MIDI data
-                DBG("MIDI callback: Sending to JSFX - sample="
-                    << samplePosition
-                    << " status=0x"
-                    << juce::String::toHexString((int)rawData[0])
-                    << " data1="
-                    << data1
-                    << " data2="
-                    << data2);
 
                 return 1.0; // Success - event available
             }

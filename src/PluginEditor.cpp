@@ -651,5 +651,3 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
     ioMatrixWindow->toFront(true);
     ioMatrixButton.setButtonText("Close I/O Matrix");
 }
-
-// Windows-specific embedded UI helpers removed; using separate window instead
