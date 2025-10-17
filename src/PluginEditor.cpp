@@ -1,7 +1,6 @@
 #include "PluginEditor.h"
 
 #include "IOMatrixComponent.h"
-#include "JsfxLogger.h"
 #include "PersistentFileChooser.h"
 #include "PluginConstants.h"
 #include "PluginProcessor.h"
@@ -653,7 +652,7 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
         {
             if (file != juce::File{})
             {
-                JsfxLogger::info("Editor", "User selected JSFX file: " + file.getFullPathName());
+                DBG("User selected JSFX file: " << file.getFullPathName());
 
                 // Save current JSFX state before unloading (internal "destructor")
                 saveJsfxState();
@@ -676,14 +675,14 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                     // Update preset list after JSFX loads
                     updatePresetList();
 
-                    JsfxLogger::info("Editor", "JSFX loaded successfully");
+                    DBG("JSFX loaded successfully");
 
                     // Restore JSFX state after loading (internal "constructor")
                     restoreJsfxState();
                 }
                 else
                 {
-                    JsfxLogger::error("Editor", "Failed to load JSFX file: " + file.getFullPathName());
+                    DBG("Failed to load JSFX file: " << file.getFullPathName());
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon,
                         "Error",

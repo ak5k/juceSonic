@@ -1,7 +1,6 @@
 #include "PluginProcessor.h"
 
 #include "JsfxHelper.h"
-#include "JsfxLogger.h"
 #include "ParameterUtils.h"
 #include "PluginEditor.h"
 
@@ -55,7 +54,7 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
       )
     , apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
-    JsfxLogger::logInstanceLifecycle("AudioProcessor constructor started");
+    DBG("AudioProcessor constructor started");
 
     // JsfxHelper constructor automatically initializes per-instance JSFX system
 
@@ -85,12 +84,12 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     // Start timer for latency updates and parameter sync (30 Hz = ~33ms)
     startTimer(33);
 
-    JsfxLogger::logInstanceLifecycle("AudioProcessor constructor completed");
+    DBG("AudioProcessor constructor completed");
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
 {
-    JsfxLogger::logInstanceLifecycle("AudioProcessor destructor started");
+    DBG("AudioProcessor destructor started");
 
     // Stop timer first to prevent any callbacks during destruction
     stopTimer();
@@ -100,7 +99,7 @@ AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
 
     // Arrays don't need explicit clearing - they're automatically cleaned up
 
-    JsfxLogger::logInstanceLifecycle("AudioProcessor destructor completed");
+    DBG("AudioProcessor destructor completed");
 }
 
 //==============================================================================
@@ -939,20 +938,17 @@ void AudioPluginAudioProcessor::updateParameterMapping()
             &parameterRanges[i].step
         );
 
-        JsfxLogger::debug(
-            "ParameterMapping",
-            "Param "
-                + juce::String(i)
-                + " from JSFX: currentVal="
-                + juce::String(currentVal, 3)
-                + " range=["
-                + juce::String(parameterRanges[i].minVal, 3)
-                + ".."
-                + juce::String(parameterRanges[i].maxVal, 3)
-                + "]"
-                + " step="
-                + juce::String(parameterRanges[i].step, 3)
-        );
+        DBG("Param "
+            << i
+            << " from JSFX: currentVal="
+            << juce::String(currentVal, 3)
+            << " range=["
+            << juce::String(parameterRanges[i].minVal, 3)
+            << ".."
+            << juce::String(parameterRanges[i].maxVal, 3)
+            << "]"
+            << " step="
+            << juce::String(parameterRanges[i].step, 3));
 
         if (auto* param = parameterCache[i])
         {
