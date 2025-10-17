@@ -59,6 +59,9 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
     if (!jsfxInstance || numParams == 0)
         return;
 
+    // Note: Audio processing is suspended during JSFX loading/unloading,
+    // so we don't need to check for parameter count mismatches here
+
     // Check each parameter for changes
     for (int i = 0; i < numParams; ++i)
     {

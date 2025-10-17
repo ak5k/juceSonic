@@ -4,6 +4,9 @@
 
 #include "JsfxEditorWindow.h"
 #include "JsfxLiceComponent.h"
+#include "LibraryBrowser.h"
+#include "LibraryManager.h"
+#include "ReaperPresetParser.h"
 #include "PluginProcessor.h"
 #include "PersistentState.h"
 
@@ -29,14 +32,6 @@ public:
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IOMatrixWindow)
-};
-
-//==============================================================================
-// Custom LookAndFeel for multi-column preset ComboBox
-class PresetComboBoxLookAndFeel : public juce::LookAndFeel_V4
-{
-public:
-    juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label) override;
 };
 
 //==============================================================================
@@ -223,9 +218,8 @@ private:
     void unloadJSFXFile();
     void rebuildParameterSliders();
     void updatePresetList();
-    void buildFilteredPresetMenu(const juce::String& searchFilter);
-    void buildHierarchicalPresetMenu();
-    void onPresetSelected();
+    void
+    onPresetSelected(const juce::String& libraryName, const juce::String& presetName, const juce::String& presetData);
 
     AudioPluginAudioProcessor& processorRef;
 
@@ -234,8 +228,11 @@ private:
     juce::TextButton uiButton{"UI"};
     juce::TextButton editButton{"Editor"};
     juce::TextButton ioMatrixButton{"I/O Matrix"};
-    juce::ComboBox presetComboBox;
-    juce::Label presetLabel;
+
+    // New architecture: LibraryManager and LibraryBrowser
+    std::unique_ptr<LibraryManager> libraryManager;
+    LibraryBrowser libraryBrowser;
+
     juce::Slider wetSlider;
     juce::Label wetLabel;
     juce::Viewport viewport;
@@ -261,23 +258,6 @@ private:
 
     // Deferred preset list update after JSFX load
     bool needsPresetListUpdate = false;
-
-    // Custom LookAndFeel for preset ComboBox multi-column layout
-    PresetComboBoxLookAndFeel presetComboBoxLookAndFeel;
-
-    // Mouse listener to detect dropdown arrow clicks
-    struct PresetComboMouseListener : public juce::MouseListener
-    {
-        explicit PresetComboMouseListener(AudioPluginAudioProcessorEditor* ownerIn)
-            : owner(ownerIn)
-        {
-        }
-
-        void mouseDown(const juce::MouseEvent& event) override;
-        AudioPluginAudioProcessorEditor* owner = nullptr;
-    };
-
-    std::unique_ptr<PresetComboMouseListener> presetComboMouseListener;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

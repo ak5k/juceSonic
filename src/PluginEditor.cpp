@@ -4,18 +4,9 @@
 #include "JsfxLogger.h"
 #include "PersistentFileChooser.h"
 #include "PluginProcessor.h"
+#include "PresetParser.h"
 
 #include <memory>
-
-//==============================================================================
-// PresetComboBoxLookAndFeel implementation
-juce::PopupMenu::Options
-PresetComboBoxLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label)
-{
-    auto opts = juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu(box, label);
-    // Always use 4 columns for hierarchical preset menu
-    return opts.withMaximumNumColumns(4);
-}
 
 //==============================================================================
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
@@ -24,6 +15,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 {
     // Initialize state tree for persistent state management
     setStateTree(processorRef.getAPVTS().state);
+
+    // Initialize LibraryManager with processor's state tree
+    libraryManager = std::make_unique<LibraryManager>(processorRef.getAPVTS().state);
 
     addAndMakeVisible(loadButton);
     loadButton.onClick = [this]() { loadJSFXFile(); };
@@ -163,21 +157,14 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(ioMatrixButton);
     ioMatrixButton.onClick = [this]() { toggleIOMatrix(); };
 
-    // Preset selector
-    addAndMakeVisible(presetLabel);
-    presetLabel.setText("Preset:", juce::dontSendNotification);
-    presetLabel.setJustificationType(juce::Justification::centredRight);
-
-    addAndMakeVisible(presetComboBox);
-    presetComboBox.setEditableText(true); // Allow typing to search
-    presetComboBox.setTextWhenNothingSelected("(Type to search...)");
-    presetComboBox.setTextWhenNoChoicesAvailable("No presets available");
-    presetComboBox.setLookAndFeel(&presetComboBoxLookAndFeel); // Enable multi-column layout
-    presetComboBox.onChange = [this]() { onPresetSelected(); };
-
-    // Attach mouse listener to detect dropdown arrow clicks
-    presetComboMouseListener = std::make_unique<PresetComboMouseListener>(this);
-    presetComboBox.addMouseListener(presetComboMouseListener.get(), false);
+    // Preset library browser
+    addAndMakeVisible(libraryBrowser);
+    libraryBrowser.setLibraryManager(libraryManager.get());
+    libraryBrowser.setSubLibraryName("Presets"); // Browse the "Presets" sub-library
+    libraryBrowser.setPresetSelectedCallback(
+        [this](const juce::String& libraryName, const juce::String& presetName, const juce::String& presetData)
+        { onPresetSelected(libraryName, presetName, presetData); }
+    );
 
     // Wet amount slider
     addAndMakeVisible(wetLabel);
@@ -266,9 +253,6 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 
     // Stop timer first to prevent callbacks during destruction
     stopTimer();
-
-    // Clear custom LookAndFeel before destruction
-    presetComboBox.setLookAndFeel(nullptr);
 
     // Ensure native JSFX UI is torn down before editor destruction
     destroyJsfxUI(); // This now properly destroys the native window too
@@ -379,9 +363,7 @@ void AudioPluginAudioProcessorEditor::resized()
     ioMatrixButton.setBounds(buttonArea.removeFromLeft(100));
 
     buttonArea.removeFromLeft(10);
-    presetLabel.setBounds(buttonArea.removeFromLeft(50));
-    buttonArea.removeFromLeft(5);
-    presetComboBox.setBounds(buttonArea.removeFromLeft(200)); // Wider for search
+    libraryBrowser.setBounds(buttonArea.removeFromLeft(265)); // Label + ComboBox
 
     buttonArea.removeFromLeft(10);
     wetLabel.setBounds(buttonArea.removeFromLeft(50));
@@ -427,7 +409,15 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                 // Ensure any native window is closed before reloading a new JSFX
                 destroyJsfxUI();
 
-                if (processorRef.loadJSFX(file))
+                // Suspend audio processing during JSFX loading to prevent crashes
+                processorRef.suspendProcessing(true);
+
+                bool loadSuccess = processorRef.loadJSFX(file);
+
+                // Resume audio processing after loading
+                processorRef.suspendProcessing(false);
+
+                if (loadSuccess)
                 {
                     rebuildParameterSliders();
 
@@ -517,12 +507,20 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
                 // Ensure any native window is closed before unloading JSFX
                 destroyJsfxUI();
 
+                // Suspend audio processing during JSFX unloading to prevent crashes
+                processorRef.suspendProcessing(true);
+
                 processorRef.unloadJSFX();
+
+                // Resume audio processing after unloading
+                processorRef.suspendProcessing(false);
+
                 rebuildParameterSliders();
 
-                // Clear preset list
-                presetComboBox.clear();
-                presetComboBox.setEnabled(false);
+                // Clear preset libraries
+                if (libraryManager)
+                    libraryManager->clear();
+                libraryBrowser.updatePresetList();
 
                 // Reset UI state - show parameters, update buttons
                 viewport.setVisible(true);
@@ -704,164 +702,72 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
 
 void AudioPluginAudioProcessorEditor::updatePresetList()
 {
-    // Build the full hierarchical menu (used when clicking dropdown arrow)
-    buildHierarchicalPresetMenu();
-}
-
-void AudioPluginAudioProcessorEditor::buildFilteredPresetMenu(const juce::String& searchFilter)
-{
-    presetComboBox.clear();
-
-    auto& presetManager = processorRef.getPresetManager();
-    const auto& banks = presetManager.getBanks();
-
-    if (banks.empty())
+    if (!libraryManager)
     {
-        presetComboBox.setEnabled(false);
+        DBG("updatePresetList: libraryManager is null!");
         return;
     }
 
-    // Single flat list of filtered presets with library names
-    int itemId = 1;
-    bool hasFilter = searchFilter.isNotEmpty();
+    // Scan JSFX preset directories for .rpl files
+    juce::StringArray presetPaths;
 
-    for (const auto& bank : banks)
+    // Add default JSFX Effects path if it exists
+    auto jsfxPath = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                        .getChildFile("REAPER")
+                        .getChildFile("Effects");
+
+    DBG("updatePresetList: Checking JSFX path: " << jsfxPath.getFullPathName());
+    DBG("updatePresetList: Path exists: " << (jsfxPath.exists() ? "YES" : "NO"));
+
+    if (jsfxPath.exists())
     {
-        // Extract readable library name
-        juce::String libraryName = bank.libraryName;
-        if (libraryName.containsChar('/') || libraryName.containsChar('\\'))
-        {
-            juce::File f(libraryName);
-            libraryName = f.getFileNameWithoutExtension();
-        }
+        presetPaths.add(jsfxPath.getFullPathName());
 
-        for (const auto& preset : bank.presets)
-        {
-            if (!hasFilter
-                || preset.name.containsIgnoreCase(searchFilter)
-                || bank.libraryName.containsIgnoreCase(searchFilter))
-            {
-                // Format: "PresetName (LibraryName)"
-                juce::String displayName = preset.name + " (" + libraryName + ")";
-                presetComboBox.addItem(displayName, itemId++);
-            }
-        }
+        // List .rpl files found
+        auto rplFiles = jsfxPath.findChildFiles(juce::File::findFiles, true, "*.rpl");
+        DBG("updatePresetList: Found " << rplFiles.size() << " .rpl files");
     }
 
-    presetComboBox.setEnabled(true);
+    // TODO: Add any additional preset paths from plugin settings/configuration
+
+    DBG("updatePresetList: Total preset paths to scan: " << presetPaths.size());
+
+    // Create REAPER preset parser and convert to parser function
+    ReaperPresetParser parser;
+    auto parserFunc = [&parser](const juce::File& file) -> juce::ValueTree
+    {
+        DBG("updatePresetList: Parsing file: " << file.getFileName());
+        return parser.parseFile(file);
+    };
+
+    // Scan and load into "Presets" sub-library
+    libraryManager->scanAndLoadSubLibrary(
+        "Presets",   // Sub-library name
+        presetPaths, // Directories to scan
+        "*.rpl",     // File pattern
+        parserFunc,  // Parser function
+        true,        // Recursive scan
+        true         // Clear existing
+    );
+
+    DBG("updatePresetList: Library now has " << libraryManager->getNumSubLibraries() << " sub-libraries");
+    DBG("updatePresetList: Total children in tree: " << libraryManager->getLibraries().getNumChildren());
+
+    // Update the browser UI to reflect loaded libraries
+    libraryBrowser.updatePresetList();
 }
 
-void AudioPluginAudioProcessorEditor::buildHierarchicalPresetMenu()
+void AudioPluginAudioProcessorEditor::onPresetSelected(
+    const juce::String& libraryName,
+    const juce::String& presetName,
+    const juce::String& presetData
+)
 {
-    presetComboBox.clear();
+    DBG("Loading preset: " << presetName << " from library: " << libraryName);
 
-    // Get ALL presets from all loaded .rpl files
-    auto& presetManager = processorRef.getPresetManager();
-    const auto& banks = presetManager.getBanks();
-
-    if (banks.empty())
-    {
-        presetComboBox.setEnabled(false);
-        return;
-    }
-
-    // Build hierarchical menu: each library is a submenu with max 4 columns
-    int itemId = 1;
-    const int maxItemsPerPage = 80; // ~20 items per column × 4 columns
-
-    for (const auto& bank : banks)
-    {
-        // Extract readable library name
-        juce::String libraryName = bank.libraryName;
-        if (libraryName.containsChar('/') || libraryName.containsChar('\\'))
-        {
-            juce::File f(libraryName);
-            libraryName = f.getFileNameWithoutExtension();
-        }
-
-        int totalPresets = static_cast<int>(bank.presets.size());
-        int numPages = (totalPresets + maxItemsPerPage - 1) / maxItemsPerPage;
-
-        if (numPages <= 1)
-        {
-            // Single submenu for this library
-            juce::PopupMenu libraryMenu;
-
-            for (const auto& preset : bank.presets)
-                libraryMenu.addItem(itemId++, preset.name);
-
-            presetComboBox.getRootMenu()->addSubMenu(libraryName, libraryMenu);
-        }
-        else
-        {
-            // Multiple pages needed - split the library
-            for (int page = 0; page < numPages; ++page)
-            {
-                juce::PopupMenu pageMenu;
-
-                int startIdx = page * maxItemsPerPage;
-                int endIdx = juce::jmin(startIdx + maxItemsPerPage, totalPresets);
-
-                for (int i = startIdx; i < endIdx; ++i)
-                    pageMenu.addItem(itemId++, bank.presets[i].name);
-
-                // Name format: "LibraryName 1", "LibraryName 2", etc.
-                juce::String pageName = libraryName + " " + juce::String(page + 1);
-                presetComboBox.getRootMenu()->addSubMenu(pageName, pageMenu);
-            }
-        }
-    }
-
-    presetComboBox.setEnabled(true);
-}
-
-void AudioPluginAudioProcessorEditor::onPresetSelected()
-{
-    int selectedId = presetComboBox.getSelectedId();
-    if (selectedId <= 0)
-        return;
-
-    // Find the preset by walking through banks
-    const auto& banks = processorRef.getPresetManager().getBanks();
-    int currentId = 1;
-
-    for (const auto& bank : banks)
-    {
-        for (const auto& preset : bank.presets)
-        {
-            if (currentId == selectedId)
-            {
-                // Found the preset - load it
-                DBG("Loading preset: " << preset.name << " from " << bank.libraryName);
-                processorRef.loadPresetByName(preset.name);
-                return;
-            }
-            currentId++;
-        }
-    }
-
-    DBG("WARNING: Could not find preset with ID " << selectedId);
+    // The presetData is base64 encoded JSFX state
+    // Load it into the processor using the existing preset loading mechanism
+    processorRef.loadPresetByName(presetName);
 }
 
 //==============================================================================
-// PresetComboMouseListener implementation
-void AudioPluginAudioProcessorEditor::PresetComboMouseListener::mouseDown(const juce::MouseEvent& event)
-{
-    if (!owner)
-        return;
-
-    auto& combo = owner->presetComboBox;
-
-    // Get the bounds of the dropdown arrow button (right side of ComboBox)
-    auto arrowBounds = combo.getLocalBounds().removeFromRight(combo.getHeight());
-
-    // Check if the click was on the dropdown arrow
-    auto localPos = combo.getLocalPoint(&combo, event.getPosition());
-    if (arrowBounds.contains(localPos))
-    {
-        // User clicked the dropdown arrow - show hierarchical multi-column menu
-        combo.hidePopup();
-        owner->buildHierarchicalPresetMenu();
-        combo.showPopup();
-    }
-}
