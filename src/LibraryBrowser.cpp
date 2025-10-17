@@ -5,14 +5,6 @@
 LibraryBrowser* LibraryBrowser::activeWasdInstance = nullptr;
 
 //==============================================================================
-juce::PopupMenu::Options
-LibraryBrowser::BrowserLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label)
-{
-    auto opts = juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu(box, label);
-    return opts.withMaximumNumColumns(4);
-}
-
-//==============================================================================
 // FilteredListPopup implementation
 LibraryBrowser::FilteredListPopup::FilteredListPopup(LibraryBrowser& o)
     : owner(o)
@@ -557,7 +549,8 @@ void LibraryBrowser::setLabelText(const juce::String& text)
 
 void LibraryBrowser::setPlaceholderText(const juce::String& text)
 {
-    textEditor.setTextToShowWhenEmpty(text, juce::Colours::grey);
+    auto placeholderColor = findColour(juce::Label::textColourId).withAlpha(0.5f);
+    textEditor.setTextToShowWhenEmpty(text, placeholderColor);
 }
 
 void LibraryBrowser::updateItemList()
@@ -585,6 +578,7 @@ void LibraryBrowser::resized()
 
     // WASD toggle button on the far right
     wasdToggleButton.setBounds(area.removeFromRight(wasdButtonWidth));
+    area.removeFromRight(spacing); // Gap between WASD and dropdown
 
     // Dropdown button to the left of WASD button
     dropdownButton.setBounds(area.removeFromRight(buttonWidth));
@@ -621,7 +615,6 @@ void LibraryBrowser::showHierarchicalPopup()
 {
     juce::PopupMenu menu;
     buildHierarchicalMenu(menu);
-    menu.setLookAndFeel(&lookAndFeel);
 
     auto options = juce::PopupMenu::Options()
                        .withTargetComponent(&textEditor)

@@ -49,8 +49,24 @@ public:
         setColour(juce::TreeView::backgroundColourId, baseBackground);
         setColour(juce::PopupMenu::backgroundColourId, lighter);
         setColour(juce::PopupMenu::textColourId, textColor);
+        setColour(juce::PopupMenu::headerTextColourId, textColor);
         setColour(juce::PopupMenu::highlightedBackgroundColourId, lightest);
+        setColour(juce::PopupMenu::highlightedTextColourId, textColor);
+
+        // Additional multicolumn menu colors
+        setColour(juce::TooltipWindow::backgroundColourId, lighter);
+        setColour(juce::TooltipWindow::textColourId, textColor);
+        setColour(juce::TooltipWindow::outlineColourId, lightest);
+
+        // Set this as the default LookAndFeel
+        juce::LookAndFeel::setDefaultLookAndFeel(this);
     }
+};
+
+// Shared LookAndFeel wrapper for use with SharedResourcePointer
+struct SharedJuceSonicLookAndFeel
+{
+    JuceSonicLookAndFeel lf;
 };
 
 //==============================================================================
@@ -64,6 +80,13 @@ public:
         setResizable(true, true);
         setResizeLimits(300, 200, 2000, 2000);
         setUsingNativeTitleBar(true);
+
+        setLookAndFeel(&sharedLookAndFeel->lf);
+    }
+
+    ~IOMatrixWindow() override
+    {
+        setLookAndFeel(nullptr);
     }
 
     void closeButtonPressed() override
@@ -72,6 +95,8 @@ public:
     }
 
 private:
+    juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IOMatrixWindow)
 };
 
@@ -289,7 +314,7 @@ private:
     std::unique_ptr<JsfxEditorWindow> jsfxEditorWindow;
     std::unique_ptr<JsfxLiceFullscreenWindow> jsfxLiceFullscreenWindow;
 
-    JuceSonicLookAndFeel customLookAndFeel;
+    juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
 
     void destroyJsfxUI();
     void toggleIOMatrix();

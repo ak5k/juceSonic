@@ -13,8 +13,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     : AudioProcessorEditor(&p)
     , processorRef(p)
 {
-    // Apply custom dark theme
-    setLookAndFeel(&customLookAndFeel);
+    setLookAndFeel(&sharedLookAndFeel->lf);
 
     // Initialize state tree for persistent state management
     setStateTree(processorRef.getAPVTS().state);
@@ -846,7 +845,7 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
         // Get ideal bounds from matrix component
         auto idealBounds = ioMatrix->getIdealBounds();
 
-        // Create window with custom close handling
+        // Create window (LookAndFeel is set via SharedResourcePointer)
         ioMatrixWindow = std::make_unique<IOMatrixWindow>();
         ioMatrixWindow->setContentOwned(ioMatrix, true);
         ioMatrixWindow->centreWithSize(idealBounds.getWidth(), idealBounds.getHeight());

@@ -69,8 +69,8 @@ void IOMatrixContent::createCells()
 
 void IOMatrixContent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colours::darkgrey);
-    g.setColour(juce::Colours::white);
+    g.fillAll(findColour(juce::ResizableWindow::backgroundColourId));
+    g.setColour(findColour(juce::Label::textColourId));
     g.setFont(11.0f);
 
     int xPos = labelWidth;
@@ -448,7 +448,7 @@ IOMatrixComponent::IOMatrixComponent(
 
 void IOMatrixComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colours::darkgrey);
+    g.fillAll(findColour(juce::ResizableWindow::backgroundColourId));
 }
 
 void IOMatrixComponent::resized()

@@ -119,13 +119,6 @@ private:
         LibraryBrowser& owner;
     };
 
-    // Custom LookAndFeel for multi-column hierarchical menu
-    class BrowserLookAndFeel : public juce::LookAndFeel_V4
-    {
-    public:
-        juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label) override;
-    };
-
     // Custom non-modal filtered list popup
     class FilteredListPopup : public juce::Component
     {
@@ -203,7 +196,6 @@ private:
     SearchTextEditor textEditor;
     juce::TextButton dropdownButton;
     juce::TextButton wasdToggleButton;
-    BrowserLookAndFeel lookAndFeel;
     std::unique_ptr<FilteredListPopup> filteredPopup;
 
     juce::String currentItemName;
