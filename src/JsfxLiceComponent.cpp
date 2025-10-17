@@ -44,7 +44,7 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
     auto* liceState = instance->m_lice_state;
     if (!liceState)
     {
-        g.fillAll(juce::Colours::darkgrey);
+        g.fillAll(juce::Colours::black);
         g.setColour(juce::Colours::white);
         g.drawText("No LICE state - JSFX may not have @gfx section", getLocalBounds(), juce::Justification::centred);
         return;
@@ -52,7 +52,7 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
 
     if (!liceState->m_framebuffer)
     {
-        g.fillAll(juce::Colours::darkgrey);
+        g.fillAll(juce::Colours::black);
         g.setColour(juce::Colours::white);
         g.drawText("Waiting for JSFX to initialize graphics...", getLocalBounds(), juce::Justification::centred);
 
@@ -79,6 +79,9 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
         g.drawText("Empty JSFX framebuffer", getLocalBounds(), juce::Justification::centred);
         return;
     }
+
+    // Fill background with black
+    g.fillAll(juce::Colours::black);
 
     // Create JUCE image from LICE framebuffer
     juce::Image liceImage(juce::Image::ARGB, width, height, false);

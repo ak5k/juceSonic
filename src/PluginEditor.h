@@ -4,6 +4,7 @@
 
 #include "JsfxEditorWindow.h"
 #include "JsfxLiceComponent.h"
+#include "JsfxLiceFullscreenWindow.h"
 #include "LibraryBrowser.h"
 #include "PluginProcessor.h"
 #include "PersistentState.h"
@@ -208,6 +209,7 @@ public:
     //==============================================================================
     void paint(juce::Graphics&) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress& key) override;
 
     // Public so LookAndFeel can access it
 private:
@@ -243,9 +245,11 @@ private:
 
     std::unique_ptr<IOMatrixWindow> ioMatrixWindow;
     std::unique_ptr<JsfxEditorWindow> jsfxEditorWindow;
+    std::unique_ptr<JsfxLiceFullscreenWindow> jsfxLiceFullscreenWindow;
 
     void destroyJsfxUI();
     void toggleIOMatrix();
+    void toggleLiceFullscreen();
 
     // JSFX lifecycle management (internal constructor/destructor pattern)
     void saveJsfxState();    // Internal "destructor" - save state before unloading JSFX

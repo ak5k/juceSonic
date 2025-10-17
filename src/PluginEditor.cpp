@@ -231,6 +231,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     // 30fps = ~33ms interval (also pumps SWELL message loop on Linux)
     startTimer(33);
+
+    // Enable keyboard focus for F11 fullscreen toggle
+    setWantsKeyboardFocus(true);
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
@@ -262,6 +265,9 @@ void AudioPluginAudioProcessorEditor::destroyJsfxUI()
     // Close the editor window if it's open
     if (jsfxEditorWindow)
         jsfxEditorWindow->close();
+
+    // Destroy fullscreen window if it exists (component will be returned automatically)
+    jsfxLiceFullscreenWindow.reset();
 
     // Cleanup LICE renderer
     if (jsfxLiceRenderer)
@@ -534,6 +540,50 @@ void AudioPluginAudioProcessorEditor::resized()
     {
         setStateProperty("juceControlsWidth", getWidth());
         setStateProperty("juceControlsHeight", getHeight());
+    }
+}
+
+bool AudioPluginAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
+{
+    // F11 - Toggle LICE fullscreen
+    if (key == juce::KeyPress::F11Key)
+    {
+        if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
+        {
+            toggleLiceFullscreen();
+            return true;
+        }
+    }
+
+    return Component::keyPressed(key);
+}
+
+void AudioPluginAudioProcessorEditor::toggleLiceFullscreen()
+{
+    if (!jsfxLiceRenderer)
+        return;
+
+    if (jsfxLiceFullscreenWindow && jsfxLiceFullscreenWindow->isVisible())
+    {
+        // Returning from fullscreen - destroy window and re-add component to editor
+        jsfxLiceFullscreenWindow.reset();
+
+        // Re-add component back to editor
+        addAndMakeVisible(jsfxLiceRenderer.get());
+        resized();
+    }
+    else
+    {
+        // Enter fullscreen - create new window
+        jsfxLiceFullscreenWindow = std::make_unique<JsfxLiceFullscreenWindow>();
+
+        // Set callback to handle window close
+        jsfxLiceFullscreenWindow->onWindowClosed = [this]() { toggleLiceFullscreen(); };
+
+        // Remove from editor and show in fullscreen window
+        removeChildComponent(jsfxLiceRenderer.get());
+        jsfxLiceFullscreenWindow->showWithComponent(jsfxLiceRenderer.get());
+        jsfxLiceFullscreenWindow->setFullScreen(true);
     }
 }
 

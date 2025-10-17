@@ -1164,9 +1164,6 @@ double AudioPluginAudioProcessor::midiSendRecvCallback(
         if (length <= 0 || length > 8192) // Sanity check
             return 0.0;
 
-        double timestamp = *ts;
-        int samplePosition = static_cast<int>(timestamp + 0.5);
-
         // Allocate buffer for JSFX to write to
         processor->midiTempBuffer.resize(length);
         unsigned char* buffer = processor->midiTempBuffer.data();
