@@ -450,19 +450,6 @@ void* JsfxHelper::getHostAPIFunction(const char* functionName)
     if (strcmp(functionName, "fxGetSetPinmapperFlags") == 0)
         return (void*)&hostGetSetPinmapperFlags;
 
-    // Preset callbacks - forward declared in PluginProcessor.cpp
-    if (strcmp(functionName, "fxLoadReaperPreset") == 0)
-    {
-        extern bool hostLoadReaperPreset(void*, const char*);
-        return (void*)&hostLoadReaperPreset;
-    }
-
-    if (strcmp(functionName, "fxGetReaperPresetNamesRaw") == 0)
-    {
-        extern const char* hostGetReaperPresetNamesRaw(void*);
-        return (void*)&hostGetReaperPresetNamesRaw;
-    }
-
 #ifndef _WIN32
     // On Mac/Linux with SWELL, JSFX requests Mac_CustomControlCreator
     // We provide the curses_ControlCreator instead (already declared as extern)

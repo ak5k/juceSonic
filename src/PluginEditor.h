@@ -25,7 +25,6 @@ public:
         auto lighter = baseBackground.brighter(0.1f);
         auto lightest = baseBackground.brighter(0.2f);
         auto textColor = juce::Colours::white.withAlpha(0.9f);
-        auto textColorDim = juce::Colours::white.withAlpha(0.6f);
 
         setColour(juce::ResizableWindow::backgroundColourId, baseBackground);
         setColour(juce::DocumentWindow::backgroundColourId, baseBackground);
@@ -60,6 +59,12 @@ public:
 
         // Set this as the default LookAndFeel
         juce::LookAndFeel::setDefaultLookAndFeel(this);
+    }
+
+    // Override scrollbar width to make handles thicker
+    int getDefaultScrollbarWidth() override
+    {
+        return 16; // Default is 12, so 16 is 33% thicker
     }
 };
 
@@ -253,17 +258,6 @@ private:
 };
 
 //==============================================================================
-// Custom LookAndFeel for multi-column ComboBox popup
-class MultiColumnComboBoxLookAndFeel : public juce::LookAndFeel_V4
-{
-public:
-    juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label) override
-    {
-        return juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu(box, label).withMaximumNumColumns(3);
-    }
-};
-
-//==============================================================================
 class AudioPluginAudioProcessorEditor final
     : public juce::AudioProcessorEditor
     , public PersistentState
@@ -328,9 +322,6 @@ private:
     bool needsSizeRestoration = false;
     int restoredWidth = 700;
     int restoredHeight = 500;
-
-    // Deferred preset list update after JSFX load
-    bool needsPresetListUpdate = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

@@ -567,20 +567,38 @@ void LibraryBrowser::paint(juce::Graphics& g)
 void LibraryBrowser::resized()
 {
     auto area = getLocalBounds();
-    const int labelWidth = 60;
     const int spacing = 5;
     const int buttonWidth = 20;
     const int wasdButtonWidth = 50;
 
-    // Label on the left
-    label.setBounds(area.removeFromLeft(labelWidth));
-    area.removeFromLeft(spacing);
+    int totalWidth = area.getWidth();
 
-    // WASD toggle button on the far right
-    wasdToggleButton.setBounds(area.removeFromRight(wasdButtonWidth));
-    area.removeFromRight(spacing); // Gap between WASD and dropdown
+    // Make label width responsive based on available space
+    int labelWidth = 60; // Default "Presets:"
+    if (totalWidth < 200)
+        labelWidth = 0; // Hide label completely when very tight
+    else if (totalWidth < 250)
+        labelWidth = 50;
 
-    // Dropdown button to the left of WASD button
+    // Label on the left (may be hidden at very small widths)
+    if (labelWidth > 0)
+    {
+        label.setBounds(area.removeFromLeft(labelWidth));
+        area.removeFromLeft(spacing);
+    }
+
+    // Hide WASD button when space is very tight
+    bool showWasd = totalWidth >= 150;
+    wasdToggleButton.setVisible(showWasd);
+
+    if (showWasd)
+    {
+        // WASD toggle button on the far right
+        wasdToggleButton.setBounds(area.removeFromRight(wasdButtonWidth));
+        area.removeFromRight(spacing); // Gap between WASD and dropdown
+    }
+
+    // Dropdown button to the left of WASD button (or far right if WASD hidden)
     dropdownButton.setBounds(area.removeFromRight(buttonWidth));
     area.removeFromRight(spacing);
 

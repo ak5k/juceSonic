@@ -3,10 +3,14 @@
 #include "IOMatrixComponent.h"
 #include "JsfxLogger.h"
 #include "PersistentFileChooser.h"
+#include "PluginConstants.h"
 #include "PluginProcessor.h"
 #include "ReaperPresetConverter.h"
 
+#include <jsfx.h>
 #include <memory>
+
+extern jsfxAPI JesusonicAPI;
 
 //==============================================================================
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
@@ -176,7 +180,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     wetSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     wetSlider.setRange(0.0, 1.0, 0.01);
     wetSlider.setValue(processorRef.getWetAmount(), juce::dontSendNotification);
-    wetSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+    wetSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); // No text box
     wetSlider.onValueChange = [this]() { processorRef.setWetAmount(wetSlider.getValue()); };
 
     addAndMakeVisible(statusLabel);
@@ -186,6 +190,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     addAndMakeVisible(viewport);
     viewport.setViewedComponent(&parameterContainer, false);
+    viewport.setScrollBarThickness(16); // Make scrollbars thicker (default is 12)
 
     // Make the editor resizable with constraints
     // Min height: 40px buttons + 30px status + 100px content = 170px
@@ -217,11 +222,11 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     rebuildParameterSliders();
 
-    // If JSFX is already loaded at startup, enable the Edit button and schedule preset list update
+    // If JSFX is already loaded at startup, enable the Edit button
     if (processorRef.getSXInstancePtr() != nullptr)
     {
         editButton.setEnabled(true);
-        needsPresetListUpdate = true; // Defer preset list update to timer
+        // Preset list will be updated on first timer callback to avoid blocking startup
     }
 
     // If we should be showing JSFX UI and there's a JSFX loaded, show it
@@ -390,10 +395,10 @@ void AudioPluginAudioProcessorEditor::restoreJsfxState()
     }
     else
     {
-        // No @gfx section - show JUCE parameter controls
+        // No @gfx section - show JUCE parameter controls only
         viewport.setVisible(true);
         uiButton.setButtonText("UI");
-        uiButton.setEnabled(false);
+        uiButton.setEnabled(false); // No LICE UI to toggle to
         editButton.setEnabled(true);
 
         // Make resizable only vertically for JUCE controls
@@ -433,13 +438,6 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     {
         setSize(restoredWidth, restoredHeight);
         needsSizeRestoration = false;
-    }
-
-    // Apply deferred preset list update (after JSFX has been loaded and preset scanning is complete)
-    if (needsPresetListUpdate)
-    {
-        updatePresetList();
-        needsPresetListUpdate = false;
     }
 
 #if defined(__linux__) || defined(SWELL_TARGET_GDK)
@@ -505,28 +503,84 @@ void AudioPluginAudioProcessorEditor::resized()
 
     auto buttonArea = bounds.removeFromTop(40);
     buttonArea.reduce(5, 5);
-    loadButton.setBounds(buttonArea.removeFromLeft(100));
-    buttonArea.removeFromLeft(5);
-    unloadButton.setBounds(buttonArea.removeFromLeft(100));
-    buttonArea.removeFromLeft(5);
-    editButton.setBounds(buttonArea.removeFromLeft(100));
-    buttonArea.removeFromLeft(5);
-    uiButton.setBounds(buttonArea.removeFromLeft(100));
-    buttonArea.removeFromLeft(5);
-    ioMatrixButton.setBounds(buttonArea.removeFromLeft(100));
 
-    buttonArea.removeFromLeft(10);
-    libraryBrowser.setBounds(buttonArea.removeFromLeft(265)); // Label + ComboBox
+    int totalWidth = buttonArea.getWidth();
+    int spacing = 5;
 
-    buttonArea.removeFromLeft(10);
-    wetLabel.setBounds(buttonArea.removeFromLeft(50));
-    buttonArea.removeFromLeft(5);
-    wetSlider.setBounds(buttonArea.removeFromLeft(150));
+    // Fixed minimum sizes that must fit
+    int buttonWidth = 60;        // Minimum for each button
+    int wetLabelWidth = 45;      // Enough for "Dry/Wet" text
+    int wetSliderMinWidth = 100; // Minimum usable slider width
+    int wetSliderMaxWidth = 200; // Maximum to prevent it getting too large
+    int libraryMinWidth = 150;   // Minimum for library browser
+
+    // Calculate minimum required width
+    int minRequired = (buttonWidth * 5)
+                    + (spacing * 4)
+                    + (spacing * 2)
+                    + libraryMinWidth
+                    + (spacing * 2)
+                    + wetLabelWidth
+                    + spacing
+                    + wetSliderMinWidth;
+
+    // If we have extra space, distribute it proportionally
+    int extraSpace = juce::jmax(0, totalWidth - minRequired);
+
+    // Distribute extra space: 70% to library, 30% to wet slider (capped at max)
+    int libraryWidth = libraryMinWidth + (int)(extraSpace * 0.7f);
+    int wetSliderWidth = juce::jmin(wetSliderMaxWidth, wetSliderMinWidth + (int)(extraSpace * 0.3f));
+
+    // If wet slider hit its max, give remaining space to library
+    if (wetSliderMinWidth + (int)(extraSpace * 0.3f) > wetSliderMaxWidth)
+    {
+        int wetExcess = (wetSliderMinWidth + (int)(extraSpace * 0.3f)) - wetSliderMaxWidth;
+        libraryWidth += wetExcess;
+    }
+
+    // Layout buttons
+    loadButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+    buttonArea.removeFromLeft(spacing);
+    unloadButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+    buttonArea.removeFromLeft(spacing);
+    editButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+    buttonArea.removeFromLeft(spacing);
+    uiButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+    buttonArea.removeFromLeft(spacing);
+    ioMatrixButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+
+    buttonArea.removeFromLeft(spacing * 2);
+    libraryBrowser.setBounds(buttonArea.removeFromLeft(libraryWidth));
+
+    buttonArea.removeFromLeft(spacing * 2);
+    wetLabel.setBounds(buttonArea.removeFromLeft(wetLabelWidth));
+    buttonArea.removeFromLeft(spacing);
+
+    // Give remaining space to wet slider (should match wetSliderWidth calculated above)
+    wetSlider.setBounds(buttonArea);
 
     statusLabel.setBounds(bounds.removeFromTop(30));
 
     // Give remaining space to components - visibility controls which shows
     viewport.setBounds(bounds);
+
+    // Resize parameter container to match viewport width dynamically
+    if (viewport.isVisible() && parameterContainer.isVisible())
+    {
+        // Use actual viewport width minus scrollbar, no artificial minimum
+        int viewportInnerWidth = viewport.getWidth() - viewport.getScrollBarThickness();
+        int containerWidth = juce::jmax(200, viewportInnerWidth); // Only prevent extreme collapse
+        int containerHeight = parameterSliders.size() * 40;
+        parameterContainer.setSize(containerWidth, containerHeight);
+
+        // Resize all parameter sliders to match container width
+        int y = 0;
+        for (auto* slider : parameterSliders)
+        {
+            slider->setBounds(0, y, containerWidth, 35);
+            y += 40;
+        }
+    }
 
     if (jsfxLiceRenderer)
         jsfxLiceRenderer->setBounds(bounds);
@@ -616,8 +670,8 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                 {
                     rebuildParameterSliders();
 
-                    // Defer preset list update to allow preset scanning to complete
-                    needsPresetListUpdate = true;
+                    // Update preset list after JSFX loads
+                    updatePresetList();
 
                     JsfxLogger::info("Editor", "JSFX loaded successfully");
 
@@ -702,16 +756,17 @@ void AudioPluginAudioProcessorEditor::rebuildParameterSliders()
         parameterContainer.addAndMakeVisible(slider);
     }
 
+    // Calculate initial size - will be properly sized in resized()
+    int containerWidth =
+        viewport.getWidth() > 0 ? juce::jmax(200, viewport.getWidth() - viewport.getScrollBarThickness()) : 600;
     int totalHeight = numParams * 40;
-    // Use a fixed width that matches the editor width (700 pixels)
-    // This prevents the scrollbar from appearing due to width issues
-    const int fixedWidth = 680; // Leave some margin
-    parameterContainer.setSize(fixedWidth, totalHeight);
+
+    parameterContainer.setSize(containerWidth, totalHeight);
 
     int y = 0;
     for (auto* slider : parameterSliders)
     {
-        slider->setBounds(0, y, fixedWidth, 35);
+        slider->setBounds(0, y, containerWidth, 35);
         y += 40;
     }
 
@@ -902,17 +957,11 @@ void AudioPluginAudioProcessorEditor::onPresetSelected(
     const juce::String& itemData
 )
 {
-    DBG("LibraryBrowser item selected:");
-    DBG("  Category: " << category);
-    DBG("  Label: " << label);
-    DBG("  Data length: " << itemData.length() << " chars");
-    DBG("  Data preview: " << itemData.substring(0, 50) << "...");
+    DBG("LibraryBrowser item selected: " << label);
 
-    // The itemData is base64 encoded JSFX state
-    // Pass it directly to the processor to decode and apply
-    bool success = processorRef.loadPresetFromData(itemData);
-
-    if (success)
+    // Delegate to processor for preset loading
+    // This ensures presets can be loaded from anywhere (MIDI, automation, editor, etc.)
+    if (processorRef.loadPresetFromBase64(itemData))
         DBG("Preset loaded successfully: " << label);
     else
         DBG("Failed to load preset: " << label);

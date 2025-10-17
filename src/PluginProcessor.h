@@ -6,7 +6,6 @@
 #include "JsfxHelper.h"
 #include "ParameterSyncManager.h"
 #include "PluginConstants.h"
-#include "PresetManager.h"
 
 #include <atomic>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -147,15 +146,13 @@ public:
     // Update routing configuration from UI (called from message thread)
     void updateRoutingConfig(const RoutingConfig& newConfig);
 
-    // Preset management
-    bool loadPresetByName(const juce::String& presetName);
-    bool loadPresetFromData(const juce::String& base64Data);
-    const char* getPresetNamesRaw();
-
-    PresetManager& getPresetManager()
-    {
-        return presetManager;
-    }
+    // Preset loading (works with or without editor)
+    // Call this from:
+    // - Editor UI when user selects preset from LibraryBrowser
+    // - processBlock() when handling MIDI Program Change messages
+    // - Host automation/preset recall
+    // - Any other preset loading scenario
+    bool loadPresetFromBase64(const juce::String& base64Data);
 
 private:
     // Helper to restore routing from encoded string
@@ -196,11 +193,6 @@ private:
     // Two-way parameter synchronization between APVTS and JSFX
     ParameterSyncManager parameterSync;
 
-    // Per-instance parameter value caches (avoid static variables)
-    // Note: These are now managed by ParameterSyncManager, kept for debug logging only
-    std::array<float, PluginConstants::MaxParameters> lastParameterValues;
-    std::array<double, PluginConstants::MaxParameters> lastActualParameterValues;
-
     // Lock-free routing configuration (triple buffer pattern)
     RoutingConfig routingConfigs[3]; // Triple buffer for lock-free updates
     std::atomic<int> readIndex{0};   // Index used by audio thread (processBlock)
@@ -213,10 +205,6 @@ private:
     std::unique_ptr<juce::MidiBuffer::Iterator> midiInputIterator; // Iterator for reading MIDI sequentially
     juce::MidiBuffer currentMidiOutputBuffer;                      // Accumulated during processBlock
     std::vector<unsigned char> midiTempBuffer;                     // Temp storage for MIDI messages
-
-    // Preset management
-    PresetManager presetManager;
-    juce::String presetNamesCache; // Cache for preset names list (JSFX expects persistent string)
 
     // Note: Global properties management moved to PersistentFileChooser utility
 
