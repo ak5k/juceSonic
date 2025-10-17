@@ -6,7 +6,6 @@
 #include <atomic>
 #include <jsfx.h>
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <juce_dsp/juce_dsp.h>
 
 extern jsfxAPI JesusonicAPI;
 
@@ -73,9 +72,6 @@ private:
         // Pending updates to push from timer thread
         std::atomic<bool> apvtsNeedsUpdate{false};
         std::atomic<float> pendingApvtsValue{0.0f};
-
-        // Smoothed value for JSFX (accessed only from audio thread)
-        juce::LinearSmoothedValue<double> smoothedJsfxValue;
     };
 
     // Sync state for each parameter

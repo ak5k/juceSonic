@@ -432,14 +432,37 @@ void JsfxLiceComponent::updateMousePosition(const juce::MouseEvent& event)
         return;
 
     auto* liceState = instance->m_lice_state;
-    if (!liceState)
+    if (!liceState || !liceState->m_framebuffer)
         return;
+
+    // Get the actual framebuffer dimensions
+    int fbWidth = liceState->m_framebuffer->getWidth();
+    int fbHeight = liceState->m_framebuffer->getHeight();
+
+    // Get component dimensions
+    int compWidth = getWidth();
+    int compHeight = getHeight();
+
+    // Scale mouse coordinates from component space to framebuffer space
+    // This handles cases where the component and framebuffer have different sizes
+    float mouseX = event.x;
+    float mouseY = event.y;
+
+    if (compWidth > 0 && compHeight > 0 && fbWidth > 0 && fbHeight > 0)
+    {
+        // Only scale if there's a mismatch
+        if (compWidth != fbWidth || compHeight != fbHeight)
+        {
+            mouseX = (event.x * fbWidth) / static_cast<float>(compWidth);
+            mouseY = (event.y * fbHeight) / static_cast<float>(compHeight);
+        }
+    }
 
     // Update LICE state's mouse position variables directly
     if (liceState->m_mouse_x && liceState->m_mouse_y)
     {
-        *liceState->m_mouse_x = static_cast<EEL_F>(event.x);
-        *liceState->m_mouse_y = static_cast<EEL_F>(event.y);
+        *liceState->m_mouse_x = static_cast<EEL_F>(mouseX);
+        *liceState->m_mouse_y = static_cast<EEL_F>(mouseY);
     }
 }
 

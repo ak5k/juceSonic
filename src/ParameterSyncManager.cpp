@@ -39,10 +39,6 @@ void ParameterSyncManager::initialize(
             parameterStates[i].jsfxValue.store(jsfxValue, std::memory_order_release);
             parameterStates[i].apvtsNeedsUpdate.store(false, std::memory_order_release);
 
-            // Initialize smoother with current value
-            parameterStates[i].smoothedJsfxValue.reset(sampleRate, PluginConstants::ParameterSmoothingMs / 1000.0);
-            parameterStates[i].smoothedJsfxValue.setCurrentAndTargetValue(jsfxValue);
-
             JsfxLogger::debug(
                 "ParameterSync",
                 "Initialized param "
@@ -95,9 +91,9 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
                 "Param " + juce::String(i) + " - both changed, APVTS wins: " + juce::String(currentApvtsValue, 3)
             );
 
-            // Set smoothing target to new APVTS value
+            // Convert and set JSFX value directly (no smoothing)
             double jsfxTargetValue = normalizedToJsfx(jsfxInstance, i, currentApvtsValue);
-            state.smoothedJsfxValue.setTargetValue(jsfxTargetValue);
+            JesusonicAPI.sx_setParmVal(jsfxInstance, i, jsfxTargetValue, 0);
 
             // Update our state atomically (release makes writes visible to timer thread)
             state.apvtsValue.store(currentApvtsValue, std::memory_order_release);
@@ -105,9 +101,9 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
         }
         else if (apvtsChanged)
         {
-            // Only APVTS changed - set new smoothing target
+            // Only APVTS changed - set JSFX value directly (no smoothing)
             double jsfxTargetValue = normalizedToJsfx(jsfxInstance, i, currentApvtsValue);
-            state.smoothedJsfxValue.setTargetValue(jsfxTargetValue);
+            JesusonicAPI.sx_setParmVal(jsfxInstance, i, jsfxTargetValue, 0);
 
             // Update our state atomically (release makes writes visible to timer thread)
             state.apvtsValue.store(currentApvtsValue, std::memory_order_release);
@@ -117,9 +113,6 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
         {
             // Only JSFX changed - queue update for APVTS (can't modify APVTS from audio thread)
             float normalizedValue = static_cast<float>(jsfxToNormalized(jsfxInstance, i, currentJsfxValue));
-
-            // Update smoother to match JSFX value (skip smoothing for JSFX->APVTS direction)
-            state.smoothedJsfxValue.setCurrentAndTargetValue(currentJsfxValue);
 
             // Queue the update atomically (release makes writes visible to timer thread)
             state.pendingApvtsValue.store(normalizedValue, std::memory_order_release);
@@ -134,12 +127,6 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
                     + juce::String(normalizedValue, 3)
             );
         }
-
-        // Always push smoothed value to JSFX (smoothing happens here)
-        // Skip ahead by the number of samples in this block to properly advance the smoother
-        state.smoothedJsfxValue.skip(numSamples - 1);
-        double smoothedValue = state.smoothedJsfxValue.getNextValue();
-        JesusonicAPI.sx_setParmVal(jsfxInstance, i, smoothedValue, 0);
     }
 }
 
@@ -187,7 +174,6 @@ void ParameterSyncManager::reset()
         state.jsfxValue.store(-999999.0, std::memory_order_release);
         state.apvtsNeedsUpdate.store(false, std::memory_order_release);
         state.pendingApvtsValue.store(0.0f, std::memory_order_release);
-        state.smoothedJsfxValue.setCurrentAndTargetValue(0.0);
     }
 
     // Clear parameter references
@@ -197,16 +183,6 @@ void ParameterSyncManager::reset()
 void ParameterSyncManager::setSampleRate(double sampleRate)
 {
     currentSampleRate = sampleRate;
-
-    // Update all smoothers with new sample rate
-    for (int i = 0; i < numParams; ++i)
-    {
-        auto& state = parameterStates[i];
-        double currentValue = state.smoothedJsfxValue.getCurrentValue();
-        state.smoothedJsfxValue.reset(sampleRate, PluginConstants::ParameterSmoothingMs / 1000.0);
-        state.smoothedJsfxValue.setCurrentAndTargetValue(currentValue);
-    }
-
     JsfxLogger::info("ParameterSync", "Updated sample rate to " + juce::String(sampleRate, 1) + " Hz");
 }
 
