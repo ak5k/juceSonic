@@ -37,7 +37,12 @@ void ParameterSyncManager::initialize(
             parameterStates[i].jsfxValue.store(jsfxValue, std::memory_order_release);
             parameterStates[i].apvtsNeedsUpdate.store(false, std::memory_order_release);
 
-            DBG("Initialized param " << i << " - APVTS: " << juce::String(apvtsValue, 3) << " JSFX: " << juce::String(jsfxValue, 3));
+            DBG("Initialized param "
+                << i
+                << " - APVTS: "
+                << juce::String(apvtsValue, 3)
+                << " JSFX: "
+                << juce::String(jsfxValue, 3));
         }
     }
 
