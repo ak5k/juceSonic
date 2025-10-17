@@ -979,6 +979,65 @@ bool AudioPluginAudioProcessor::loadPresetByName(const juce::String& presetName)
     return true;
 }
 
+bool AudioPluginAudioProcessor::loadPresetFromData(const juce::String& base64Data)
+{
+    if (!sxInstance || base64Data.isEmpty())
+        return false;
+
+    DBG("Loading preset from data (" << base64Data.length() << " chars)");
+    DBG("Base64 data: " << base64Data);
+
+    // Decode base64 data to text
+    juce::MemoryOutputStream decodedStream;
+    bool decodeSuccess = juce::Base64::convertFromBase64(decodedStream, base64Data);
+
+    DBG("Decode result: " << (decodeSuccess ? "SUCCESS" : "FAILED"));
+    DBG("Decoded stream size: " << decodedStream.getDataSize() << " bytes");
+
+    // Check if we got any data regardless of return value
+    if (decodedStream.getDataSize() == 0)
+    {
+        DBG("No decoded data - preset data might be invalid");
+        return false;
+    }
+
+    // Convert decoded data to string (JSFX text state format)
+    juce::String stateText = decodedStream.toString();
+
+    DBG("Decoded state text (" << stateText.length() << " chars): " << stateText.substring(0, 100) << "...");
+
+    if (stateText.isEmpty())
+    {
+        DBG("Decoded preset text is empty");
+        return false;
+    }
+
+    // Use JSFX API to load text state
+    JesusonicAPI.sx_loadState(sxInstance, stateText.toRawUTF8());
+
+    // Sync APVTS parameters with the loaded state
+    for (int i = 0; i < numActiveParams; ++i)
+    {
+        if (auto* param = parameterCache[i])
+        {
+            double minVal, maxVal, step;
+            double value = JesusonicAPI.sx_getParmVal(sxInstance, i, &minVal, &maxVal, &step);
+
+            // Convert JSFX value [min, max] to normalized [0, 1]
+            float normalizedValue =
+                (maxVal != minVal) ? static_cast<float>((value - minVal) / (maxVal - minVal)) : 0.0f;
+
+            param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normalizedValue));
+        }
+    }
+
+    // Re-sync the parameter manager with new values
+    parameterSync.initialize(parameterCache, sxInstance, numActiveParams, lastSampleRate);
+
+    DBG("Preset loaded successfully from data using sx_loadState");
+    return true;
+}
+
 const char* AudioPluginAudioProcessor::getPresetNamesRaw()
 {
     if (!sxInstance)

@@ -149,6 +149,7 @@ public:
 
     // Preset management
     bool loadPresetByName(const juce::String& presetName);
+    bool loadPresetFromData(const juce::String& base64Data);
     const char* getPresetNamesRaw();
 
     PresetManager& getPresetManager()

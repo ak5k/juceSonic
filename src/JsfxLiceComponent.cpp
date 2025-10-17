@@ -318,9 +318,6 @@ void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
     // Update JSFX mouse variables
     updateMousePosition(event);
     updateMouseButtons(event);
-
-    // Immediately run @gfx to respond to mouse input
-    triggerGfxExecution();
 }
 
 void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
@@ -354,9 +351,6 @@ void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
         *liceState->m_mouse_cap = static_cast<EEL_F>(mouseCap);
 
     DBG("Mouse button released, cap = " << mouseCap);
-
-    // Immediately run @gfx to respond to mouse release
-    triggerGfxExecution();
 }
 
 void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
@@ -367,9 +361,6 @@ void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
     // Update JSFX mouse variables
     updateMousePosition(event);
     updateMouseButtons(event);
-
-    // Immediately run @gfx for smooth interaction
-    triggerGfxExecution();
 }
 
 void JsfxLiceComponent::mouseMove(const juce::MouseEvent& event)
@@ -393,9 +384,6 @@ void JsfxLiceComponent::mouseMove(const juce::MouseEvent& event)
             mouseCap |= 16;
         *liceState->m_mouse_cap = static_cast<EEL_F>(mouseCap);
     }
-
-    // Trigger graphics update for hover effects
-    triggerGfxExecution();
 }
 
 void JsfxLiceComponent::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
@@ -420,9 +408,6 @@ void JsfxLiceComponent::mouseWheelMove(const juce::MouseEvent& event, const juce
 
     // Update button state
     updateMouseButtons(event);
-
-    // Trigger immediate graphics update
-    triggerGfxExecution();
 }
 
 // Helper methods to update JSFX mouse variables

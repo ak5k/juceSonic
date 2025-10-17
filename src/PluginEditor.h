@@ -217,8 +217,7 @@ private:
     void unloadJSFXFile();
     void rebuildParameterSliders();
     void updatePresetList();
-    void
-    onPresetSelected(const juce::String& libraryName, const juce::String& presetName, const juce::String& presetData);
+    void onPresetSelected(const juce::String& category, const juce::String& label, const juce::String& itemData);
 
     AudioPluginAudioProcessor& processorRef;
 

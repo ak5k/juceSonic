@@ -24,6 +24,43 @@ void LibraryBrowser::FilteredListPopup::setItems(const std::vector<Item>& items)
     selectedIndex = -1;
     scrollOffset = 0; // Reset scroll when new items are set
 
+    auto& lf = getLookAndFeel();
+    auto opts = juce::PopupMenu::Options();
+    int standardHeight = opts.getStandardItemHeight();
+    int borderSize = lf.getPopupMenuBorderSizeWithOptions(opts);
+
+    // Calculate sizes exactly like JUCE PopupMenu does
+    int maxWidth = standardHeight; // Start with standardHeight like JUCE
+    int maxHeight = 0;
+
+    for (const auto& item : itemList)
+    {
+        int itemW = 80;
+        int itemH = 16;
+
+        // Use JUCE's method to calculate ideal size for each item
+        lf.getIdealPopupMenuItemSizeWithOptions(
+            item.label,
+            item.isHeader, // isSeparator
+            standardHeight,
+            itemW,
+            itemH,
+            opts
+        );
+
+        maxWidth = juce::jmax(maxWidth, itemW);
+        maxHeight = juce::jmax(maxHeight, itemH);
+    }
+
+    // Add border * 2 to width (like JUCE does)
+    idealWidth = maxWidth + borderSize * 2;
+
+    // Use the calculated item height (limited like JUCE does)
+    itemHeight = juce::jlimit(1, 600, maxHeight);
+
+    // Calculate total content height
+    contentHeight = (int)itemList.size() * itemHeight;
+
     // Auto-select first selectable item
     for (int i = 0; i < (int)itemList.size(); ++i)
     {
@@ -50,22 +87,33 @@ void LibraryBrowser::FilteredListPopup::show(juce::Component& attachTo)
         DBG("Adding popup to top-level component");
         topLevel->addAndMakeVisible(this);
 
+        // Add mouse listener to desktop to catch clicks outside
+        topLevel->addMouseListener(this, true);
+
         // Get screen position of textEditor
         auto screenBounds = attachTo.getScreenBounds();
 
         // Convert to top-level component coordinates
         auto topLevelBounds = topLevel->getLocalArea(nullptr, screenBounds);
 
-        int height = juce::jmin((int)itemList.size() * itemHeight, 400);
+        // Calculate height: content + borders, but limited to max height (like JUCE's 600px limit)
+        auto opts = juce::PopupMenu::Options();
+        int borderSize = getLookAndFeel().getPopupMenuBorderSizeWithOptions(opts);
+        int maxHeight = 600; // Same as JUCE PopupMenu
+        int height = juce::jmin(contentHeight + borderSize * 2, maxHeight);
+
+        // Use calculated ideal width, but respect minimum width from textEditor
+        int width = juce::jmax(idealWidth, topLevelBounds.getWidth());
+
         DBG("Setting bounds: x="
             << topLevelBounds.getX()
             << ", y="
             << topLevelBounds.getBottom()
             << ", width="
-            << topLevelBounds.getWidth()
+            << width
             << ", height="
             << height);
-        setBounds(topLevelBounds.getX(), topLevelBounds.getBottom(), topLevelBounds.getWidth(), height);
+        setBounds(topLevelBounds.getX(), topLevelBounds.getBottom(), width, height);
 
         DBG("Calling toFront (without grabbing focus)");
         toFront(false); // Don't grab focus - let text editor keep it
@@ -77,7 +125,10 @@ void LibraryBrowser::FilteredListPopup::show(juce::Component& attachTo)
 void LibraryBrowser::FilteredListPopup::hide()
 {
     if (auto* parent = getParentComponent())
+    {
+        parent->removeMouseListener(this);
         parent->removeChildComponent(this);
+    }
 }
 
 bool LibraryBrowser::FilteredListPopup::isVisible() const
@@ -126,27 +177,39 @@ void LibraryBrowser::FilteredListPopup::ensureSelectedVisible()
 {
     if (selectedIndex >= 0 && selectedIndex < (int)itemList.size())
     {
-        int itemTop = selectedIndex * itemHeight - scrollOffset;
+        auto opts = juce::PopupMenu::Options();
+        int borderSize = getLookAndFeel().getPopupMenuBorderSizeWithOptions(opts);
+        int visibleHeight = getHeight() - borderSize * 2;
+
+        int itemTop = selectedIndex * itemHeight;
         int itemBottom = itemTop + itemHeight;
 
-        if (itemBottom > getHeight())
-        {
-            // Scroll down to show item
-            scrollOffset += (itemBottom - getHeight());
-            repaint();
-        }
-        else if (itemTop < 0)
+        int visibleTop = scrollOffset;
+        int visibleBottom = scrollOffset + visibleHeight;
+
+        if (itemTop < visibleTop)
         {
             // Scroll up to show item
-            scrollOffset += itemTop;
-            repaint();
+            scrollOffset = itemTop;
         }
+        else if (itemBottom > visibleBottom)
+        {
+            // Scroll down to show item
+            scrollOffset = itemBottom - visibleHeight;
+        }
+
+        // Clamp scroll offset
+        int maxScroll = contentHeight - visibleHeight;
+        scrollOffset = juce::jlimit(0, juce::jmax(0, maxScroll), scrollOffset);
+        repaint();
     }
 }
 
 void LibraryBrowser::FilteredListPopup::paint(juce::Graphics& g)
 {
     auto& lf = getLookAndFeel();
+    auto opts = juce::PopupMenu::Options();
+    int borderSize = lf.getPopupMenuBorderSizeWithOptions(opts);
 
     // Draw background
     g.fillAll(lf.findColour(juce::PopupMenu::backgroundColourId));
@@ -155,22 +218,25 @@ void LibraryBrowser::FilteredListPopup::paint(juce::Graphics& g)
     g.setColour(lf.findColour(juce::PopupMenu::backgroundColourId).contrasting(0.5f));
     g.drawRect(getLocalBounds(), 1);
 
-    // Calculate visible item range
-    int y = -scrollOffset;
+    // Calculate visible area (excluding borders)
+    auto contentArea = getLocalBounds().reduced(borderSize, borderSize);
+
+    // Calculate starting Y position accounting for scroll and border
+    int y = borderSize - scrollOffset;
 
     for (int i = 0; i < (int)itemList.size(); ++i)
     {
-        auto itemBounds = juce::Rectangle<int>(0, y, getWidth(), itemHeight);
+        auto itemBounds = juce::Rectangle<int>(borderSize, y, contentArea.getWidth(), itemHeight);
 
         // Only draw items that are visible
-        if (itemBounds.getBottom() > 0 && itemBounds.getY() < getHeight())
+        if (itemBounds.getBottom() > borderSize && itemBounds.getY() < getHeight() - borderSize)
         {
             if (itemList[i].isHeader)
             {
                 // Draw section header
                 g.setColour(lf.findColour(juce::PopupMenu::headerTextColourId));
-                g.setFont(juce::FontOptions((float)itemHeight * 0.65f, juce::Font::bold));
-                g.drawText(itemList[i].itemName, itemBounds.reduced(10, 0), juce::Justification::centredLeft);
+                g.setFont(juce::FontOptions((float)itemHeight * 0.6f, juce::Font::bold));
+                g.drawText(itemList[i].label, itemBounds.reduced(4, 0), juce::Justification::centredLeft);
             }
             else
             {
@@ -181,15 +247,22 @@ void LibraryBrowser::FilteredListPopup::paint(juce::Graphics& g)
                 {
                     g.setColour(lf.findColour(juce::PopupMenu::highlightedBackgroundColourId));
                     g.fillRect(itemBounds);
+                    g.setColour(lf.findColour(juce::PopupMenu::highlightedTextColourId));
+                }
+                else
+                {
+                    g.setColour(lf.findColour(juce::PopupMenu::textColourId));
                 }
 
-                g.setColour(
-                    isHighlighted ? lf.findColour(juce::PopupMenu::highlightedTextColourId)
-                                  : lf.findColour(juce::PopupMenu::textColourId)
-                );
+                // Use standard popup menu font
+                auto font = lf.getPopupMenuFont();
+                auto maxFontHeight = (float)itemHeight / 1.3f;
+                if (font.getHeight() > maxFontHeight)
+                    font.setHeight(maxFontHeight);
+                g.setFont(font);
 
-                g.setFont(juce::FontOptions((float)itemHeight * 0.7f));
-                g.drawText(itemList[i].itemName, itemBounds.reduced(10, 0), juce::Justification::centredLeft);
+                // Draw text with proper padding (similar to JUCE's reduced(3) for icon area)
+                g.drawText(itemList[i].label, itemBounds.reduced(8, 2), juce::Justification::centredLeft);
             }
         }
 
@@ -250,7 +323,18 @@ bool LibraryBrowser::FilteredListPopup::keyPressed(const juce::KeyPress& key)
 
 void LibraryBrowser::FilteredListPopup::mouseDown(const juce::MouseEvent& e)
 {
-    int index = (e.y + scrollOffset) / itemHeight;
+    // Check if click is outside the popup - if so, hide it
+    if (!getLocalBounds().contains(e.getEventRelativeTo(this).getPosition()))
+    {
+        hide();
+        return;
+    }
+
+    auto opts = juce::PopupMenu::Options();
+    int borderSize = getLookAndFeel().getPopupMenuBorderSizeWithOptions(opts);
+
+    // Account for border and scroll when calculating index
+    int index = (e.y - borderSize + scrollOffset) / itemHeight;
     if (index >= 0 && index < (int)itemList.size() && !itemList[index].isHeader)
     {
         selectedIndex = index;
@@ -260,7 +344,11 @@ void LibraryBrowser::FilteredListPopup::mouseDown(const juce::MouseEvent& e)
 
 void LibraryBrowser::FilteredListPopup::mouseMove(const juce::MouseEvent& e)
 {
-    int index = (e.y + scrollOffset) / itemHeight;
+    auto opts = juce::PopupMenu::Options();
+    int borderSize = getLookAndFeel().getPopupMenuBorderSizeWithOptions(opts);
+
+    // Account for border and scroll when calculating index
+    int index = (e.y - borderSize + scrollOffset) / itemHeight;
     if (index >= 0 && index < (int)itemList.size())
     {
         hoveredIndex = index;
@@ -271,6 +359,24 @@ void LibraryBrowser::FilteredListPopup::mouseMove(const juce::MouseEvent& e)
 void LibraryBrowser::FilteredListPopup::mouseExit(const juce::MouseEvent&)
 {
     hoveredIndex = -1;
+    repaint();
+}
+
+void LibraryBrowser::FilteredListPopup::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
+{
+    auto opts = juce::PopupMenu::Options();
+    int borderSize = getLookAndFeel().getPopupMenuBorderSizeWithOptions(opts);
+    int visibleHeight = getHeight() - borderSize * 2;
+
+    // Scroll by wheel delta (negative deltaY means scroll down)
+    // Use itemHeight as the scroll unit - increased multiplier for faster scrolling
+    int scrollAmount = juce::roundToInt(-wheel.deltaY * itemHeight * 10.0f);
+    scrollOffset += scrollAmount;
+
+    // Clamp scroll offset
+    int maxScroll = contentHeight - visibleHeight;
+    scrollOffset = juce::jlimit(0, juce::jmax(0, maxScroll), scrollOffset);
+
     repaint();
 }
 
@@ -457,40 +563,40 @@ void LibraryBrowser::buildFilteredList(std::vector<FilteredListPopup::Item>& ite
         for (int bankIdx = 0; bankIdx < file.getNumChildren(); ++bankIdx)
         {
             auto bank = file.getChild(bankIdx);
-            auto bankNameVar = bank.getProperty("name");
-            juce::String bankName = bankNameVar.toString();
+            auto categoryNameVar = bank.getProperty("name");
+            juce::String categoryName = categoryNameVar.toString();
 
-            bool bankHasMatches = false;
+            bool categoryHasMatches = false;
             for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
             {
                 auto item = bank.getChild(itemIdx);
-                auto itemNameVar = item.getProperty("name");
-                juce::String itemName = itemNameVar.toString();
+                auto itemLabelVar = item.getProperty("name");
+                juce::String itemLabel = itemLabelVar.toString();
 
-                if (itemName.toLowerCase().contains(lowerSearch))
+                if (itemLabel.toLowerCase().contains(lowerSearch))
                 {
-                    bankHasMatches = true;
+                    categoryHasMatches = true;
                     break;
                 }
             }
 
-            if (bankHasMatches)
+            if (categoryHasMatches)
             {
-                // Add bank header
-                items.push_back({bankName, bankName, -1, true});
+                // Add category header
+                items.push_back({categoryName, categoryName, -1, true});
 
                 // Add matching items
                 for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
                 {
                     auto item = bank.getChild(itemIdx);
-                    auto itemNameVar = item.getProperty("name");
-                    juce::String itemName = itemNameVar.toString();
+                    auto itemLabelVar = item.getProperty("name");
+                    juce::String itemLabel = itemLabelVar.toString();
 
-                    if (itemName.toLowerCase().contains(lowerSearch))
+                    if (itemLabel.toLowerCase().contains(lowerSearch))
                     {
                         int index = (int)itemIndices.size();
                         itemIndices.push_back({fileIdx, bankIdx, itemIdx});
-                        items.push_back({bankName, itemName, index, false});
+                        items.push_back({categoryName, itemLabel, index, false});
                     }
                 }
             }
@@ -521,17 +627,17 @@ void LibraryBrowser::onFilteredItemSelected(int index)
     if (!item.isValid())
         return;
 
-    auto bankNameVar = bank.getProperty("name");
-    auto itemNameVar = item.getProperty("name");
+    auto categoryVar = bank.getProperty("name");
+    auto labelVar = item.getProperty("name");
     auto itemDataVar = item.getProperty("data");
 
-    if (bankNameVar.isVoid() || itemNameVar.isVoid() || itemDataVar.isVoid())
+    if (categoryVar.isVoid() || labelVar.isVoid() || itemDataVar.isVoid())
         return;
 
-    currentItemName = itemNameVar.toString();
+    currentItemName = labelVar.toString();
     textEditor.setText(currentItemName, false);
 
-    itemSelectedCallback(bankNameVar.toString(), itemNameVar.toString(), itemDataVar.toString());
+    itemSelectedCallback(categoryVar.toString(), labelVar.toString(), itemDataVar.toString());
 
     textEditor.grabKeyboardFocus();
 }
@@ -626,12 +732,12 @@ void LibraryBrowser::onMenuResult(int result)
     auto item = bank.getChild(idx.itemIdx);
     if (!item.isValid())
         return;
-    auto bankNameVar = bank.getProperty("name");
-    auto itemNameVar = item.getProperty("name");
+    auto categoryVar = bank.getProperty("name");
+    auto labelVar = item.getProperty("name");
     auto itemDataVar = item.getProperty("data");
-    if (bankNameVar.isVoid() || itemNameVar.isVoid() || itemDataVar.isVoid())
+    if (categoryVar.isVoid() || labelVar.isVoid() || itemDataVar.isVoid())
         return;
-    currentItemName = itemNameVar.toString();
+    currentItemName = labelVar.toString();
     textEditor.setText(currentItemName, false);
-    itemSelectedCallback(bankNameVar.toString(), itemNameVar.toString(), itemDataVar.toString());
+    itemSelectedCallback(categoryVar.toString(), labelVar.toString(), itemDataVar.toString());
 }

@@ -164,8 +164,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     libraryBrowser.setLabelText("Presets:");                 // Set label text
     libraryBrowser.setPlaceholderText("(No preset loaded)"); // Set placeholder
     libraryBrowser.setItemSelectedCallback(
-        [this](const juce::String& libraryName, const juce::String& presetName, const juce::String& presetData)
-        { onPresetSelected(libraryName, presetName, presetData); }
+        [this](const juce::String& category, const juce::String& label, const juce::String& itemData)
+        { onPresetSelected(category, label, itemData); }
     );
 
     // Wet amount slider
@@ -865,16 +865,25 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
 }
 
 void AudioPluginAudioProcessorEditor::onPresetSelected(
-    const juce::String& libraryName,
-    const juce::String& presetName,
-    const juce::String& presetData
+    const juce::String& category,
+    const juce::String& label,
+    const juce::String& itemData
 )
 {
-    DBG("Loading preset: " << presetName << " from library: " << libraryName);
+    DBG("LibraryBrowser item selected:");
+    DBG("  Category: " << category);
+    DBG("  Label: " << label);
+    DBG("  Data length: " << itemData.length() << " chars");
+    DBG("  Data preview: " << itemData.substring(0, 50) << "...");
 
-    // The presetData is base64 encoded JSFX state
-    // Load it into the processor using the existing preset loading mechanism
-    processorRef.loadPresetByName(presetName);
+    // The itemData is base64 encoded JSFX state
+    // Pass it directly to the processor to decode and apply
+    bool success = processorRef.loadPresetFromData(itemData);
+
+    if (success)
+        DBG("Preset loaded successfully: " << label);
+    else
+        DBG("Failed to load preset: " << label);
 }
 
 //==============================================================================

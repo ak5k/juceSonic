@@ -19,10 +19,10 @@ class LibraryBrowser : public juce::Component
 public:
     /**
      * @brief Callback type for item selection
-     * Parameters: bankName, itemName, itemData
+     * Parameters: category, label, itemData
      */
     using ItemSelectedCallback =
-        std::function<void(const juce::String& bankName, const juce::String& itemName, const juce::String& itemData)>;
+        std::function<void(const juce::String& category, const juce::String& label, const juce::String& itemData)>;
 
     LibraryBrowser();
     ~LibraryBrowser() override;
@@ -81,10 +81,10 @@ private:
     public:
         struct Item
         {
-            juce::String bankName;
-            juce::String itemName;
-            int index;
-            bool isHeader;
+            juce::String category; // Parent/group name (e.g., bank, folder)
+            juce::String label;    // Item display name
+            int index;             // Index in flat list
+            bool isHeader;         // Whether this is a category header
         };
 
         FilteredListPopup(LibraryBrowser& owner);
@@ -107,6 +107,7 @@ private:
         void mouseDown(const juce::MouseEvent& e) override;
         void mouseMove(const juce::MouseEvent& e) override;
         void mouseExit(const juce::MouseEvent& e) override;
+        void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
     private:
         LibraryBrowser& owner;
@@ -114,7 +115,9 @@ private:
         int selectedIndex = -1;
         int hoveredIndex = -1;
         int itemHeight = 20;
-        int scrollOffset = 0; // Y offset for scrolling
+        int scrollOffset = 0;  // Y offset for scrolling
+        int contentHeight = 0; // Total height of all items
+        int idealWidth = 0;    // Calculated width based on content
 
         void ensureSelectedVisible();
     };
