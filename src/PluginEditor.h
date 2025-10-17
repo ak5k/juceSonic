@@ -226,5 +226,10 @@ private:
     void destroyJsfxUI();
     void toggleIOMatrix();
 
+    // Deferred size restoration for DAW compatibility
+    bool needsSizeRestoration = false;
+    int restoredWidth = 700;
+    int restoredHeight = 500;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

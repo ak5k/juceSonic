@@ -272,26 +272,24 @@ void AudioPluginAudioProcessor::releaseResources()
 
 bool AudioPluginAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-#if JucePlugin_IsMidiEffect
-    juce::ignoreUnused(layouts);
-    return true;
-#else
-    // Get channel counts
+    // Get channel sets
     const auto& mainInput = layouts.getMainInputChannelSet();
     const auto& mainOutput = layouts.getMainOutputChannelSet();
+
+    // Require at least one audio channel on main input and main output
+    if (mainInput.size() == 0 || mainOutput.size() == 0)
+        return false;
 
     // Check main input/output don't exceed our maximum
     if (mainInput.size() > PluginConstants::MaxChannels || mainOutput.size() > PluginConstants::MaxChannels)
         return false;
 
-    // Input and output layouts must match
-#if !JucePlugin_IsSynth
+    // Require main input and main output layouts to match exactly
     if (mainInput != mainOutput)
         return false;
-#endif
 
-    // Check sidechain bus if present
-    if (layouts.getNumChannels(true, 1) > 0) // true = input bus, 1 = sidechain bus index
+    // If a sidechain is present, it must match the main input layout exactly
+    if (layouts.getNumChannels(true, 1) > 0)
     {
         const auto& sidechainInput = layouts.getChannelSet(true, 1);
 
@@ -299,7 +297,7 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
         if (sidechainInput.size() > PluginConstants::MaxChannels)
             return false;
 
-        // Sidechain layout must match main input layout
+        // Sidechain must match main input
         if (sidechainInput != mainInput)
             return false;
 
@@ -309,7 +307,6 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
     }
 
     return true;
-#endif
 }
 
 void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)

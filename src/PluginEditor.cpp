@@ -181,22 +181,25 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     auto& state = processorRef.getAPVTS().state;
     bool showingJsfxUI = state.getProperty("editorShowingJsfxUI", true);
 
-    // Restore size based on which view was showing
-    int editorWidth, editorHeight;
+    // Store size to be restored - defer actual resize to avoid DAW override
     if (showingJsfxUI)
     {
         // Was showing LICE UI - restore LICE size
-        editorWidth = state.getProperty("liceUIWidth", 700);
-        editorHeight = state.getProperty("liceUIHeight", 500);
+        restoredWidth = state.getProperty("liceUIWidth", 700);
+        restoredHeight = state.getProperty("liceUIHeight", 500);
     }
     else
     {
         // Was showing JUCE controls - restore JUCE size
-        editorWidth = state.getProperty("juceControlsWidth", 700);
-        editorHeight = state.getProperty("juceControlsHeight", 500);
+        restoredWidth = state.getProperty("juceControlsWidth", 700);
+        restoredHeight = state.getProperty("juceControlsHeight", 500);
     }
 
-    setSize(editorWidth, editorHeight);
+    // Set initial size (may be overridden by DAW)
+    setSize(restoredWidth, restoredHeight);
+
+    // Flag that we need to restore size in timer callback
+    needsSizeRestoration = true;
 
     rebuildParameterSliders();
 
@@ -258,6 +261,13 @@ void AudioPluginAudioProcessorEditor::destroyJsfxUI()
 
 void AudioPluginAudioProcessorEditor::timerCallback()
 {
+    // Apply deferred size restoration (once, after DAW has initialized the window)
+    if (needsSizeRestoration)
+    {
+        setSize(restoredWidth, restoredHeight);
+        needsSizeRestoration = false;
+    }
+
 #if defined(__linux__) || defined(SWELL_TARGET_GDK)
     // On Linux with GDK, pump the SWELL message loop to process window events, redraws, and timers
     // This is needed for JSFX UI to work properly
