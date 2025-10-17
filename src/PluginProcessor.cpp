@@ -371,7 +371,6 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     {
         // MIDI instrument - use output bus channel count
         inputChannelCount = getBus(false, 0)->getNumberOfChannels();
-        DBG("MIDI instrument detected - using " << inputChannelCount << " output channels for processing");
     }
     int totalJsfxChannels = juce::jmin(inputChannelCount, PluginConstants::JsfxMaxChannels);
 
@@ -594,21 +593,90 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
     {
         if (xmlState->hasTagName(apvts.state.getType()))
         {
+            // Step 1: Restore the state tree (this restores parameter values to APVTS)
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
 
-            // Restore wet amount
+            // Step 2: Restore wet amount
             currentWet = apvts.state.getProperty("wetAmount", 1.0);
             lastWet = currentWet;
 
+            // Step 3: Load and initialize JSFX with correct configuration
             auto jsfxPath = getCurrentJSFXPath();
             if (jsfxPath.isNotEmpty())
             {
                 juce::File jsfxFile(jsfxPath);
                 if (jsfxFile.existsAsFile())
                 {
-                    loadJSFX(jsfxFile);
+                    // Create JSFX instance without parameter mapping
+                    unloadJSFX();
 
-                    // Restore routing configuration after JSFX loads
+                    juce::File sourceDir = jsfxFile.getParentDirectory();
+                    juce::String fileName = jsfxFile.getFileName();
+                    bool wantWak = false;
+                    sxInstance = JesusonicAPI.sx_createInstance(
+                        sourceDir.getFullPathName().toRawUTF8(),
+                        fileName.toRawUTF8(),
+                        &wantWak
+                    );
+
+                    if (sxInstance)
+                    {
+                        apvts.state.setProperty(jsfxPathParamID, jsfxFile.getFullPathName(), nullptr);
+                        sx_set_host_ctx(sxInstance, this, JsfxSliderAutomateThunk);
+                        currentJSFXName = jsfxFile.getFileNameWithoutExtension();
+
+                        // Set sample rate
+                        JesusonicAPI
+                            .sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
+
+                        // Get parameter count
+                        numActiveParams = JesusonicAPI.sx_getNumParms(sxInstance);
+                        numActiveParams = juce::jmin(numActiveParams, PluginConstants::MaxParameters);
+
+                        // Step 4: Restore parameter values from APVTS to JSFX
+                        DBG("=== RESTORING PARAMETERS FROM STATE ===");
+                        for (int i = 0; i < numActiveParams; ++i)
+                        {
+                            if (auto* param = parameterCache[i])
+                            {
+                                // Get parameter range from JSFX
+                                double minVal, maxVal, step;
+                                JesusonicAPI.sx_getParmVal(sxInstance, i, &minVal, &maxVal, &step);
+                                parameterRanges[i].minVal = minVal;
+                                parameterRanges[i].maxVal = maxVal;
+                                parameterRanges[i].step = step;
+
+                                // Get restored normalized value from APVTS
+                                float normalizedValue = param->getValue();
+                                DBG("Param " << i << ": normalizedValue=" << normalizedValue);
+
+                                // Convert to actual JSFX value and set it
+                                double actualValue =
+                                    ParameterUtils::normalizedToActualValue(sxInstance, i, normalizedValue);
+                                JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
+                                DBG("  -> Set JSFX actual value: " << actualValue);
+                            }
+                        }
+
+                        // Step 5: Initialize parameter sync with the restored values
+                        parameterSync.initialize(parameterCache, sxInstance, numActiveParams, lastSampleRate);
+
+                        // Set latency
+                        int latencySamples = JesusonicAPI.sx_getCurrentLatency(sxInstance);
+                        currentJSFXLatency.store(latencySamples, std::memory_order_relaxed);
+                        setLatencySamples(latencySamples);
+
+                        // Register MIDI callback
+                        sx_set_midi_ctx(sxInstance, &midiSendRecvCallback, this);
+                        DBG("MIDI context registered with JSFX instance: " << currentJSFXName);
+
+                        // Check instrument flag
+                        INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
+                        bool isInstrument = (flags & 1) != 0;
+                        DBG("JSFX flags: " << flags << ", isInstrument=" << (isInstrument ? "YES" : "NO"));
+                    }
+
+                    // Step 6: Restore routing configuration
                     auto routingStr = apvts.state.getProperty("ioMatrixRouting", "").toString();
                     if (routingStr.isNotEmpty())
                         restoreRoutingFromString(routingStr);
