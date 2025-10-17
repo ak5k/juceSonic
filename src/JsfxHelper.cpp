@@ -353,7 +353,6 @@ int JsfxHelper::hostGetSetNumChannels(void* hostctx, int* numChannels)
     // hostctx is a pointer to AudioPluginAudioProcessor (set via sx_set_host_ctx)
     // Forward declare to avoid circular dependency
     class AudioPluginAudioProcessor;
-    auto* processor = static_cast<AudioPluginAudioProcessor*>(hostctx);
 
     // JSFX is querying the total number of input channels available
     // Return total input channels (main + sidechain)

@@ -174,6 +174,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(wetLabel);
     wetLabel.setText("Dry/Wet", juce::dontSendNotification);
     wetLabel.setJustificationType(juce::Justification::centredRight);
+    wetLabel.setColour(juce::Label::textColourId, juce::Colours::white);
 
     addAndMakeVisible(wetSlider);
     wetSlider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -508,7 +509,7 @@ void AudioPluginAudioProcessorEditor::resized()
 
     // Fixed minimum sizes that must fit
     int buttonWidth = 60;        // Minimum for each button
-    int wetLabelWidth = 45;      // Enough for "Dry/Wet" text
+    int wetLabelWidth = 60;      // Enough for "Dry/Wet" text
     int wetSliderMinWidth = 100; // Minimum usable slider width
     int wetSliderMaxWidth = 200; // Maximum to prevent it getting too large
     int libraryMinWidth = 150;   // Minimum for library browser
@@ -528,7 +529,6 @@ void AudioPluginAudioProcessorEditor::resized()
 
     // Distribute extra space: 70% to library, 30% to wet slider (capped at max)
     int libraryWidth = libraryMinWidth + (int)(extraSpace * 0.7f);
-    int wetSliderWidth = juce::jmin(wetSliderMaxWidth, wetSliderMinWidth + (int)(extraSpace * 0.3f));
 
     // If wet slider hit its max, give remaining space to library
     if (wetSliderMinWidth + (int)(extraSpace * 0.3f) > wetSliderMaxWidth)
