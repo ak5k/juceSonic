@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 struct SX_Instance;
 
@@ -15,7 +16,8 @@ public:
     ~JsfxEditorWindow();
 
     // Open the editor for the given JSFX instance
-    void open(SX_Instance* instance);
+    // parentComponent is used to get the parent window handle on Windows/macOS
+    void open(SX_Instance* instance, juce::Component* parentComponent);
 
     // Close the editor window
     void close();

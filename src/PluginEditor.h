@@ -1,10 +1,10 @@
 #pragma once
 
+#include <juce_gui_extra/juce_gui_extra.h>
+
 #include "JsfxEditorWindow.h"
 #include "JsfxLiceComponent.h"
 #include "PluginProcessor.h"
-
-#include <juce_gui_extra/juce_gui_extra.h>
 
 class PersistentFileChooser;
 
@@ -205,7 +205,7 @@ private:
 
     juce::TextButton loadButton{"Load JSFX"};
     juce::TextButton unloadButton{"Unload"};
-    juce::TextButton uiButton{"Show UI"};
+    juce::TextButton uiButton{"UI"};
     juce::TextButton editButton{"Editor"};
     juce::TextButton ioMatrixButton{"I/O Matrix"};
     juce::Slider wetSlider;

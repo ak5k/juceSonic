@@ -20,6 +20,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     addAndMakeVisible(editButton);
     editButton.setEnabled(false); // Disabled until JSFX is loaded
+    editButton.setClickingTogglesState(true);
     editButton.onClick = [this]()
     {
         auto* instance = processorRef.getSXInstancePtr();
@@ -41,12 +42,14 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
         if (jsfxEditorWindow->isOpen())
         {
             jsfxEditorWindow->close();
-            editButton.setButtonText("Edit");
+            editButton.setButtonText("Editor");
+            editButton.setToggleState(false, juce::dontSendNotification);
         }
         else
         {
-            jsfxEditorWindow->open(instance);
+            jsfxEditorWindow->open(instance, this);
             editButton.setButtonText("Close Editor");
+            editButton.setToggleState(true, juce::dontSendNotification);
         }
     };
 
@@ -66,7 +69,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
             // Step 2: Hide LICE, show JUCE
             jsfxLiceRenderer->setVisible(false);
             viewport.setVisible(true);
-            uiButton.setButtonText("Show UI");
+            uiButton.setButtonText("UI");
 
             // Step 3: Set JUCE resize limits
             setResizeLimits(700, 170, 700, 1080);
@@ -137,7 +140,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
         // Step 4: Hide JUCE, show LICE
         viewport.setVisible(false);
         jsfxLiceRenderer->setVisible(true);
-        uiButton.setButtonText("Hide UI");
+        uiButton.setButtonText("Params");
 
         // Step 5: Set LICE resize limits and apply size
         setResizeLimits(400, 300, 1920, 1080);
@@ -177,8 +180,21 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Restore editor state from processor
     auto& state = processorRef.getAPVTS().state;
     bool showingJsfxUI = state.getProperty("editorShowingJsfxUI", true);
-    int editorWidth = state.getProperty("editorWidth", 700);
-    int editorHeight = state.getProperty("editorHeight", 500);
+
+    // Restore size based on which view was showing
+    int editorWidth, editorHeight;
+    if (showingJsfxUI)
+    {
+        // Was showing LICE UI - restore LICE size
+        editorWidth = state.getProperty("liceUIWidth", 700);
+        editorHeight = state.getProperty("liceUIHeight", 500);
+    }
+    else
+    {
+        // Was showing JUCE controls - restore JUCE size
+        editorWidth = state.getProperty("juceControlsWidth", 700);
+        editorHeight = state.getProperty("juceControlsHeight", 500);
+    }
 
     setSize(editorWidth, editorHeight);
 
@@ -206,8 +222,17 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 
     state.setProperty("editorShowingJsfxUI", jsfxLiceRenderer && jsfxLiceRenderer->isVisible(), nullptr);
 
-    state.setProperty("editorWidth", getWidth(), nullptr);
-    state.setProperty("editorHeight", getHeight(), nullptr);
+    // Save current size to the appropriate property based on which view is showing
+    if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
+    {
+        state.setProperty("liceUIWidth", getWidth(), nullptr);
+        state.setProperty("liceUIHeight", getHeight(), nullptr);
+    }
+    else
+    {
+        state.setProperty("juceControlsWidth", getWidth(), nullptr);
+        state.setProperty("juceControlsHeight", getHeight(), nullptr);
+    }
 
     // Stop timer first to prevent callbacks during destruction
     stopTimer();
@@ -256,12 +281,15 @@ void AudioPluginAudioProcessorEditor::timerCallback()
         if (jsfxEditorWindow->isOpen())
         {
             if (editButton.getButtonText() != "Close Editor")
+            {
                 editButton.setButtonText("Close Editor");
+                editButton.setToggleState(true, juce::dontSendNotification);
+            }
         }
-        else
+        else if (editButton.getButtonText() != "Editor")
         {
-            if (editButton.getButtonText() != "Edit")
-                editButton.setButtonText("Edit");
+            editButton.setButtonText("Editor");
+            editButton.setToggleState(false, juce::dontSendNotification);
         }
     }
 
@@ -315,6 +343,20 @@ void AudioPluginAudioProcessorEditor::resized()
 
     if (jsfxLiceRenderer)
         jsfxLiceRenderer->setBounds(bounds);
+
+    // Save current size to appropriate property based on which view is showing
+    // This ensures sizes are persisted when host calls getStateInformation()
+    auto& state = processorRef.getAPVTS().state;
+    if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
+    {
+        state.setProperty("liceUIWidth", getWidth(), nullptr);
+        state.setProperty("liceUIHeight", getHeight(), nullptr);
+    }
+    else
+    {
+        state.setProperty("juceControlsWidth", getWidth(), nullptr);
+        state.setProperty("juceControlsHeight", getHeight(), nullptr);
+    }
 }
 
 void AudioPluginAudioProcessorEditor::loadJSFXFile()
@@ -346,7 +388,7 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                         jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
                         addAndMakeVisible(*jsfxLiceRenderer);
                         viewport.setVisible(false);
-                        uiButton.setButtonText("Hide UI");
+                        uiButton.setButtonText("Params");
                         uiButton.setEnabled(true);   // Enable UI button for toggling
                         editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
 
@@ -366,7 +408,7 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                     {
                         // No @gfx section, show JUCE parameter controls
                         viewport.setVisible(true);
-                        uiButton.setButtonText("Show UI");
+                        uiButton.setButtonText("UI");
                         uiButton.setEnabled(false);  // Disable UI button if no @gfx
                         editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
 
@@ -424,7 +466,7 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
 
                 // Reset UI state - show parameters, update buttons
                 viewport.setVisible(true);
-                uiButton.setButtonText("Show UI");
+                uiButton.setButtonText("UI");
                 uiButton.setEnabled(false);
                 editButton.setEnabled(false); // Disable Edit button when no JSFX loaded
                 resized();
