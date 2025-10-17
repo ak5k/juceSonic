@@ -262,14 +262,11 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 
 void AudioPluginAudioProcessorEditor::destroyJsfxUI()
 {
-    // Close the editor window if it's open
     if (jsfxEditorWindow)
         jsfxEditorWindow->close();
 
-    // Destroy fullscreen window if it exists (component will be returned automatically)
     jsfxLiceFullscreenWindow.reset();
 
-    // Cleanup LICE renderer
     if (jsfxLiceRenderer)
     {
         DBG("PluginEditor: Destroying JSFX LICE renderer");
@@ -565,22 +562,17 @@ void AudioPluginAudioProcessorEditor::toggleLiceFullscreen()
 
     if (jsfxLiceFullscreenWindow && jsfxLiceFullscreenWindow->isVisible())
     {
-        // Returning from fullscreen - destroy window and re-add component to editor
+        // Return from fullscreen
         jsfxLiceFullscreenWindow.reset();
-
-        // Re-add component back to editor
         addAndMakeVisible(jsfxLiceRenderer.get());
         resized();
     }
     else
     {
-        // Enter fullscreen - create new window
+        // Enter fullscreen
         jsfxLiceFullscreenWindow = std::make_unique<JsfxLiceFullscreenWindow>();
-
-        // Set callback to handle window close
         jsfxLiceFullscreenWindow->onWindowClosed = [this]() { toggleLiceFullscreen(); };
 
-        // Remove from editor and show in fullscreen window
         removeChildComponent(jsfxLiceRenderer.get());
         jsfxLiceFullscreenWindow->showWithComponent(jsfxLiceRenderer.get());
         jsfxLiceFullscreenWindow->setFullScreen(true);

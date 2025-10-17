@@ -5,27 +5,22 @@
 class JsfxLiceComponent;
 
 /**
- * Resizable window that can display JSFX LICE renderer in a separate window
- * and toggle fullscreen mode
+ * Fullscreen window for JSFX LICE renderer.
+ * Borrows the component from PluginEditor, doesn't own it.
  */
 class JsfxLiceFullscreenWindow : public juce::ResizableWindow
 {
 public:
     JsfxLiceFullscreenWindow();
-    ~JsfxLiceFullscreenWindow() override;
+    ~JsfxLiceFullscreenWindow() override = default;
 
     bool keyPressed(const juce::KeyPress& key) override;
     void closeButtonPressed();
-    void resized() override;
 
-    // Show the window with the LICE component
-    void showWithComponent(JsfxLiceComponent* liceComponent);
+    void showWithComponent(JsfxLiceComponent* component);
 
-    // Callback when user wants to close the window
     std::function<void()> onWindowClosed;
 
 private:
-    JsfxLiceComponent* liceComponent = nullptr;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxLiceFullscreenWindow)
 };
