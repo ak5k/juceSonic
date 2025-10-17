@@ -32,16 +32,10 @@ private:
 };
 
 //==============================================================================
-// Forward declaration
-class AudioPluginAudioProcessorEditor;
-
 // Custom LookAndFeel for multi-column preset ComboBox
 class PresetComboBoxLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    // Pointer to the editor so the look-and-feel can decide column count based on search state
-    AudioPluginAudioProcessorEditor* owner = nullptr;
-
     juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label) override;
 };
 
@@ -223,8 +217,6 @@ public:
     void resized() override;
 
     // Public so LookAndFeel can access it
-    bool isSearching = false;
-
 private:
     void timerCallback() override;
     void loadJSFXFile();
@@ -244,8 +236,6 @@ private:
     juce::TextButton ioMatrixButton{"I/O Matrix"};
     juce::ComboBox presetComboBox;
     juce::Label presetLabel;
-    juce::String lastPresetSearchText;   // Track search text changes
-    bool presetComboBoxHadFocus = false; // Track focus changes
     juce::Slider wetSlider;
     juce::Label wetLabel;
     juce::Viewport viewport;
@@ -275,7 +265,7 @@ private:
     // Custom LookAndFeel for preset ComboBox multi-column layout
     PresetComboBoxLookAndFeel presetComboBoxLookAndFeel;
 
-    // Mouse listener used to intercept clicks on the combo-box arrow
+    // Mouse listener to detect dropdown arrow clicks
     struct PresetComboMouseListener : public juce::MouseListener
     {
         explicit PresetComboMouseListener(AudioPluginAudioProcessorEditor* ownerIn)
@@ -288,10 +278,6 @@ private:
     };
 
     std::unique_ptr<PresetComboMouseListener> presetComboMouseListener;
-
-    // Helpers to build and show menus
-    void buildHierarchicalPresetMenu(juce::PopupMenu& outMenu);
-    void buildFilteredPresetMenu(const juce::String& filter, juce::PopupMenu& outMenu);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

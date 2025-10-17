@@ -13,8 +13,7 @@ juce::PopupMenu::Options
 PresetComboBoxLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label)
 {
     auto opts = juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu(box, label);
-    if (owner != nullptr && owner->isSearching)
-        return opts.withMaximumNumColumns(1);
+    // Always use 4 columns for hierarchical preset menu
     return opts.withMaximumNumColumns(4);
 }
 
@@ -25,9 +24,6 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 {
     // Initialize state tree for persistent state management
     setStateTree(processorRef.getAPVTS().state);
-
-    // Set owner pointer for the preset combo box look and feel
-    presetComboBoxLookAndFeel.owner = this;
 
     addAndMakeVisible(loadButton);
     loadButton.onClick = [this]() { loadJSFXFile(); };
@@ -179,7 +175,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     presetComboBox.setLookAndFeel(&presetComboBoxLookAndFeel); // Enable multi-column layout
     presetComboBox.onChange = [this]() { onPresetSelected(); };
 
-    // Create and attach mouse listener to detect dropdown arrow clicks
+    // Attach mouse listener to detect dropdown arrow clicks
     presetComboMouseListener = std::make_unique<PresetComboMouseListener>(this);
     presetComboBox.addMouseListener(presetComboMouseListener.get(), false);
 
@@ -325,46 +321,6 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     // Update wet slider if it changed elsewhere
     if (std::abs(wetSlider.getValue() - processorRef.getWetAmount()) > 0.001)
         wetSlider.setValue(processorRef.getWetAmount(), juce::dontSendNotification);
-
-    // Check if preset combo box gained focus (user entered the text field)
-    bool comboBoxHasFocus = presetComboBox.hasKeyboardFocus(true); // true = check children too
-    if (comboBoxHasFocus && !presetComboBoxHadFocus)
-    {
-        // User just entered the text field - show entire library in single column
-        isSearching = true;
-        buildFilteredPresetMenu(""); // Empty filter = show all presets
-    }
-    else if (!comboBoxHasFocus && presetComboBoxHadFocus)
-    {
-        // User left the text field - restore hierarchical menu if not searching
-        juce::String currentSearchText = presetComboBox.getText();
-        if (currentSearchText.isEmpty())
-        {
-            isSearching = false;
-            buildHierarchicalPresetMenu();
-        }
-    }
-    presetComboBoxHadFocus = comboBoxHasFocus;
-
-    // Check for preset search text changes
-    juce::String currentSearchText = presetComboBox.getText();
-    if (currentSearchText != lastPresetSearchText)
-    {
-        lastPresetSearchText = currentSearchText;
-
-        // When user types, show filtered flat list
-        if (currentSearchText.isNotEmpty())
-        {
-            isSearching = true;
-            buildFilteredPresetMenu(currentSearchText);
-        }
-        else if (isSearching && !comboBoxHasFocus)
-        {
-            // User cleared search and field doesn't have focus - restore hierarchical menu
-            isSearching = false;
-            buildHierarchicalPresetMenu();
-        }
-    }
 
     // Sync Edit button text with editor window state
     if (jsfxEditorWindow)
@@ -896,8 +852,7 @@ void AudioPluginAudioProcessorEditor::PresetComboMouseListener::mouseDown(const 
 
     auto& combo = owner->presetComboBox;
 
-    // Get the bounds of the dropdown arrow button
-    // JUCE ComboBox places the arrow on the right side
+    // Get the bounds of the dropdown arrow button (right side of ComboBox)
     auto arrowBounds = combo.getLocalBounds().removeFromRight(combo.getHeight());
 
     // Check if the click was on the dropdown arrow
@@ -905,10 +860,8 @@ void AudioPluginAudioProcessorEditor::PresetComboMouseListener::mouseDown(const 
     if (arrowBounds.contains(localPos))
     {
         // User clicked the dropdown arrow - show hierarchical multi-column menu
-        owner->isSearching = false;
+        combo.hidePopup();
         owner->buildHierarchicalPresetMenu();
         combo.showPopup();
-        // Prevent the default ComboBox behavior
-        event.source.enableUnboundedMouseMovement(false);
     }
 }
