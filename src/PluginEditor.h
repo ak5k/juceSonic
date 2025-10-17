@@ -12,12 +12,54 @@
 class PersistentFileChooser;
 
 //==============================================================================
+// Custom LookAndFeel with dark theme
+class JuceSonicLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    JuceSonicLookAndFeel()
+    {
+        // Base dark background color
+        auto baseBackground = juce::Colour(0xff010409);
+
+        // Derived colors
+        auto lighter = baseBackground.brighter(0.1f);
+        auto lightest = baseBackground.brighter(0.2f);
+        auto textColor = juce::Colours::white.withAlpha(0.9f);
+        auto textColorDim = juce::Colours::white.withAlpha(0.6f);
+
+        setColour(juce::ResizableWindow::backgroundColourId, baseBackground);
+        setColour(juce::DocumentWindow::backgroundColourId, baseBackground);
+        setColour(juce::TextButton::buttonColourId, lighter);
+        setColour(juce::TextButton::textColourOffId, textColor);
+        setColour(juce::ComboBox::backgroundColourId, lighter);
+        setColour(juce::ComboBox::textColourId, textColor);
+        setColour(juce::ComboBox::outlineColourId, lightest);
+        setColour(juce::TextEditor::backgroundColourId, lighter);
+        setColour(juce::TextEditor::textColourId, textColor);
+        setColour(juce::TextEditor::outlineColourId, lightest);
+        setColour(juce::Label::textColourId, textColor);
+        setColour(juce::ListBox::backgroundColourId, baseBackground);
+        setColour(juce::ListBox::outlineColourId, lightest);
+        setColour(juce::Slider::backgroundColourId, lighter);
+        setColour(juce::Slider::thumbColourId, lightest);
+        setColour(juce::Slider::trackColourId, lightest);
+        setColour(juce::Slider::textBoxTextColourId, textColor);
+        setColour(juce::Slider::textBoxBackgroundColourId, lighter);
+        setColour(juce::Slider::textBoxOutlineColourId, lightest);
+        setColour(juce::TreeView::backgroundColourId, baseBackground);
+        setColour(juce::PopupMenu::backgroundColourId, lighter);
+        setColour(juce::PopupMenu::textColourId, textColor);
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, lightest);
+    }
+};
+
+//==============================================================================
 // Custom DocumentWindow that handles close button properly
 class IOMatrixWindow : public juce::DocumentWindow
 {
 public:
     IOMatrixWindow()
-        : DocumentWindow("I/O Routing Matrix", juce::Colours::darkgrey, juce::DocumentWindow::closeButton)
+        : DocumentWindow("I/O Routing Matrix", juce::Colour(0xff010409), juce::DocumentWindow::closeButton)
     {
         setResizable(true, true);
         setResizeLimits(300, 200, 2000, 2000);
@@ -246,6 +288,8 @@ private:
     std::unique_ptr<IOMatrixWindow> ioMatrixWindow;
     std::unique_ptr<JsfxEditorWindow> jsfxEditorWindow;
     std::unique_ptr<JsfxLiceFullscreenWindow> jsfxLiceFullscreenWindow;
+
+    JuceSonicLookAndFeel customLookAndFeel;
 
     void destroyJsfxUI();
     void toggleIOMatrix();

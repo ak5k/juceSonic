@@ -13,6 +13,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     : AudioProcessorEditor(&p)
     , processorRef(p)
 {
+    // Apply custom dark theme
+    setLookAndFeel(&customLookAndFeel);
+
     // Initialize state tree for persistent state management
     setStateTree(processorRef.getAPVTS().state);
 
@@ -258,6 +261,9 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 
     // Ensure native JSFX UI is torn down before editor destruction
     destroyJsfxUI(); // This now properly destroys the native window too
+
+    // Remove LookAndFeel before destruction
+    setLookAndFeel(nullptr);
 }
 
 void AudioPluginAudioProcessorEditor::destroyJsfxUI()
