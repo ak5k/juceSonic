@@ -22,6 +22,7 @@ void LibraryBrowser::FilteredListPopup::setItems(const std::vector<Item>& items)
 {
     itemList = items;
     selectedIndex = -1;
+    scrollOffset = 0; // Reset scroll when new items are set
 
     // Auto-select first selectable item
     for (int i = 0; i < (int)itemList.size(); ++i)
@@ -123,46 +124,75 @@ void LibraryBrowser::FilteredListPopup::selectCurrent()
 
 void LibraryBrowser::FilteredListPopup::ensureSelectedVisible()
 {
-    // Simple scroll implementation could go here if needed
+    if (selectedIndex >= 0 && selectedIndex < (int)itemList.size())
+    {
+        int itemTop = selectedIndex * itemHeight - scrollOffset;
+        int itemBottom = itemTop + itemHeight;
+
+        if (itemBottom > getHeight())
+        {
+            // Scroll down to show item
+            scrollOffset += (itemBottom - getHeight());
+            repaint();
+        }
+        else if (itemTop < 0)
+        {
+            // Scroll up to show item
+            scrollOffset += itemTop;
+            repaint();
+        }
+    }
 }
 
 void LibraryBrowser::FilteredListPopup::paint(juce::Graphics& g)
 {
-    DBG("FilteredListPopup::paint called, bounds: " << getLocalBounds().toString());
+    auto& lf = getLookAndFeel();
 
-    // Fill with a very visible background
-    g.fillAll(juce::Colours::darkgrey);
+    // Draw background
+    g.fillAll(lf.findColour(juce::PopupMenu::backgroundColourId));
 
-    // Draw a thick border for visibility
-    g.setColour(juce::Colours::red);
-    g.drawRect(getLocalBounds(), 3);
+    // Draw border
+    g.setColour(lf.findColour(juce::PopupMenu::backgroundColourId).contrasting(0.5f));
+    g.drawRect(getLocalBounds(), 1);
 
-    int y = 0;
+    // Calculate visible item range
+    int y = -scrollOffset;
+
     for (int i = 0; i < (int)itemList.size(); ++i)
     {
         auto itemBounds = juce::Rectangle<int>(0, y, getWidth(), itemHeight);
 
-        if (i == hoveredIndex || i == selectedIndex)
+        // Only draw items that are visible
+        if (itemBounds.getBottom() > 0 && itemBounds.getY() < getHeight())
         {
-            g.setColour(getLookAndFeel().findColour(juce::PopupMenu::highlightedBackgroundColourId));
-            g.fillRect(itemBounds);
+            if (itemList[i].isHeader)
+            {
+                // Draw section header
+                g.setColour(lf.findColour(juce::PopupMenu::headerTextColourId));
+                g.setFont(juce::FontOptions((float)itemHeight * 0.65f, juce::Font::bold));
+                g.drawText(itemList[i].itemName, itemBounds.reduced(10, 0), juce::Justification::centredLeft);
+            }
+            else
+            {
+                // Draw regular item
+                bool isHighlighted = (i == selectedIndex || i == hoveredIndex);
+
+                if (isHighlighted)
+                {
+                    g.setColour(lf.findColour(juce::PopupMenu::highlightedBackgroundColourId));
+                    g.fillRect(itemBounds);
+                }
+
+                g.setColour(
+                    isHighlighted ? lf.findColour(juce::PopupMenu::highlightedTextColourId)
+                                  : lf.findColour(juce::PopupMenu::textColourId)
+                );
+
+                g.setFont(juce::FontOptions((float)itemHeight * 0.7f));
+                g.drawText(itemList[i].itemName, itemBounds.reduced(10, 0), juce::Justification::centredLeft);
+            }
         }
 
-        if (itemList[i].isHeader)
-        {
-            g.setColour(getLookAndFeel().findColour(juce::PopupMenu::headerTextColourId).withAlpha(0.6f));
-            g.setFont(juce::FontOptions(itemHeight * 0.6f, juce::Font::bold));
-        }
-        else
-        {
-            auto textColour = (i == selectedIndex || i == hoveredIndex)
-                                ? getLookAndFeel().findColour(juce::PopupMenu::highlightedTextColourId)
-                                : getLookAndFeel().findColour(juce::PopupMenu::textColourId);
-            g.setColour(textColour);
-            g.setFont(juce::FontOptions(itemHeight * 0.65f));
-        }
-
-        g.drawText(itemList[i].itemName, itemBounds.reduced(8, 2), juce::Justification::centredLeft);
         y += itemHeight;
     }
 }
@@ -193,8 +223,7 @@ bool LibraryBrowser::FilteredListPopup::keyPressed(const juce::KeyPress& key)
 
         if (isAtFirst)
         {
-            // Return focus to text editor
-            hide();
+            // Return focus to text editor but keep popup visible
             owner.textEditor.grabKeyboardFocus();
             return true;
         }
@@ -221,7 +250,7 @@ bool LibraryBrowser::FilteredListPopup::keyPressed(const juce::KeyPress& key)
 
 void LibraryBrowser::FilteredListPopup::mouseDown(const juce::MouseEvent& e)
 {
-    int index = e.y / itemHeight;
+    int index = (e.y + scrollOffset) / itemHeight;
     if (index >= 0 && index < (int)itemList.size() && !itemList[index].isHeader)
     {
         selectedIndex = index;
@@ -231,7 +260,7 @@ void LibraryBrowser::FilteredListPopup::mouseDown(const juce::MouseEvent& e)
 
 void LibraryBrowser::FilteredListPopup::mouseMove(const juce::MouseEvent& e)
 {
-    int index = e.y / itemHeight;
+    int index = (e.y + scrollOffset) / itemHeight;
     if (index >= 0 && index < (int)itemList.size())
     {
         hoveredIndex = index;

@@ -114,6 +114,7 @@ private:
         int selectedIndex = -1;
         int hoveredIndex = -1;
         int itemHeight = 20;
+        int scrollOffset = 0; // Y offset for scrolling
 
         void ensureSelectedVisible();
     };
