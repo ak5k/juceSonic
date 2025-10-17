@@ -621,20 +621,23 @@ void AudioPluginAudioProcessorEditor::toggleLiceFullscreen()
 
     if (jsfxLiceFullscreenWindow && jsfxLiceFullscreenWindow->isVisible())
     {
-        // Return from fullscreen
+        // Exit fullscreen and kiosk mode
+        juce::Desktop::getInstance().setKioskModeComponent(nullptr);
         jsfxLiceFullscreenWindow.reset();
         addAndMakeVisible(jsfxLiceRenderer.get());
         resized();
     }
     else
     {
-        // Enter fullscreen
+        // Enter fullscreen with kiosk mode
         jsfxLiceFullscreenWindow = std::make_unique<JsfxLiceFullscreenWindow>();
         jsfxLiceFullscreenWindow->onWindowClosed = [this]() { toggleLiceFullscreen(); };
 
         removeChildComponent(jsfxLiceRenderer.get());
         jsfxLiceFullscreenWindow->showWithComponent(jsfxLiceRenderer.get());
-        jsfxLiceFullscreenWindow->setFullScreen(true);
+
+        // Use Desktop::setKioskModeComponent for true kiosk mode
+        juce::Desktop::getInstance().setKioskModeComponent(jsfxLiceFullscreenWindow.get());
     }
 }
 
