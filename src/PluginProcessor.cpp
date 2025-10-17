@@ -551,7 +551,19 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                     {
                         apvts.state.setProperty(jsfxPathParamID, jsfxFile.getFullPathName(), nullptr);
                         sx_set_host_ctx(sxInstance, this, JsfxSliderAutomateThunk);
-                        currentJSFXName = jsfxFile.getFileNameWithoutExtension();
+
+                        // Get the effect name from JSFX - prefer description (desc: tag) over filename
+                        const char* description = sxInstance->m_description.Get();
+                        if (description && description[0] != '\0')
+                            currentJSFXName = juce::String::fromUTF8(description);
+                        else
+                        {
+                            const char* effectName = JesusonicAPI.sx_getEffectName(sxInstance);
+                            if (effectName && effectName[0] != '\0')
+                                currentJSFXName = juce::String::fromUTF8(effectName);
+                            else
+                                currentJSFXName = jsfxFile.getFileNameWithoutExtension();
+                        }
 
                         // Set sample rate
                         JesusonicAPI
@@ -727,8 +739,6 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     // Use 'this' as host context so we can route callbacks if needed
     sx_set_host_ctx(sxInstance, this, JsfxSliderAutomateThunk);
 
-    currentJSFXName = jsfxFile.getFileNameWithoutExtension();
-
     JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
 
     updateParameterMapping();
@@ -742,7 +752,6 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
 
     // Register MIDI callback (not in jsfxAPI struct, call directly)
     sx_set_midi_ctx(sxInstance, &midiSendRecvCallback, this);
-    DBG("MIDI context registered with JSFX instance: " << currentJSFXName);
 
     // Check if this JSFX is marked as an instrument (receives MIDI)
     INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
@@ -757,6 +766,25 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     presetManager.scanDirectories(presetDirs);
 
     // Note: Directory remembering now handled by PersistentFileChooser in editor
+
+    // Set the effect name from JSFX after successful load
+    // Try to get description (from desc: tag) first, fall back to effect name (filename)
+    const char* description = sxInstance->m_description.Get();
+    DBG("JSFX m_description: " << (description ? juce::String::fromUTF8(description) : "(null)"));
+
+    if (description && description[0] != '\0')
+        currentJSFXName = juce::String::fromUTF8(description);
+    else
+    {
+        const char* effectName = JesusonicAPI.sx_getEffectName(sxInstance);
+        DBG("JSFX effect name (filename): " << (effectName ? juce::String::fromUTF8(effectName) : "(null)"));
+        if (effectName && effectName[0] != '\0')
+            currentJSFXName = juce::String::fromUTF8(effectName);
+        else
+            currentJSFXName = jsfxFile.getFileNameWithoutExtension();
+    }
+
+    DBG("JSFX loaded successfully: " << currentJSFXName);
 
     return true;
 }
