@@ -244,7 +244,8 @@ private:
     juce::TextButton ioMatrixButton{"I/O Matrix"};
     juce::ComboBox presetComboBox;
     juce::Label presetLabel;
-    juce::String lastPresetSearchText; // Track search text changes
+    juce::String lastPresetSearchText;   // Track search text changes
+    bool presetComboBoxHadFocus = false; // Track focus changes
     juce::Slider wetSlider;
     juce::Label wetLabel;
     juce::Viewport viewport;

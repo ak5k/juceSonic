@@ -26,6 +26,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Initialize state tree for persistent state management
     setStateTree(processorRef.getAPVTS().state);
 
+    // Set owner pointer for the preset combo box look and feel
+    presetComboBoxLookAndFeel.owner = this;
+
     addAndMakeVisible(loadButton);
     loadButton.onClick = [this]() { loadJSFXFile(); };
 
@@ -176,6 +179,10 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     presetComboBox.setLookAndFeel(&presetComboBoxLookAndFeel); // Enable multi-column layout
     presetComboBox.onChange = [this]() { onPresetSelected(); };
 
+    // Create and attach mouse listener to detect dropdown arrow clicks
+    presetComboMouseListener = std::make_unique<PresetComboMouseListener>(this);
+    presetComboBox.addMouseListener(presetComboMouseListener.get(), false);
+
     // Wet amount slider
     addAndMakeVisible(wetLabel);
     wetLabel.setText("Dry/Wet", juce::dontSendNotification);
@@ -319,6 +326,26 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     if (std::abs(wetSlider.getValue() - processorRef.getWetAmount()) > 0.001)
         wetSlider.setValue(processorRef.getWetAmount(), juce::dontSendNotification);
 
+    // Check if preset combo box gained focus (user entered the text field)
+    bool comboBoxHasFocus = presetComboBox.hasKeyboardFocus(true); // true = check children too
+    if (comboBoxHasFocus && !presetComboBoxHadFocus)
+    {
+        // User just entered the text field - show entire library in single column
+        isSearching = true;
+        buildFilteredPresetMenu(""); // Empty filter = show all presets
+    }
+    else if (!comboBoxHasFocus && presetComboBoxHadFocus)
+    {
+        // User left the text field - restore hierarchical menu if not searching
+        juce::String currentSearchText = presetComboBox.getText();
+        if (currentSearchText.isEmpty())
+        {
+            isSearching = false;
+            buildHierarchicalPresetMenu();
+        }
+    }
+    presetComboBoxHadFocus = comboBoxHasFocus;
+
     // Check for preset search text changes
     juce::String currentSearchText = presetComboBox.getText();
     if (currentSearchText != lastPresetSearchText)
@@ -331,9 +358,9 @@ void AudioPluginAudioProcessorEditor::timerCallback()
             isSearching = true;
             buildFilteredPresetMenu(currentSearchText);
         }
-        else if (isSearching)
+        else if (isSearching && !comboBoxHasFocus)
         {
-            // User cleared search - restore hierarchical menu
+            // User cleared search and field doesn't have focus - restore hierarchical menu
             isSearching = false;
             buildHierarchicalPresetMenu();
         }
@@ -738,19 +765,29 @@ void AudioPluginAudioProcessorEditor::buildFilteredPresetMenu(const juce::String
         return;
     }
 
-    // Single flat list of filtered presets
+    // Single flat list of filtered presets with library names
     int itemId = 1;
     bool hasFilter = searchFilter.isNotEmpty();
 
     for (const auto& bank : banks)
     {
+        // Extract readable library name
+        juce::String libraryName = bank.libraryName;
+        if (libraryName.containsChar('/') || libraryName.containsChar('\\'))
+        {
+            juce::File f(libraryName);
+            libraryName = f.getFileNameWithoutExtension();
+        }
+
         for (const auto& preset : bank.presets)
         {
             if (!hasFilter
                 || preset.name.containsIgnoreCase(searchFilter)
                 || bank.libraryName.containsIgnoreCase(searchFilter))
             {
-                presetComboBox.addItem(preset.name, itemId++);
+                // Format: "PresetName (LibraryName)"
+                juce::String displayName = preset.name + " (" + libraryName + ")";
+                presetComboBox.addItem(displayName, itemId++);
             }
         }
     }
@@ -848,4 +885,30 @@ void AudioPluginAudioProcessorEditor::onPresetSelected()
     }
 
     DBG("WARNING: Could not find preset with ID " << selectedId);
+}
+
+//==============================================================================
+// PresetComboMouseListener implementation
+void AudioPluginAudioProcessorEditor::PresetComboMouseListener::mouseDown(const juce::MouseEvent& event)
+{
+    if (!owner)
+        return;
+
+    auto& combo = owner->presetComboBox;
+
+    // Get the bounds of the dropdown arrow button
+    // JUCE ComboBox places the arrow on the right side
+    auto arrowBounds = combo.getLocalBounds().removeFromRight(combo.getHeight());
+
+    // Check if the click was on the dropdown arrow
+    auto localPos = combo.getLocalPoint(&combo, event.getPosition());
+    if (arrowBounds.contains(localPos))
+    {
+        // User clicked the dropdown arrow - show hierarchical multi-column menu
+        owner->isSearching = false;
+        owner->buildHierarchicalPresetMenu();
+        combo.showPopup();
+        // Prevent the default ComboBox behavior
+        event.source.enableUnboundedMouseMovement(false);
+    }
 }
