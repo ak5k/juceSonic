@@ -37,6 +37,7 @@ public:
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress& key) override;
 
 private:
     // Custom LookAndFeel for multi-column hierarchical menu
@@ -46,11 +47,55 @@ private:
         juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label) override;
     };
 
+    // Custom non-modal filtered list popup
+    class FilteredListPopup : public juce::Component
+    {
+    public:
+        struct Item
+        {
+            juce::String bankName;
+            juce::String itemName;
+            int index;
+            bool isHeader;
+        };
+
+        FilteredListPopup(LibraryBrowser& owner);
+        void setItems(const std::vector<Item>& items);
+        void show(juce::Component& attachTo);
+        void hide();
+        bool isVisible() const;
+        void selectNext();
+        void selectPrevious();
+        void selectCurrent();
+
+        int getSelectedIndex() const
+        {
+            return selectedIndex;
+        }
+
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+        bool keyPressed(const juce::KeyPress& key) override;
+        void mouseDown(const juce::MouseEvent& e) override;
+        void mouseMove(const juce::MouseEvent& e) override;
+        void mouseExit(const juce::MouseEvent& e) override;
+
+    private:
+        LibraryBrowser& owner;
+        std::vector<Item> itemList;
+        int selectedIndex = -1;
+        int hoveredIndex = -1;
+        int itemHeight = 20;
+
+        void ensureSelectedVisible();
+    };
+
     void buildHierarchicalMenu(juce::PopupMenu& menu);
-    void buildFilteredMenu(juce::PopupMenu& menu, const juce::String& searchText);
+    void buildFilteredList(std::vector<FilteredListPopup::Item>& items, const juce::String& searchText);
     void showHierarchicalPopup();
     void showFilteredPopup(const juce::String& searchText);
     void onMenuResult(int result);
+    void onFilteredItemSelected(int index);
     void onSearchTextChanged();
 
     // Item lookup structure (generic - works for any hierarchical data)
@@ -71,6 +116,7 @@ private:
     juce::TextEditor textEditor;
     juce::TextButton dropdownButton;
     BrowserLookAndFeel lookAndFeel;
+    std::unique_ptr<FilteredListPopup> filteredPopup;
 
     juce::String currentItemName;
 

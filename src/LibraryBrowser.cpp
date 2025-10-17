@@ -9,6 +9,243 @@ LibraryBrowser::BrowserLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBo
 }
 
 //==============================================================================
+// FilteredListPopup implementation
+LibraryBrowser::FilteredListPopup::FilteredListPopup(LibraryBrowser& o)
+    : owner(o)
+{
+    setWantsKeyboardFocus(true);
+    setAlwaysOnTop(true);
+    setOpaque(true);
+}
+
+void LibraryBrowser::FilteredListPopup::setItems(const std::vector<Item>& items)
+{
+    itemList = items;
+    selectedIndex = -1;
+
+    // Auto-select first selectable item
+    for (int i = 0; i < (int)itemList.size(); ++i)
+    {
+        if (!itemList[i].isHeader)
+        {
+            selectedIndex = i;
+            break;
+        }
+    }
+
+    repaint();
+}
+
+void LibraryBrowser::FilteredListPopup::show(juce::Component& attachTo)
+{
+    DBG("FilteredListPopup::show called");
+
+    // Get the top-level component (desktop)
+    auto* topLevel = attachTo.getTopLevelComponent();
+    DBG("Top level component: " << (topLevel ? "valid" : "null"));
+
+    if (topLevel)
+    {
+        DBG("Adding popup to top-level component");
+        topLevel->addAndMakeVisible(this);
+
+        // Get screen position of textEditor
+        auto screenBounds = attachTo.getScreenBounds();
+
+        // Convert to top-level component coordinates
+        auto topLevelBounds = topLevel->getLocalArea(nullptr, screenBounds);
+
+        int height = juce::jmin((int)itemList.size() * itemHeight, 400);
+        DBG("Setting bounds: x="
+            << topLevelBounds.getX()
+            << ", y="
+            << topLevelBounds.getBottom()
+            << ", width="
+            << topLevelBounds.getWidth()
+            << ", height="
+            << height);
+        setBounds(topLevelBounds.getX(), topLevelBounds.getBottom(), topLevelBounds.getWidth(), height);
+
+        DBG("Calling toFront (without grabbing focus)");
+        toFront(false); // Don't grab focus - let text editor keep it
+        repaint();
+        DBG("FilteredListPopup::show completed");
+    }
+}
+
+void LibraryBrowser::FilteredListPopup::hide()
+{
+    if (auto* parent = getParentComponent())
+        parent->removeChildComponent(this);
+}
+
+bool LibraryBrowser::FilteredListPopup::isVisible() const
+{
+    return getParentComponent() != nullptr;
+}
+
+void LibraryBrowser::FilteredListPopup::selectNext()
+{
+    for (int i = selectedIndex + 1; i < (int)itemList.size(); ++i)
+    {
+        if (!itemList[i].isHeader)
+        {
+            selectedIndex = i;
+            ensureSelectedVisible();
+            repaint();
+            return;
+        }
+    }
+}
+
+void LibraryBrowser::FilteredListPopup::selectPrevious()
+{
+    for (int i = selectedIndex - 1; i >= 0; --i)
+    {
+        if (!itemList[i].isHeader)
+        {
+            selectedIndex = i;
+            ensureSelectedVisible();
+            repaint();
+            return;
+        }
+    }
+}
+
+void LibraryBrowser::FilteredListPopup::selectCurrent()
+{
+    if (selectedIndex >= 0 && selectedIndex < (int)itemList.size() && !itemList[selectedIndex].isHeader)
+    {
+        owner.onFilteredItemSelected(itemList[selectedIndex].index);
+        hide();
+    }
+}
+
+void LibraryBrowser::FilteredListPopup::ensureSelectedVisible()
+{
+    // Simple scroll implementation could go here if needed
+}
+
+void LibraryBrowser::FilteredListPopup::paint(juce::Graphics& g)
+{
+    DBG("FilteredListPopup::paint called, bounds: " << getLocalBounds().toString());
+
+    // Fill with a very visible background
+    g.fillAll(juce::Colours::darkgrey);
+
+    // Draw a thick border for visibility
+    g.setColour(juce::Colours::red);
+    g.drawRect(getLocalBounds(), 3);
+
+    int y = 0;
+    for (int i = 0; i < (int)itemList.size(); ++i)
+    {
+        auto itemBounds = juce::Rectangle<int>(0, y, getWidth(), itemHeight);
+
+        if (i == hoveredIndex || i == selectedIndex)
+        {
+            g.setColour(getLookAndFeel().findColour(juce::PopupMenu::highlightedBackgroundColourId));
+            g.fillRect(itemBounds);
+        }
+
+        if (itemList[i].isHeader)
+        {
+            g.setColour(getLookAndFeel().findColour(juce::PopupMenu::headerTextColourId).withAlpha(0.6f));
+            g.setFont(juce::FontOptions(itemHeight * 0.6f, juce::Font::bold));
+        }
+        else
+        {
+            auto textColour = (i == selectedIndex || i == hoveredIndex)
+                                ? getLookAndFeel().findColour(juce::PopupMenu::highlightedTextColourId)
+                                : getLookAndFeel().findColour(juce::PopupMenu::textColourId);
+            g.setColour(textColour);
+            g.setFont(juce::FontOptions(itemHeight * 0.65f));
+        }
+
+        g.drawText(itemList[i].itemName, itemBounds.reduced(8, 2), juce::Justification::centredLeft);
+        y += itemHeight;
+    }
+}
+
+void LibraryBrowser::FilteredListPopup::resized()
+{
+}
+
+bool LibraryBrowser::FilteredListPopup::keyPressed(const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::downKey)
+    {
+        selectNext();
+        return true;
+    }
+    else if (key == juce::KeyPress::upKey)
+    {
+        // Check if we're at the first selectable item
+        bool isAtFirst = true;
+        for (int i = 0; i < selectedIndex; ++i)
+        {
+            if (!itemList[i].isHeader)
+            {
+                isAtFirst = false;
+                break;
+            }
+        }
+        
+        if (isAtFirst)
+        {
+            // Return focus to text editor
+            hide();
+            owner.textEditor.grabKeyboardFocus();
+            return true;
+        }
+        else
+        {
+            selectPrevious();
+            return true;
+        }
+    }
+    else if (key == juce::KeyPress::returnKey)
+    {
+        selectCurrent();
+        return true;
+    }
+    else if (key == juce::KeyPress::escapeKey)
+    {
+        hide();
+        owner.textEditor.grabKeyboardFocus();
+        return true;
+    }
+
+    return false;
+}
+
+void LibraryBrowser::FilteredListPopup::mouseDown(const juce::MouseEvent& e)
+{
+    int index = e.y / itemHeight;
+    if (index >= 0 && index < (int)itemList.size() && !itemList[index].isHeader)
+    {
+        selectedIndex = index;
+        selectCurrent();
+    }
+}
+
+void LibraryBrowser::FilteredListPopup::mouseMove(const juce::MouseEvent& e)
+{
+    int index = e.y / itemHeight;
+    if (index >= 0 && index < (int)itemList.size())
+    {
+        hoveredIndex = index;
+        repaint();
+    }
+}
+
+void LibraryBrowser::FilteredListPopup::mouseExit(const juce::MouseEvent&)
+{
+    hoveredIndex = -1;
+    repaint();
+}
+
+//==============================================================================
 LibraryBrowser::LibraryBrowser()
 {
     addAndMakeVisible(label);
@@ -20,18 +257,37 @@ LibraryBrowser::LibraryBrowser()
     textEditor.onTextChange = [this]() { onSearchTextChanged(); };
     textEditor.onReturnKey = [this]()
     {
-        auto text = textEditor.getText();
-        if (text.length() >= 3)
-            showFilteredPopup(text);
-        else if (text.isEmpty())
-            showHierarchicalPopup();
+        if (filteredPopup && filteredPopup->isVisible())
+        {
+            // If only one item, select it
+            filteredPopup->selectCurrent();
+        }
+        else
+        {
+            auto text = textEditor.getText();
+            if (text.length() >= 3)
+                showFilteredPopup(text);
+            else if (text.isEmpty())
+                showHierarchicalPopup();
+        }
     };
-    textEditor.onEscapeKey = [this]() { unfocusAllComponents(); };
+    textEditor.onEscapeKey = [this]()
+    {
+        if (filteredPopup && filteredPopup->isVisible())
+            filteredPopup->hide();
+        else
+            unfocusAllComponents();
+    };
     textEditor.onFocusLost = [this]() {};
 
     addAndMakeVisible(dropdownButton);
     dropdownButton.setButtonText("v");
     dropdownButton.onClick = [this]() { showHierarchicalPopup(); };
+
+    filteredPopup = std::make_unique<FilteredListPopup>(*this);
+
+    // Allow this component to intercept keyboard events
+    setWantsKeyboardFocus(true);
 }
 
 LibraryBrowser::~LibraryBrowser()
@@ -92,6 +348,41 @@ void LibraryBrowser::resized()
 
 void LibraryBrowser::onSearchTextChanged()
 {
+    auto text = textEditor.getText();
+
+    if (text.length() >= 3)
+    {
+        // Show filtered popup with live search
+        showFilteredPopup(text);
+    }
+    else if (text.isEmpty())
+    {
+        // Hide popup when text is cleared
+        if (filteredPopup && filteredPopup->isVisible())
+            filteredPopup->hide();
+    }
+    else
+    {
+        // Less than 3 characters - hide popup
+        if (filteredPopup && filteredPopup->isVisible())
+            filteredPopup->hide();
+    }
+}
+
+bool LibraryBrowser::keyPressed(const juce::KeyPress& key)
+{
+    // If text editor has focus and Down arrow is pressed while popup is visible,
+    // transfer focus to the popup
+    if (textEditor.hasKeyboardFocus(true) && key == juce::KeyPress::downKey)
+    {
+        if (filteredPopup && filteredPopup->isVisible())
+        {
+            filteredPopup->grabKeyboardFocus();
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void LibraryBrowser::showHierarchicalPopup()
@@ -117,27 +408,121 @@ void LibraryBrowser::showHierarchicalPopup()
 
 void LibraryBrowser::showFilteredPopup(const juce::String& searchText)
 {
-    juce::PopupMenu menu;
-    buildFilteredMenu(menu, searchText);
+    DBG("showFilteredPopup called with searchText: " << searchText);
+    std::vector<FilteredListPopup::Item> items;
+    buildFilteredList(items, searchText);
 
-    if (itemIndices.empty())
+    DBG("buildFilteredList returned " << items.size() << " items");
+
+    if (items.empty())
+    {
+        DBG("No items found, returning");
+        return;
+    }
+
+    DBG("Calling filteredPopup->setItems and show");
+    filteredPopup->setItems(items);
+    filteredPopup->show(textEditor);
+    DBG("filteredPopup->show completed, isVisible: " << (filteredPopup->isVisible() ? "true" : "false"));
+}
+
+void LibraryBrowser::buildFilteredList(std::vector<FilteredListPopup::Item>& items, const juce::String& searchText)
+{
+    itemIndices.clear();
+
+    if (!libraryManager)
         return;
 
-    menu.setLookAndFeel(&lookAndFeel);
+    auto library = libraryManager->getLibrary(libraryName);
+    if (!library.isValid())
+        return;
 
-    auto options = juce::PopupMenu::Options()
-                       .withTargetComponent(&textEditor)
-                       .withMinimumWidth(textEditor.getWidth() + dropdownButton.getWidth())
-                       .withMaximumNumColumns(1);
+    auto lowerSearch = searchText.toLowerCase();
 
-    menu.showMenuAsync(
-        options,
-        [this](int result)
+    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    {
+        auto file = library.getChild(fileIdx);
+
+        for (int bankIdx = 0; bankIdx < file.getNumChildren(); ++bankIdx)
         {
-            if (result > 0)
-                onMenuResult(result);
+            auto bank = file.getChild(bankIdx);
+            auto bankNameVar = bank.getProperty("name");
+            juce::String bankName = bankNameVar.toString();
+
+            bool bankHasMatches = false;
+            for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
+            {
+                auto item = bank.getChild(itemIdx);
+                auto itemNameVar = item.getProperty("name");
+                juce::String itemName = itemNameVar.toString();
+
+                if (itemName.toLowerCase().contains(lowerSearch))
+                {
+                    bankHasMatches = true;
+                    break;
+                }
+            }
+
+            if (bankHasMatches)
+            {
+                // Add bank header
+                items.push_back({bankName, bankName, -1, true});
+
+                // Add matching items
+                for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
+                {
+                    auto item = bank.getChild(itemIdx);
+                    auto itemNameVar = item.getProperty("name");
+                    juce::String itemName = itemNameVar.toString();
+
+                    if (itemName.toLowerCase().contains(lowerSearch))
+                    {
+                        int index = (int)itemIndices.size();
+                        itemIndices.push_back({fileIdx, bankIdx, itemIdx});
+                        items.push_back({bankName, itemName, index, false});
+                    }
+                }
+            }
         }
-    );
+    }
+}
+
+void LibraryBrowser::onFilteredItemSelected(int index)
+{
+    if (index < 0 || index >= (int)itemIndices.size() || !libraryManager || !itemSelectedCallback)
+        return;
+
+    const auto& idx = itemIndices[index];
+
+    auto library = libraryManager->getLibrary(libraryName);
+    if (!library.isValid())
+        return;
+
+    auto file = library.getChild(idx.fileIdx);
+    if (!file.isValid())
+        return;
+
+    auto bank = file.getChild(idx.bankIdx);
+    if (!bank.isValid())
+        return;
+
+    auto item = bank.getChild(idx.itemIdx);
+    if (!item.isValid())
+        return;
+
+    auto bankNameVar = bank.getProperty("name");
+    auto itemNameVar = item.getProperty("name");
+    auto itemDataVar = item.getProperty("data");
+
+    if (bankNameVar.isVoid() || itemNameVar.isVoid() || itemDataVar.isVoid())
+        return;
+
+    currentItemName = itemNameVar.toString();
+    textEditor.setText(currentItemName, false);
+
+    itemSelectedCallback(bankNameVar.toString(), itemNameVar.toString(), itemDataVar.toString());
+
+    textEditor.grabKeyboardFocus();
 }
 
 void LibraryBrowser::buildHierarchicalMenu(juce::PopupMenu& menu)
@@ -208,66 +593,6 @@ void LibraryBrowser::buildHierarchicalMenu(juce::PopupMenu& menu)
     }
     if (itemIndices.empty())
         menu.addItem(-1, "No items available", false);
-}
-
-void LibraryBrowser::buildFilteredMenu(juce::PopupMenu& menu, const juce::String& searchText)
-{
-    itemIndices.clear();
-    if (!libraryManager)
-    {
-        menu.addItem(-1, "No library manager", false);
-        return;
-    }
-    auto library = libraryManager->getLibrary(libraryName);
-    if (!library.isValid())
-    {
-        menu.addItem(-1, "Invalid library", false);
-        return;
-    }
-    int menuItemId = 1;
-    auto lowerSearch = searchText.toLowerCase();
-    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
-    {
-        auto file = library.getChild(fileIdx);
-        for (int bankIdx = 0; bankIdx < file.getNumChildren(); ++bankIdx)
-        {
-            auto bank = file.getChild(bankIdx);
-            auto bankNameVar = bank.getProperty("name");
-            juce::String bankName = bankNameVar.toString();
-            bool bankHasMatches = false;
-            for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
-            {
-                auto item = bank.getChild(itemIdx);
-                auto itemNameVar = item.getProperty("name");
-                juce::String itemName = itemNameVar.toString();
-                if (itemName.toLowerCase().contains(lowerSearch))
-                {
-                    bankHasMatches = true;
-                    break;
-                }
-            }
-            if (bankHasMatches)
-            {
-                // Add bank name as a disabled item (using negative ID) to keep alignment
-                menu.addItem(-1, bankName, false);
-
-                for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
-                {
-                    auto item = bank.getChild(itemIdx);
-                    auto itemNameVar = item.getProperty("name");
-                    juce::String itemName = itemNameVar.toString();
-                    if (itemName.toLowerCase().contains(lowerSearch))
-                    {
-                        menu.addItem(menuItemId, itemName);
-                        itemIndices.push_back({fileIdx, bankIdx, itemIdx});
-                        menuItemId++;
-                    }
-                }
-            }
-        }
-    }
-    if (itemIndices.empty())
-        menu.addItem(-1, "(No matching items)", false);
 }
 
 void LibraryBrowser::onMenuResult(int result)
