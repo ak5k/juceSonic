@@ -97,27 +97,27 @@ void LibraryBrowser::buildHierarchicalMenu()
         return;
     }
 
-    // Get the sub-library we're browsing (e.g., "Presets")
-    auto subLibrary = libraryManager->getSubLibrary(subLibraryName);
-    if (!subLibrary.isValid())
+    // Get the library we're browsing (e.g., "Presets")
+    auto library = libraryManager->getLibrary(subLibraryName);
+    if (!library.isValid())
     {
-        DBG("  Sub-library '" << subLibraryName << "' not found!");
+        DBG("  Library '" << subLibraryName << "' not found!");
         comboBox.setEnabled(false);
         return;
     }
 
-    DBG("  Sub-library '" << subLibraryName << "' has " << subLibrary.getNumChildren() << " children");
+    DBG("  Library '" << subLibraryName << "' has " << library.getNumChildren() << " children");
 
     int itemId = 1;
     const int maxPresetsPerPage = 80;
 
-    // Structure: SubLibrary > PresetFile > PresetBank > Preset
+    // Structure: Library > PresetFile > PresetBank > Preset
     // We want to show: PresetBank as submenu > Presets
 
     // Iterate through PresetFiles
-    for (int fileIdx = 0; fileIdx < subLibrary.getNumChildren(); ++fileIdx)
+    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
     {
-        auto presetFile = subLibrary.getChild(fileIdx);
+        auto presetFile = library.getChild(fileIdx);
         DBG("  Processing PresetFile " << fileIdx << ", type: " << presetFile.getType().toString());
         DBG("    Has " << presetFile.getNumChildren() << " children");
 
@@ -185,17 +185,17 @@ void LibraryBrowser::onPresetSelected()
         return;
 
     // Find the preset by ID
-    // Structure: SubLibrary > PresetFile > PresetBank > Preset
-    auto subLibrary = libraryManager->getSubLibrary(subLibraryName);
-    if (!subLibrary.isValid())
+    // Structure: Library > PresetFile > PresetBank > Preset
+    auto library = libraryManager->getLibrary(subLibraryName);
+    if (!library.isValid())
         return;
 
     int currentId = 1;
 
     // Iterate through PresetFiles
-    for (int fileIdx = 0; fileIdx < subLibrary.getNumChildren(); ++fileIdx)
+    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
     {
-        auto presetFile = subLibrary.getChild(fileIdx);
+        auto presetFile = library.getChild(fileIdx);
 
         // Iterate through banks in this file
         for (int bankIdx = 0; bankIdx < presetFile.getNumChildren(); ++bankIdx)

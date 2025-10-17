@@ -12,102 +12,101 @@ LibraryManager::LibraryManager(juce::ValueTree stateTree, const juce::Identifier
     }
 }
 
-void LibraryManager::loadSubLibrary(
-    const juce::String& libraryName,
-    const juce::Array<juce::File>& files,
-    ParserFunction parser,
-    bool clearExisting
-)
+void LibraryManager::prepareLibrary(const juce::String& libraryName, std::unique_ptr<PresetConverter> converter)
 {
-    if (!parser)
+    if (!converter)
     {
-        DBG("LibraryManager::loadSubLibrary - No parser provided!");
+        DBG("LibraryManager::prepareLibrary - Null converter provided!");
         return;
     }
 
-    DBG("LibraryManager::loadSubLibrary - Loading " << files.size() << " files into '" << libraryName << "'");
+    DBG("LibraryManager::prepareLibrary - Library: '" << libraryName << "', Format: " << converter->getFormatName());
 
-    auto subLibrary = getOrCreateSubLibrary(libraryName);
+    // Store converter for this library
+    converters[libraryName] = std::move(converter);
 
-    if (clearExisting)
-    {
-        DBG("  Clearing existing children (" << subLibrary.getNumChildren() << ")");
-        subLibrary.removeAllChildren(nullptr);
-    }
-
-    // Parse each file and add to sub-library
-    int filesAdded = 0;
-    for (const auto& file : files)
-    {
-        if (!file.existsAsFile())
-        {
-            DBG("  File doesn't exist: " << file.getFullPathName());
-            continue;
-        }
-
-        DBG("  Parsing: " << file.getFileName());
-        auto parsed = parser(file);
-
-        if (parsed.isValid())
-        {
-            DBG("    Valid tree returned, type: " << parsed.getType().toString());
-            DBG("    Has " << parsed.getNumChildren() << " children");
-
-            // Add the parsed tree itself (e.g., PresetFile with its children)
-            subLibrary.appendChild(parsed, nullptr);
-            filesAdded++;
-        }
-        else
-        {
-            DBG("    Parser returned invalid tree!");
-        }
-    }
-
-    DBG("  Added " << filesAdded << " items to sub-library");
+    // Ensure library node exists
+    getOrCreateLibrary(libraryName);
 }
 
-void LibraryManager::scanAndLoadSubLibrary(
+int LibraryManager::loadLibrary(
     const juce::String& libraryName,
-    const juce::StringArray& directories,
-    const juce::String& filePattern,
-    ParserFunction parser,
+    const juce::String& directoryPath,
     bool recursive,
     bool clearExisting
 )
 {
-    DBG("LibraryManager::scanAndLoadSubLibrary - Library: " << libraryName);
-    DBG("  Scanning " << directories.size() << " directories");
-    DBG("  File pattern: " << filePattern);
-    DBG("  Recursive: " << (recursive ? "YES" : "NO"));
-
-    juce::Array<juce::File> files;
-
-    for (const auto& dir : directories)
-    {
-        juce::File directory(dir);
-        DBG("  Checking directory: " << dir);
-
-        if (!directory.isDirectory())
-        {
-            DBG("    Not a directory!");
-            continue;
-        }
-
-        auto foundFiles = directory.findChildFiles(juce::File::findFiles, recursive, filePattern);
-
-        DBG("    Found " << foundFiles.size() << " files matching pattern");
-        files.addArray(foundFiles);
-    }
-
-    DBG("  Total files to parse: " << files.size());
-    loadSubLibrary(libraryName, files, parser, clearExisting);
-
-    auto subLib = getSubLibrary(libraryName);
-    if (subLib.isValid())
-        DBG("  Sub-library now has " << subLib.getNumChildren() << " children");
+    juce::StringArray paths;
+    paths.add(directoryPath);
+    return loadLibrary(libraryName, paths, recursive, clearExisting);
 }
 
-juce::ValueTree LibraryManager::getSubLibrary(const juce::String& libraryName) const
+int LibraryManager::loadLibrary(
+    const juce::String& libraryName,
+    const juce::StringArray& directoryPaths,
+    bool recursive,
+    bool clearExisting
+)
+{
+    auto* converter = getConverter(libraryName);
+    if (!converter)
+    {
+        DBG("LibraryManager::loadLibrary - No converter set for library '" << libraryName << "'");
+        DBG("  Call prepareLibrary() first!");
+        return 0;
+    }
+
+    DBG("LibraryManager::loadLibrary - Library: '" << libraryName << "'");
+    DBG("  Scanning " << directoryPaths.size() << " directories");
+    DBG("  Format: " << converter->getFormatName());
+    DBG("  Recursive: " << (recursive ? "YES" : "NO"));
+
+    auto library = getOrCreateLibrary(libraryName);
+
+    if (clearExisting)
+    {
+        DBG("  Clearing existing children (" << library.getNumChildren() << ")");
+        library.removeAllChildren(nullptr);
+    }
+
+    // Scan all directories for files
+    juce::Array<juce::File> allFiles;
+    for (const auto& dirPath : directoryPaths)
+    {
+        auto files = scanFiles(dirPath, converter, recursive);
+        DBG("  Found " << files.size() << " files in: " << dirPath);
+        allFiles.addArray(files);
+    }
+
+    DBG("  Total files to convert: " << allFiles.size());
+
+    // Convert each file and add to library
+    int filesAdded = 0;
+    for (const auto& file : allFiles)
+    {
+        DBG("  Converting: " << file.getFileName());
+        auto converted = converter->convertFileToTree(file);
+
+        if (converted.isValid())
+        {
+            DBG("    Valid tree returned, type: " << converted.getType().toString());
+            DBG("    Has " << converted.getNumChildren() << " children");
+
+            // Add the converted tree itself (e.g., PresetFile with its children)
+            library.appendChild(converted, nullptr);
+            filesAdded++;
+        }
+        else
+        {
+            DBG("    Converter returned invalid tree!");
+        }
+    }
+
+    DBG("  Added " << filesAdded << " items to library '" << libraryName << "'");
+    return filesAdded;
+}
+
+juce::ValueTree LibraryManager::getLibrary(const juce::String& libraryName) const
 {
     for (int i = 0; i < librariesTree.getNumChildren(); ++i)
     {
@@ -118,32 +117,68 @@ juce::ValueTree LibraryManager::getSubLibrary(const juce::String& libraryName) c
     return {};
 }
 
-bool LibraryManager::hasSubLibrary(const juce::String& libraryName) const
+bool LibraryManager::hasLibrary(const juce::String& libraryName) const
 {
-    return getSubLibrary(libraryName).isValid();
+    return getLibrary(libraryName).isValid();
 }
 
-void LibraryManager::clearSubLibrary(const juce::String& libraryName)
+void LibraryManager::clearLibrary(const juce::String& libraryName)
 {
-    auto subLib = getSubLibrary(libraryName);
-    if (subLib.isValid())
-        librariesTree.removeChild(subLib, nullptr);
+    auto lib = getLibrary(libraryName);
+    if (lib.isValid())
+        librariesTree.removeChild(lib, nullptr);
 }
 
 void LibraryManager::clear()
 {
     librariesTree.removeAllChildren(nullptr);
+    converters.clear();
 }
 
-juce::ValueTree LibraryManager::getOrCreateSubLibrary(const juce::String& libraryName)
+PresetConverter* LibraryManager::getConverter(const juce::String& libraryName) const
 {
-    auto existing = getSubLibrary(libraryName);
+    auto it = converters.find(libraryName);
+    if (it != converters.end())
+        return it->second.get();
+    return nullptr;
+}
+
+juce::ValueTree LibraryManager::getOrCreateLibrary(const juce::String& libraryName)
+{
+    auto existing = getLibrary(libraryName);
     if (existing.isValid())
         return existing;
 
-    // Create new sub-library
-    juce::ValueTree subLib("SubLibrary");
-    subLib.setProperty("name", libraryName, nullptr);
-    librariesTree.appendChild(subLib, nullptr);
-    return subLib;
+    // Create new library
+    juce::ValueTree lib("Library");
+    lib.setProperty("name", libraryName, nullptr);
+    librariesTree.appendChild(lib, nullptr);
+    return lib;
+}
+
+juce::Array<juce::File>
+LibraryManager::scanFiles(const juce::String& directoryPath, PresetConverter* converter, bool recursive)
+{
+    juce::Array<juce::File> result;
+
+    juce::File directory(directoryPath);
+    if (!directory.isDirectory())
+    {
+        DBG("    Not a directory: " << directoryPath);
+        return result;
+    }
+
+    // Get all files in directory
+    auto allFiles = directory.findChildFiles(
+        juce::File::findFiles,
+        recursive,
+        "*" // Get all files, we'll filter with canConvert()
+    );
+
+    // Filter files that the converter can handle
+    for (const auto& file : allFiles)
+        if (converter->canConvert(file))
+            result.add(file);
+
+    return result;
 }

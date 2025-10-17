@@ -5,6 +5,7 @@
 #include "PersistentFileChooser.h"
 #include "PluginProcessor.h"
 #include "PresetParser.h"
+#include "ReaperPresetConverter.h"
 
 #include <memory>
 
@@ -160,7 +161,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Preset library browser
     addAndMakeVisible(libraryBrowser);
     libraryBrowser.setLibraryManager(libraryManager.get());
-    libraryBrowser.setSubLibraryName("Presets"); // Browse the "Presets" sub-library
+    libraryBrowser.setSubLibraryName("Presets"); // Browse the "Presets" library
     libraryBrowser.setPresetSelectedCallback(
         [this](const juce::String& libraryName, const juce::String& presetName, const juce::String& presetData)
         { onPresetSelected(libraryName, presetName, presetData); }
@@ -843,25 +844,19 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
 
     DBG("updatePresetList: Total preset paths to scan: " << presetPaths.size());
 
-    // Create REAPER preset parser and convert to parser function
-    ReaperPresetParser parser;
-    auto parserFunc = [&parser](const juce::File& file) -> juce::ValueTree
-    {
-        DBG("updatePresetList: Parsing file: " << file.getFileName());
-        return parser.parseFile(file);
-    };
+    // Prepare the "Presets" library with Reaper preset converter
+    libraryManager->prepareLibrary("Presets", std::make_unique<ReaperPresetConverter>());
 
-    // Scan and load into "Presets" sub-library
-    libraryManager->scanAndLoadSubLibrary(
-        "Presets",   // Sub-library name
+    // Load presets from directories (converter handles file filtering)
+    int filesLoaded = libraryManager->loadLibrary(
+        "Presets",   // Library name
         presetPaths, // Directories to scan
-        "*.rpl",     // File pattern
-        parserFunc,  // Parser function
         true,        // Recursive scan
         true         // Clear existing
     );
 
-    DBG("updatePresetList: Library now has " << libraryManager->getNumSubLibraries() << " sub-libraries");
+    DBG("updatePresetList: Loaded " << filesLoaded << " preset files");
+    DBG("updatePresetList: Library now has " << libraryManager->getNumLibraries() << " libraries");
     DBG("updatePresetList: Total children in tree: " << libraryManager->getLibraries().getNumChildren());
 
     // Update the browser UI to reflect loaded libraries

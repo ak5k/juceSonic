@@ -1,29 +1,30 @@
 #pragma once
 
+#include "PresetConverter.h"
+
 #include <juce_data_structures/juce_data_structures.h>
-#include <functional>
+#include <memory>
 
 /**
- * @brief Generic library manager for ValueTree-based data
+ * @brief Generic library manager for ValueTree-based preset data
  *
- * LibraryManager manages multiple sub-libraries in a ValueTree structure.
- * It is format-agnostic and delegates parsing to provided parser functions.
+ * LibraryManager is the public interface for managing preset libraries.
+ * It uses the Strategy pattern (via PresetConverter) to support different
+ * preset formats without knowing their implementation details.
  *
  * ValueTree structure:
  *   "Libraries" (root)
- *     - "SubLibrary" (identified by name)
+ *     - "Library" (identified by name)
  *       - property: "name" (library identifier)
- *       - children: library-specific data (format determined by parser)
+ *       - property: "path" (source directory path, optional)
+ *       - children: PresetFile nodes from converter
+ *         - PresetFile (from converter)
+ *           - PresetBank (from converter)
+ *             - Preset (from converter, with "data" property)
  */
 class LibraryManager
 {
 public:
-    /**
-     * @brief File parser function type
-     * Takes a file and returns a ValueTree containing parsed data
-     */
-    using ParserFunction = std::function<juce::ValueTree(const juce::File&)>;
-
     /**
      * @brief Construct LibraryManager attached to a ValueTree
      * @param stateTree The parent state tree (e.g., from AudioProcessorValueTreeState)
@@ -33,33 +34,51 @@ public:
     ~LibraryManager() = default;
 
     /**
-     * @brief Load/update a sub-library from files using a custom parser
-     * @param libraryName Unique identifier for this sub-library
-     * @param files Array of files to load
-     * @param parser Function to parse each file into ValueTree
-     * @param clearExisting If true, clears existing data for this library before loading
+     * @brief Prepare a library with a specific converter
+     *
+     * This sets up a library to use a specific preset format converter.
+     * Subsequent loadLibrary calls will use this converter.
+     *
+     * @param libraryName Unique identifier for this library
+     * @param converter The converter to use for this library (ownership transferred)
      */
-    void loadSubLibrary(
+    void prepareLibrary(const juce::String& libraryName, std::unique_ptr<PresetConverter> converter);
+
+    /**
+     * @brief Load/update a library from a directory path
+     *
+     * Uses the converter set via prepareLibrary to parse files.
+     * Scans the directory for files matching the converter's supported extensions.
+     *
+     * @param libraryName Unique identifier for this library
+     * @param directoryPath Path to directory containing preset files
+     * @param recursive Whether to scan subdirectories recursively
+     * @param clearExisting If true, clears existing data before loading
+     * @return Number of files successfully loaded
+     */
+    int loadLibrary(
         const juce::String& libraryName,
-        const juce::Array<juce::File>& files,
-        ParserFunction parser,
+        const juce::String& directoryPath,
+        bool recursive = true,
         bool clearExisting = true
     );
 
     /**
-     * @brief Scan directories and load files into a sub-library
-     * @param libraryName Unique identifier for this sub-library
-     * @param directories Array of directory paths to scan
-     * @param filePattern Wildcard pattern for files (e.g., "*.rpl")
-     * @param parser Function to parse each file into ValueTree
+     * @brief Load/update a library from multiple directory paths
+     *
+     * @param libraryName Unique identifier for this library
+    /**
+     * @brief Load/update a library from multiple directory paths
+     *
+     * @param libraryName Unique identifier for this library
+     * @param directoryPaths Array of directory paths to scan
      * @param recursive Whether to scan subdirectories recursively
-     * @param clearExisting If true, clears existing data for this library before loading
+     * @param clearExisting If true, clears existing data before loading
+     * @return Number of files successfully loaded
      */
-    void scanAndLoadSubLibrary(
+    int loadLibrary(
         const juce::String& libraryName,
-        const juce::StringArray& directories,
-        const juce::String& filePattern,
-        ParserFunction parser,
+        const juce::StringArray& directoryPaths,
         bool recursive = true,
         bool clearExisting = true
     );
@@ -73,43 +92,56 @@ public:
     }
 
     /**
-     * @brief Get a specific sub-library by name
-     * @param libraryName The name of the sub-library
-     * @return ValueTree of the sub-library, or invalid tree if not found
+     * @brief Get a specific library by name
+     * @param libraryName The name of the library
+     * @return ValueTree of the library, or invalid tree if not found
      */
-    juce::ValueTree getSubLibrary(const juce::String& libraryName) const;
+    juce::ValueTree getLibrary(const juce::String& libraryName) const;
 
     /**
-     * @brief Check if a sub-library exists
-     * @param libraryName The name of the sub-library
+     * @brief Check if a library exists
+     * @param libraryName The name of the library
      */
-    bool hasSubLibrary(const juce::String& libraryName) const;
+    bool hasLibrary(const juce::String& libraryName) const;
 
     /**
-     * @brief Get the number of sub-libraries
+     * @brief Get the number of libraries
      */
-    int getNumSubLibraries() const
+    int getNumLibraries() const
     {
         return librariesTree.getNumChildren();
     }
 
     /**
-     * @brief Clear a specific sub-library
-     * @param libraryName The name of the sub-library to clear
+     * @brief Clear a specific library
+     * @param libraryName The name of the library to clear
      */
-    void clearSubLibrary(const juce::String& libraryName);
+    void clearLibrary(const juce::String& libraryName);
 
     /**
      * @brief Clear all libraries
      */
     void clear();
 
+    /**
+     * @brief Get the converter for a specific library
+     * @param libraryName The name of the library
+     * @return Pointer to converter, or nullptr if not set
+     */
+    PresetConverter* getConverter(const juce::String& libraryName) const;
+
 private:
     juce::ValueTree parentState;
     juce::ValueTree librariesTree;
 
-    // Helper to get or create a sub-library node
-    juce::ValueTree getOrCreateSubLibrary(const juce::String& libraryName);
+    // Map of library name -> converter
+    std::map<juce::String, std::unique_ptr<PresetConverter>> converters;
+
+    // Helper to get or create a library node
+    juce::ValueTree getOrCreateLibrary(const juce::String& libraryName);
+
+    // Helper to scan files in a directory matching converter's extensions
+    juce::Array<juce::File> scanFiles(const juce::String& directoryPath, PresetConverter* converter, bool recursive);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibraryManager)
 };
