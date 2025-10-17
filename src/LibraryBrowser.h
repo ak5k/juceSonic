@@ -40,6 +40,32 @@ public:
     bool keyPressed(const juce::KeyPress& key) override;
 
 private:
+    // Custom TextEditor that allows Down arrow to pass through when popup is visible
+    class SearchTextEditor : public juce::TextEditor
+    {
+    public:
+        SearchTextEditor(LibraryBrowser& owner) : owner(owner) {}
+        
+        bool keyPressed(const juce::KeyPress& key) override
+        {
+            // If Down arrow and popup is visible, transfer focus to popup
+            if (key == juce::KeyPress::downKey)
+            {
+                if (owner.filteredPopup && owner.filteredPopup->isVisible())
+                {
+                    owner.filteredPopup->grabKeyboardFocus();
+                    return true;
+                }
+            }
+            
+            // Otherwise, handle normally
+            return juce::TextEditor::keyPressed(key);
+        }
+        
+    private:
+        LibraryBrowser& owner;
+    };
+
     // Custom LookAndFeel for multi-column hierarchical menu
     class BrowserLookAndFeel : public juce::LookAndFeel_V4
     {

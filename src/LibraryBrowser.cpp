@@ -190,7 +190,7 @@ bool LibraryBrowser::FilteredListPopup::keyPressed(const juce::KeyPress& key)
                 break;
             }
         }
-        
+
         if (isAtFirst)
         {
             // Return focus to text editor
