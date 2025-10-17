@@ -84,32 +84,35 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
     juce::Image liceImage(juce::Image::ARGB, width, height, false);
 
     // Copy LICE bitmap data to JUCE image
-    juce::Image::BitmapData destData(liceImage, juce::Image::BitmapData::writeOnly);
-
-    for (int y = 0; y < height; ++y)
+    // Use explicit scope to ensure BitmapData is destroyed before we draw the image
     {
-        int srcY = isFlipped ? (height - 1 - y) : y;
-        const LICE_pixel* srcRow = bits + (srcY * rowSpan);
-        uint8_t* destRow = destData.getLinePointer(y);
+        juce::Image::BitmapData destData(liceImage, juce::Image::BitmapData::writeOnly);
 
-        for (int x = 0; x < width; ++x)
+        for (int y = 0; y < height; ++y)
         {
-            // LICE pixel format: 0xAARRGGBB
-            LICE_pixel srcPixel = srcRow[x];
+            int srcY = isFlipped ? (height - 1 - y) : y;
+            const LICE_pixel* srcRow = bits + (srcY * rowSpan);
+            uint8_t* destRow = destData.getLinePointer(y);
 
-            // Extract ARGB components
-            uint8_t alpha = (srcPixel >> 24) & 0xFF;
-            uint8_t red = (srcPixel >> 16) & 0xFF;
-            uint8_t green = (srcPixel >> 8) & 0xFF;
-            uint8_t blue = srcPixel & 0xFF;
+            for (int x = 0; x < width; ++x)
+            {
+                // LICE pixel format: 0xAARRGGBB
+                LICE_pixel srcPixel = srcRow[x];
 
-            // JUCE ARGB format (little-endian: BGRA)
-            destRow[x * 4 + 0] = blue;
-            destRow[x * 4 + 1] = green;
-            destRow[x * 4 + 2] = red;
-            destRow[x * 4 + 3] = alpha;
+                // Extract ARGB components
+                uint8_t alpha = (srcPixel >> 24) & 0xFF;
+                uint8_t red = (srcPixel >> 16) & 0xFF;
+                uint8_t green = (srcPixel >> 8) & 0xFF;
+                uint8_t blue = srcPixel & 0xFF;
+
+                // JUCE ARGB format (little-endian: BGRA)
+                destRow[x * 4 + 0] = blue;
+                destRow[x * 4 + 1] = green;
+                destRow[x * 4 + 2] = red;
+                destRow[x * 4 + 3] = alpha;
+            }
         }
-    }
+    } // BitmapData is destroyed here
 
     // Draw the LICE framebuffer
     g.drawImageAt(liceImage, 0, 0);
@@ -132,6 +135,15 @@ void JsfxLiceComponent::resized()
     int newWidth = getWidth();
     int newHeight = getHeight();
 
+    DBG("JsfxLiceComponent::resized() - new size: "
+        << newWidth
+        << "x"
+        << newHeight
+        << ", last size: "
+        << lastFramebufferWidth
+        << "x"
+        << lastFramebufferHeight);
+
     if (newWidth > 0 && newHeight > 0 && (newWidth != lastFramebufferWidth || newHeight != lastFramebufferHeight))
     {
         // Recreate framebuffer with new dimensions
@@ -146,8 +158,14 @@ void JsfxLiceComponent::resized()
             r.right = newWidth;
             r.bottom = newHeight;
 
+            DBG("Resizing JSFX framebuffer to: " << newWidth << "x" << newHeight);
+
             // This will resize the framebuffer
             liceState->setup_frame(nullptr, r);
+
+            // Update our tracking variables
+            lastFramebufferWidth = newWidth;
+            lastFramebufferHeight = newHeight;
 
             instance->m_init_mutex.Leave();
             instance->m_in_gfx--;
@@ -210,6 +228,40 @@ void JsfxLiceComponent::triggerJsfxGraphicsInit()
     instance->m_init_mutex.Leave();
 }
 
+void JsfxLiceComponent::triggerGfxExecution()
+{
+    if (!instance)
+        return;
+
+    auto* liceState = instance->m_lice_state;
+    if (!liceState || !liceState->m_framebuffer)
+        return;
+
+    // Run @gfx immediately to respond to user input
+    if (!instance->m_in_gfx)
+    {
+        instance->m_in_gfx++;
+        instance->m_init_mutex.Enter();
+
+        // Check if we need to call on_slider_change (parameters changed)
+        if (instance->m_slider_anychanged)
+        {
+            instance->m_mutex.Enter();
+            instance->on_slider_change();
+            instance->m_mutex.Leave();
+        }
+
+        // Run the @gfx section
+        instance->gfx_runCode(0);
+
+        instance->m_init_mutex.Leave();
+        instance->m_in_gfx--;
+
+        // Repaint to show the changes
+        repaint();
+    }
+}
+
 void JsfxLiceComponent::timerCallback()
 {
     if (!instance)
@@ -267,8 +319,8 @@ void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
     updateMousePosition(event);
     updateMouseButtons(event);
 
-    // Trigger immediate graphics update to respond to mouse input
-    repaint();
+    // Immediately run @gfx to respond to mouse input
+    triggerGfxExecution();
 }
 
 void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
@@ -278,12 +330,33 @@ void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
     if (!instance)
         return;
 
-    // Update JSFX mouse variables
-    updateMousePosition(event);
-    updateMouseButtons(event);
+    auto* liceState = instance->m_lice_state;
+    if (!liceState)
+        return;
 
-    // Trigger immediate graphics update
-    repaint();
+    // Update position first
+    updateMousePosition(event);
+
+    // For mouseUp, we need to explicitly clear button flags
+    // because JUCE might still report the button as down in the event
+    int mouseCap = 0;
+
+    // Only keep modifier keys, clear all mouse buttons
+    if (event.mods.isCtrlDown())
+        mouseCap |= 4;
+    if (event.mods.isShiftDown())
+        mouseCap |= 8;
+    if (event.mods.isAltDown())
+        mouseCap |= 16;
+
+    // Set the cleared button state
+    if (liceState->m_mouse_cap)
+        *liceState->m_mouse_cap = static_cast<EEL_F>(mouseCap);
+
+    DBG("Mouse button released, cap = " << mouseCap);
+
+    // Immediately run @gfx to respond to mouse release
+    triggerGfxExecution();
 }
 
 void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
@@ -295,8 +368,8 @@ void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
     updateMousePosition(event);
     updateMouseButtons(event);
 
-    // Trigger immediate graphics update for smooth interaction
-    repaint();
+    // Immediately run @gfx for smooth interaction
+    triggerGfxExecution();
 }
 
 void JsfxLiceComponent::mouseMove(const juce::MouseEvent& event)
@@ -304,11 +377,52 @@ void JsfxLiceComponent::mouseMove(const juce::MouseEvent& event)
     if (!instance)
         return;
 
-    // Update JSFX mouse variables
+    // Update JSFX mouse variables (position only, no buttons for move)
     updateMousePosition(event);
 
+    // Update modifiers even on mouse move (for hover effects with modifiers)
+    auto* liceState = instance->m_lice_state;
+    if (liceState && liceState->m_mouse_cap)
+    {
+        int mouseCap = 0;
+        if (event.mods.isCtrlDown())
+            mouseCap |= 4;
+        if (event.mods.isShiftDown())
+            mouseCap |= 8;
+        if (event.mods.isAltDown())
+            mouseCap |= 16;
+        *liceState->m_mouse_cap = static_cast<EEL_F>(mouseCap);
+    }
+
     // Trigger graphics update for hover effects
-    repaint();
+    triggerGfxExecution();
+}
+
+void JsfxLiceComponent::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
+{
+    if (!instance)
+        return;
+
+    auto* liceState = instance->m_lice_state;
+    if (!liceState)
+        return;
+
+    // Update mouse position first
+    updateMousePosition(event);
+
+    // Update gfx_mouse_wheel variable
+    // JSFX expects: positive = scroll up, negative = scroll down
+    // JUCE wheel.deltaY: positive = scroll up, negative = scroll down (same convention)
+    float wheelDelta = wheel.deltaY * 120.0f; // Scale to match typical mouse wheel units
+
+    if (liceState->m_mouse_wheel)
+        *liceState->m_mouse_wheel = static_cast<EEL_F>(wheelDelta);
+
+    // Update button state
+    updateMouseButtons(event);
+
+    // Trigger immediate graphics update
+    triggerGfxExecution();
 }
 
 // Helper methods to update JSFX mouse variables
@@ -317,18 +431,25 @@ void JsfxLiceComponent::updateMousePosition(const juce::MouseEvent& event)
     if (!instance)
         return;
 
-    // Set gfx_mouse_x and gfx_mouse_y
-    // Use 'true' to create the variable if it doesn't exist
-    if (auto* var_x = instance->GetNamedVar("gfx_mouse_x", true, nullptr))
-        *var_x = static_cast<EEL_F>(event.x);
+    auto* liceState = instance->m_lice_state;
+    if (!liceState)
+        return;
 
-    if (auto* var_y = instance->GetNamedVar("gfx_mouse_y", true, nullptr))
-        *var_y = static_cast<EEL_F>(event.y);
+    // Update LICE state's mouse position variables directly
+    if (liceState->m_mouse_x && liceState->m_mouse_y)
+    {
+        *liceState->m_mouse_x = static_cast<EEL_F>(event.x);
+        *liceState->m_mouse_y = static_cast<EEL_F>(event.y);
+    }
 }
 
 void JsfxLiceComponent::updateMouseButtons(const juce::MouseEvent& event)
 {
     if (!instance)
+        return;
+
+    auto* liceState = instance->m_lice_state;
+    if (!liceState)
         return;
 
     // Update gfx_mouse_cap (mouse button state)
@@ -346,9 +467,9 @@ void JsfxLiceComponent::updateMouseButtons(const juce::MouseEvent& event)
     if (event.mods.isAltDown())
         mouseCap |= 16;
 
-    // Use 'true' to create the variable if it doesn't exist
-    if (auto* var_cap = instance->GetNamedVar("gfx_mouse_cap", true, nullptr))
-        *var_cap = static_cast<EEL_F>(mouseCap);
+    // Update LICE state's mouse_cap variable directly
+    if (liceState->m_mouse_cap)
+        *liceState->m_mouse_cap = static_cast<EEL_F>(mouseCap);
 }
 
 bool JsfxLiceComponent::keyPressed(const juce::KeyPress& key)

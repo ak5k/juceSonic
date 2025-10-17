@@ -6,7 +6,7 @@ struct SX_Instance;
 
 /**
  * JSFX IDE Editor Window Manager
- * Creates and manages the classic ncurses-based JSFX editor as a native floating window
+ * Creates and manages the classic dialog-based JSFX editor as a native window
  */
 class JsfxEditorWindow
 {

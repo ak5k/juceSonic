@@ -3,6 +3,7 @@
 #include "../jsfx/include/jsfx.h"
 
 #include <juce_core/juce_core.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 // Define DBG macro if not already defined
 #ifndef DBG
@@ -122,8 +123,17 @@ void JsfxEditorWindow::open(SX_Instance* instance)
         currentInstance = nullptr;
     }
 #else
-    // Windows implementation would go here
-    DBG("JsfxEditorWindow::open() - Windows not yet implemented");
+    // Windows: JSFX editor is not yet supported on Windows
+    DBG("JsfxEditorWindow::open() - Editor window not supported on Windows yet");
+
+    // Show a message to the user
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::AlertWindow::InfoIcon,
+        "Editor Not Available",
+        "The JSFX code editor is currently only available on Linux and macOS.\n\n"
+        "You can edit the JSFX file externally with your preferred text editor.",
+        "OK"
+    );
 #endif
 }
 

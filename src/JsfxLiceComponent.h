@@ -4,6 +4,11 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+// Windows.h (included by jsfx.h) defines Notification as a macro, which conflicts with JUCE
+#ifdef Notification
+#undef Notification
+#endif
+
 class JsfxHelper;
 
 /**
@@ -29,6 +34,7 @@ public:
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
     bool keyPressed(const juce::KeyPress& key) override;
 
     // Timer callback to poll LICE framebuffer
@@ -44,6 +50,9 @@ private:
 
     // Helper method to trigger JSFX graphics initialization
     void triggerJsfxGraphicsInit();
+
+    // Helper method to immediately execute @gfx code (for interactive updates)
+    void triggerGfxExecution();
 
     SX_Instance* instance;
     JsfxHelper& helper;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "EmbeddedJsfxComponent.h"
 #include "JsfxEditorWindow.h"
 #include "JsfxLiceComponent.h"
 #include "PluginProcessor.h"
@@ -218,15 +217,8 @@ private:
     juce::OwnedArray<ParameterSlider> parameterSliders;
     std::unique_ptr<PersistentFileChooser> fileChooser;
 
-#ifdef __linux__
-    // Linux: Use LICE framebuffer rendering + optional native window
+    // All platforms: Use LICE framebuffer rendering for cross-platform consistency
     std::unique_ptr<JsfxLiceComponent> jsfxLiceRenderer;
-    std::unique_ptr<EmbeddedJsfxComponent> jsfxNativeWindow; // Optional floating window
-    juce::TextButton nativeWindowButton{"Open Native UI"};
-#else
-    // Windows/Mac: Use embedded native window
-    std::unique_ptr<EmbeddedJsfxComponent> embeddedJsfx;
-#endif
 
     std::unique_ptr<IOMatrixWindow> ioMatrixWindow;
     std::unique_ptr<JsfxEditorWindow> jsfxEditorWindow;

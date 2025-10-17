@@ -1,11 +1,9 @@
 /*
- * EmbeddedJsfxComponent - Platform-specific JSFX UI hosting
+ * EmbeddedJsfxComponent - Cross-platform JSFX UI hosting
  *
- * WINDOWS: JSFX UI is embedded as a child window using the JUCE window handle
- * MACOS:   JSFX UI is embedded as a child window using the JUCE window handle
- * LINUX:   JSFX UI opens as an independent floating window (SWELL limitation)
- *          - Cannot be embedded in GTK hierarchy
- *          - Window is subclassed to prevent crash during destruction
+ * ALL PLATFORMS: JSFX UI creates native windows using Win32 API (Windows) or SWELL (Linux/Mac)
+ * - Windows: Direct Win32 HWND embedding
+ * - Linux/Mac: SWELL-wrapped windows (SWELL emulates Win32 on POSIX)
  */
 
 #include "EmbeddedJsfxComponent.h"
@@ -14,7 +12,12 @@
 
 #include <jsfx/sfxui.h>
 
-#ifndef _WIN32
+// Platform includes
+#ifdef _WIN32
+// Windows: Use native Win32 API
+#include <windows.h>
+#else
+// Linux/Mac: Use SWELL (Win32 emulation layer)
 #include <WDL/swell/swell.h>
 extern HINSTANCE g_hInst; // Defined in jsfx_api.cpp
 

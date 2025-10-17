@@ -1,6 +1,5 @@
 #include "PluginEditor.h"
 
-#include "EmbeddedJsfxComponent.h"
 #include "IOMatrixComponent.h"
 #include "JsfxLogger.h"
 #include "PersistentFileChooser.h"
@@ -54,32 +53,49 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(uiButton);
     uiButton.onClick = [this]()
     {
-#ifdef __linux__
-        // Linux: Toggle between JUCE controls and LICE-rendered JSFX UI
+        auto& state = processorRef.getAPVTS().state;
+
+        // Toggle between JUCE controls and LICE-rendered JSFX UI
         if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
         {
-            // Hide LICE renderer, show parameters
+            // Currently showing LICE - switch to JUCE
+            // Step 1: Store current LICE size
+            state.setProperty("liceUIWidth", getWidth(), nullptr);
+            state.setProperty("liceUIHeight", getHeight(), nullptr);
+
+            // Step 2: Hide LICE, show JUCE
             jsfxLiceRenderer->setVisible(false);
-            nativeWindowButton.setVisible(false);
             viewport.setVisible(true);
             uiButton.setButtonText("Show UI");
 
-            // Make resizable only vertically for JUCE controls
+            // Step 3: Set JUCE resize limits
             setResizeLimits(700, 170, 700, 1080);
 
-            // Resize to fit parameter sliders
-            int numParams = processorRef.getNumActiveParameters();
-            int sliderHeight = 60;
-            int totalHeight = 40 + 30 + (numParams * sliderHeight) + 20;
-            totalHeight = juce::jlimit(170, 800, totalHeight);
-            int totalWidth = 700;
+            // Step 4: Read and apply JUCE size
+            int juceWidth = state.getProperty("juceControlsWidth", 700);
+            int juceHeight = state.getProperty("juceControlsHeight", -1);
 
-            setSize(totalWidth, totalHeight);
+            if (juceHeight < 0)
+            {
+                // No saved JUCE size - calculate from parameters
+                int numParams = processorRef.getNumActiveParameters();
+                int sliderHeight = 60;
+                juceHeight = 40 + 30 + (numParams * sliderHeight) + 20;
+                juceHeight = juce::jlimit(170, 800, juceHeight);
+            }
+
+            DBG("Switching to JUCE view: " << juceWidth << "x" << juceHeight);
+            setSize(juceWidth, juceHeight);
             resized();
             return;
         }
 
-        // Create LICE renderer if needed
+        // Currently showing JUCE - switch to LICE
+        // Step 1: Store current JUCE size
+        state.setProperty("juceControlsWidth", getWidth(), nullptr);
+        state.setProperty("juceControlsHeight", getHeight(), nullptr);
+
+        // Step 2: Create LICE renderer if needed
         if (!jsfxLiceRenderer)
         {
             auto* sx = processorRef.getSXInstancePtr();
@@ -95,160 +111,43 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
             jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
             addAndMakeVisible(*jsfxLiceRenderer);
+        }
 
-            // Get recommended size from JSFX
+        // Step 3: Read LICE size
+        int liceWidth = state.getProperty("liceUIWidth", -1);
+        int liceHeight = state.getProperty("liceUIHeight", -1);
+
+        if (liceWidth < 0 || liceHeight < 0)
+        {
+            // No saved LICE size - get recommended size from JSFX
             auto recommended = jsfxLiceRenderer->getRecommendedBounds();
             int jsfxWidth = recommended.getWidth();
             int jsfxHeight = recommended.getHeight();
 
-            // Resize editor to match
+            // Calculate total size including buttons and status
             int totalHeight = 40 + 30 + jsfxHeight;
             int totalWidth = juce::jmax(700, jsfxWidth);
             totalHeight = juce::jlimit(170, 1080, totalHeight);
             totalWidth = juce::jlimit(600, 1920, totalWidth);
 
-            setSize(totalWidth, totalHeight);
-            // Make fully resizable when showing LICE renderer
-            setResizeLimits(400, 300, 1920, 1080);
+            liceWidth = totalWidth;
+            liceHeight = totalHeight;
         }
 
+        // Step 4: Hide JUCE, show LICE
         viewport.setVisible(false);
         jsfxLiceRenderer->setVisible(true);
-        nativeWindowButton.setVisible(true);
         uiButton.setButtonText("Hide UI");
-        // Make fully resizable when showing LICE renderer
+
+        // Step 5: Set LICE resize limits and apply size
         setResizeLimits(400, 300, 1920, 1080);
+        DBG("Switching to LICE view: " << liceWidth << "x" << liceHeight);
+        setSize(liceWidth, liceHeight);
         resized();
-#else
-        // Windows/Mac: Toggle between JUCE controls and embedded JSFX UI
-        if (embeddedJsfx && embeddedJsfx->isVisible())
-        {
-            // Currently showing embedded JSFX - hide it and show parameters
-            embeddedJsfx->setVisible(false);
-            viewport.setVisible(true);
-            uiButton.setButtonText("Show UI");
-
-            // Make resizable only vertically for JUCE controls
-            setResizeLimits(700, 170, 700, 1080);
-
-            // Resize to fit parameter sliders - reset to default JUCE controls size
-            int numParams = processorRef.getNumActiveParameters();
-            int sliderHeight = 60;                                       // Each slider is about 60px tall
-            int totalHeight = 40 + 30 + (numParams * sliderHeight) + 20; // buttons + status + sliders + padding
-            totalHeight = juce::jlimit(170, 800, totalHeight);           // Reasonable limits
-            int totalWidth = 700;                                        // Default width for JUCE controls
-
-            DBG("PluginEditor: Resizing for JUCE controls: "
-                + juce::String(totalWidth)
-                + "x"
-                + juce::String(totalHeight));
-            setSize(totalWidth, totalHeight);
-            resized();
-            return;
-        }
-
-        // If no embedded component yet, create and initialize
-        if (!embeddedJsfx)
-        {
-            auto* sx = processorRef.getSXInstancePtr();
-            if (!sx)
-            {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon,
-                    "No JSFX Loaded",
-                    "Please load a JSFX file first before opening the UI."
-                );
-                return;
-            }
-
-            embeddedJsfx = std::make_unique<EmbeddedJsfxComponent>(sx, processorRef);
-
-            // Resize editor to match JSFX UI size when it's created
-            embeddedJsfx->onNativeCreated = [this](int jsfxWidth, int jsfxHeight)
-            {
-                // Button bar (40) + status label (30) + JSFX UI height
-                int totalHeight = 40 + 30 + jsfxHeight;
-                int totalWidth = juce::jmax(700, jsfxWidth);
-
-                // Constrain to our resize limits
-                totalHeight = juce::jlimit(170, 1080, totalHeight);
-                totalWidth = juce::jlimit(600, 1920, totalWidth);
-
-                DBG("PluginEditor: Resizing to match JSFX UI: "
-                    + juce::String(totalWidth)
-                    + "x"
-                    + juce::String(totalHeight));
-                setSize(totalWidth, totalHeight);
-            };
-
-            // Make resizable in both dimensions for JSFX UI
-            setResizeLimits(600, 170, 1920, 1080);
-
-            addAndMakeVisible(*embeddedJsfx);
-            viewport.setVisible(false);
-            uiButton.setButtonText("Hide UI");
-            resized(); // Trigger layout - native will be created via timer
-        }
-        else
-        {
-            // Show it again - resize to JSFX initial size
-            viewport.setVisible(false);
-            embeddedJsfx->setVisible(true);
-            uiButton.setButtonText("Hide UI");
-
-            // Make resizable in both dimensions for JSFX UI
-            setResizeLimits(600, 170, 1920, 1080);
-
-            // Resize to JSFX initial dimensions
-            if (embeddedJsfx->getJsfxWindowWidth() > 0 && embeddedJsfx->getJsfxWindowHeight() > 0)
-            {
-                int totalHeight = 40 + 30 + embeddedJsfx->getJsfxWindowHeight();
-                int totalWidth = juce::jmax(700, embeddedJsfx->getJsfxWindowWidth());
-
-                totalHeight = juce::jlimit(170, 1080, totalHeight);
-                totalWidth = juce::jlimit(600, 1920, totalWidth);
-
-                DBG("PluginEditor: Resizing to show JSFX UI: "
-                    + juce::String(totalWidth)
-                    + "x"
-                    + juce::String(totalHeight));
-                setSize(totalWidth, totalHeight);
-            }
-
-            resized(); // Trigger layout
-        }
-#endif
     };
 
     addAndMakeVisible(ioMatrixButton);
     ioMatrixButton.onClick = [this]() { toggleIOMatrix(); };
-
-#ifdef __linux__
-    // Linux: Add button to open native JSFX window
-    addAndMakeVisible(nativeWindowButton);
-    nativeWindowButton.setVisible(false); // Hidden until LICE renderer is showing
-    nativeWindowButton.onClick = [this]()
-    {
-        auto* sx = processorRef.getSXInstancePtr();
-        if (!sx)
-            return;
-
-        if (jsfxNativeWindow && jsfxNativeWindow->isNativeCreated())
-        {
-            // Toggle visibility
-            bool currentlyVisible = jsfxNativeWindow->isVisible();
-            jsfxNativeWindow->setVisible(!currentlyVisible);
-            nativeWindowButton.setButtonText(currentlyVisible ? "Open Native UI" : "Close Native UI");
-        }
-        else
-        {
-            // Create native window
-            jsfxNativeWindow = std::make_unique<EmbeddedJsfxComponent>(sx, processorRef);
-            jsfxNativeWindow->createNative();
-            nativeWindowButton.setButtonText("Close Native UI");
-        }
-    };
-#endif
 
     // Wet amount slider
     addAndMakeVisible(wetLabel);
@@ -305,11 +204,7 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
     // Save editor state to processor
     auto& state = processorRef.getAPVTS().state;
 
-#ifdef __linux__
     state.setProperty("editorShowingJsfxUI", jsfxLiceRenderer && jsfxLiceRenderer->isVisible(), nullptr);
-#else
-    state.setProperty("editorShowingJsfxUI", embeddedJsfx && embeddedJsfx->isVisible(), nullptr);
-#endif
 
     state.setProperty("editorWidth", getWidth(), nullptr);
     state.setProperty("editorHeight", getHeight(), nullptr);
@@ -327,32 +222,13 @@ void AudioPluginAudioProcessorEditor::destroyJsfxUI()
     if (jsfxEditorWindow)
         jsfxEditorWindow->close();
 
-#ifdef __linux__
-    // Linux: Cleanup LICE renderer and optional native window
+    // Cleanup LICE renderer
     if (jsfxLiceRenderer)
     {
         DBG("PluginEditor: Destroying JSFX LICE renderer");
         jsfxLiceRenderer->setVisible(false);
         jsfxLiceRenderer.reset();
     }
-
-    if (jsfxNativeWindow)
-    {
-        DBG("PluginEditor: Destroying JSFX native window");
-        jsfxNativeWindow->setVisible(false);
-        jsfxNativeWindow->destroyNative();
-        jsfxNativeWindow.reset();
-    }
-#else
-    // Windows/Mac: Cleanup embedded JSFX component
-    if (embeddedJsfx)
-    {
-        DBG("PluginEditor: Destroying embedded JSFX UI");
-        embeddedJsfx->setVisible(false);
-        embeddedJsfx->destroyNative(); // Properly destroy the native JSFX window first
-        embeddedJsfx.reset();
-    }
-#endif
 }
 
 void AudioPluginAudioProcessorEditor::timerCallback()
@@ -427,11 +303,6 @@ void AudioPluginAudioProcessorEditor::resized()
     buttonArea.removeFromLeft(5);
     ioMatrixButton.setBounds(buttonArea.removeFromLeft(100));
 
-#ifdef __linux__
-    buttonArea.removeFromLeft(5);
-    nativeWindowButton.setBounds(buttonArea.removeFromLeft(120));
-#endif
-
     buttonArea.removeFromLeft(10);
     wetLabel.setBounds(buttonArea.removeFromLeft(50));
     buttonArea.removeFromLeft(5);
@@ -442,13 +313,8 @@ void AudioPluginAudioProcessorEditor::resized()
     // Give remaining space to components - visibility controls which shows
     viewport.setBounds(bounds);
 
-#ifdef __linux__
     if (jsfxLiceRenderer)
         jsfxLiceRenderer->setBounds(bounds);
-#else
-    if (embeddedJsfx)
-        embeddedJsfx->setBounds(bounds);
-#endif
 }
 
 void AudioPluginAudioProcessorEditor::loadJSFXFile()
@@ -476,12 +342,10 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                     auto* sx = processorRef.getSXInstancePtr();
                     if (sx && sx->gfx_hasCode())
                     {
-#ifdef __linux__
-                        // On Linux, use LICE rendering component
+                        // Use LICE rendering component
                         jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
                         addAndMakeVisible(*jsfxLiceRenderer);
                         viewport.setVisible(false);
-                        nativeWindowButton.setVisible(true);
                         uiButton.setButtonText("Hide UI");
                         uiButton.setEnabled(true);   // Enable UI button for toggling
                         editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
@@ -497,34 +361,6 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                         setResizeLimits(400, 300, 1920, 1080);
                         setSize(totalWidth, totalHeight);
                         resized();
-#else
-                        embeddedJsfx = std::make_unique<EmbeddedJsfxComponent>(sx, processorRef);
-
-                        // Resize editor to match JSFX UI size when it's created
-                        embeddedJsfx->onNativeCreated = [this](int jsfxWidth, int jsfxHeight)
-                        {
-                            // Button bar (40) + status label (30) + JSFX UI height
-                            int totalHeight = 40 + 30 + jsfxHeight;
-                            int totalWidth = juce::jmax(700, jsfxWidth);
-
-                            // Constrain to our resize limits
-                            totalHeight = juce::jlimit(170, 1080, totalHeight);
-                            totalWidth = juce::jlimit(600, 1920, totalWidth);
-
-                            DBG("PluginEditor: Resizing to match JSFX UI: "
-                                + juce::String(totalWidth)
-                                + "x"
-                                + juce::String(totalHeight));
-                            setSize(totalWidth, totalHeight);
-                        };
-
-                        addAndMakeVisible(*embeddedJsfx);
-                        viewport.setVisible(false);
-                        uiButton.setButtonText("Hide UI");
-                        uiButton.setEnabled(true);   // Enable UI button for toggling
-                        editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
-                        resized();
-#endif
                     }
                     else
                     {
