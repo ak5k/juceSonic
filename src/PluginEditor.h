@@ -5,6 +5,7 @@
 #include "JsfxEditorWindow.h"
 #include "JsfxLiceComponent.h"
 #include "PluginProcessor.h"
+#include "PersistentState.h"
 
 class PersistentFileChooser;
 
@@ -28,6 +29,20 @@ public:
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IOMatrixWindow)
+};
+
+//==============================================================================
+// Forward declaration
+class AudioPluginAudioProcessorEditor;
+
+// Custom LookAndFeel for multi-column preset ComboBox
+class PresetComboBoxLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    // Pointer to the editor so the look-and-feel can decide column count based on search state
+    AudioPluginAudioProcessorEditor* owner = nullptr;
+
+    juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label) override;
 };
 
 //==============================================================================
@@ -183,8 +198,20 @@ private:
 };
 
 //==============================================================================
+// Custom LookAndFeel for multi-column ComboBox popup
+class MultiColumnComboBoxLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label) override
+    {
+        return juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu(box, label).withMaximumNumColumns(3);
+    }
+};
+
+//==============================================================================
 class AudioPluginAudioProcessorEditor final
     : public juce::AudioProcessorEditor
+    , public PersistentState
     , private juce::Timer
 {
 public:
@@ -195,11 +222,18 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // Public so LookAndFeel can access it
+    bool isSearching = false;
+
 private:
     void timerCallback() override;
     void loadJSFXFile();
     void unloadJSFXFile();
     void rebuildParameterSliders();
+    void updatePresetList();
+    void buildFilteredPresetMenu(const juce::String& searchFilter);
+    void buildHierarchicalPresetMenu();
+    void onPresetSelected();
 
     AudioPluginAudioProcessor& processorRef;
 
@@ -208,6 +242,9 @@ private:
     juce::TextButton uiButton{"UI"};
     juce::TextButton editButton{"Editor"};
     juce::TextButton ioMatrixButton{"I/O Matrix"};
+    juce::ComboBox presetComboBox;
+    juce::Label presetLabel;
+    juce::String lastPresetSearchText; // Track search text changes
     juce::Slider wetSlider;
     juce::Label wetLabel;
     juce::Viewport viewport;
@@ -230,6 +267,30 @@ private:
     bool needsSizeRestoration = false;
     int restoredWidth = 700;
     int restoredHeight = 500;
+
+    // Deferred preset list update after JSFX load
+    bool needsPresetListUpdate = false;
+
+    // Custom LookAndFeel for preset ComboBox multi-column layout
+    PresetComboBoxLookAndFeel presetComboBoxLookAndFeel;
+
+    // Mouse listener used to intercept clicks on the combo-box arrow
+    struct PresetComboMouseListener : public juce::MouseListener
+    {
+        explicit PresetComboMouseListener(AudioPluginAudioProcessorEditor* ownerIn)
+            : owner(ownerIn)
+        {
+        }
+
+        void mouseDown(const juce::MouseEvent& event) override;
+        AudioPluginAudioProcessorEditor* owner = nullptr;
+    };
+
+    std::unique_ptr<PresetComboMouseListener> presetComboMouseListener;
+
+    // Helpers to build and show menus
+    void buildHierarchicalPresetMenu(juce::PopupMenu& outMenu);
+    void buildFilteredPresetMenu(const juce::String& filter, juce::PopupMenu& outMenu);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

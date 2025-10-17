@@ -602,6 +602,12 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                         INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
                         bool isInstrument = (flags & 1) != 0;
                         DBG("JSFX flags: " << flags << ", isInstrument=" << (isInstrument ? "YES" : "NO"));
+
+                        // Scan for preset files (.rpl) in the JSFX directory
+                        juce::Array<juce::File> presetDirs;
+                        presetDirs.add(sourceDir);
+                        DBG("Scanning for presets in: " << sourceDir.getFullPathName());
+                        presetManager.scanDirectories(presetDirs);
                     }
 
                     // Step 6: Restore routing configuration
@@ -742,6 +748,13 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     bool isInstrument = (flags & 1) != 0;
     DBG("JSFX flags: " << flags << ", isInstrument=" << (isInstrument ? "YES" : "NO"));
 
+    // Scan for preset files (.rpl) in the JSFX directory and subdirectories
+    juce::Array<juce::File> presetDirs;
+    presetDirs.add(sourceDir); // Main JSFX directory
+
+    DBG("Scanning for presets in: " << sourceDir.getFullPathName());
+    presetManager.scanDirectories(presetDirs);
+
     // Note: Directory remembering now handled by PersistentFileChooser in editor
 
     return true;
@@ -857,6 +870,164 @@ void AudioPluginAudioProcessor::updateParameterMapping()
 
     // Initialize the parameter sync manager with current state
     parameterSync.initialize(parameterCache, sxInstance, numActiveParams, lastSampleRate);
+}
+
+//==============================================================================
+// Preset Management
+
+bool AudioPluginAudioProcessor::loadPresetByName(const juce::String& presetName)
+{
+    if (!sxInstance || presetName.isEmpty())
+        return false;
+
+    DBG("Loading preset: " << presetName);
+
+    const auto* preset = presetManager.getPreset(presetName);
+    if (!preset)
+    {
+        DBG("Preset not found: " << presetName);
+        return false;
+    }
+
+    // Decode base64 data
+    juce::MemoryOutputStream decodedStream;
+    if (!juce::Base64::convertFromBase64(decodedStream, preset->data))
+    {
+        DBG("Failed to decode preset data");
+        return false;
+    }
+
+    // Get the decoded binary data
+    const void* presetData = decodedStream.getData();
+    size_t presetDataSize = decodedStream.getDataSize();
+
+    if (presetDataSize == 0)
+    {
+        DBG("Decoded preset data is empty");
+        return false;
+    }
+
+    DBG("Decoded preset data: " << presetDataSize << " bytes");
+
+    // Apply preset data to JSFX instance
+    // The binary format is JSFX-specific parameter state
+    // We need to parse it and set parameters using sx_setParmVal
+
+    // JSFX preset format (based on REAPER's implementation):
+    // - 4 bytes: number of parameters (int32)
+    // - For each parameter: 8 bytes (double value)
+
+    const unsigned char* dataPtr = static_cast<const unsigned char*>(presetData);
+
+    if (presetDataSize < 4)
+    {
+        DBG("Preset data too small");
+        return false;
+    }
+
+    // Read number of parameters (little-endian int32)
+    int numPresetParams = static_cast<int>(dataPtr[0] | (dataPtr[1] << 8) | (dataPtr[2] << 16) | (dataPtr[3] << 24));
+
+    DBG("Preset contains " << numPresetParams << " parameters");
+
+    if (numPresetParams <= 0 || numPresetParams > PluginConstants::MaxParameters)
+    {
+        DBG("Invalid number of parameters in preset");
+        return false;
+    }
+
+    size_t expectedSize = 4 + (numPresetParams * 8); // 4-byte count + 8 bytes per param
+    if (presetDataSize < expectedSize)
+    {
+        DBG("Preset data size mismatch. Expected at least " << expectedSize << " bytes, got " << presetDataSize);
+        return false;
+    }
+
+    // Apply parameters
+    dataPtr += 4; // Skip the count
+    for (int i = 0; i < numPresetParams && i < numActiveParams; ++i)
+    {
+        // Read double value (little-endian, IEEE 754)
+        double value;
+        std::memcpy(&value, dataPtr, sizeof(double));
+        dataPtr += sizeof(double);
+
+        // Set parameter in JSFX
+        JesusonicAPI.sx_setParmVal(sxInstance, i, value, lastSampleRate);
+
+        // Update APVTS to match
+        if (auto* param = parameterCache[i])
+        {
+            // Convert JSFX value [min, max] to normalized [0, 1]
+            double minVal = parameterRanges[i].minVal;
+            double maxVal = parameterRanges[i].maxVal;
+            float normalizedValue =
+                (maxVal != minVal) ? static_cast<float>((value - minVal) / (maxVal - minVal)) : 0.0f;
+
+            param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normalizedValue));
+        }
+    }
+
+    // Re-sync the parameter manager with new values
+    parameterSync.initialize(parameterCache, sxInstance, numActiveParams, lastSampleRate);
+
+    DBG("Preset loaded successfully: " << presetName);
+    return true;
+}
+
+const char* AudioPluginAudioProcessor::getPresetNamesRaw()
+{
+    if (!sxInstance)
+        return nullptr;
+
+    // Get presets for the current JSFX effect
+    auto presetNames = presetManager.getAllPresetNames(currentJSFXName);
+
+    if (presetNames.isEmpty())
+        return nullptr;
+
+    // Build newline-separated list
+    juce::StringArray formattedNames;
+    for (const auto& name : presetNames)
+        formattedNames.add(name);
+
+    // Cache the string (JSFX expects the pointer to remain valid)
+    presetNamesCache = formattedNames.joinIntoString("\n");
+
+    DBG("Returning " << presetNames.size() << " preset names for: " << currentJSFXName);
+
+    return presetNamesCache.toRawUTF8();
+}
+
+//==============================================================================
+// Preset Host Callbacks (called by JSFX via getHostAPIFunction)
+
+bool hostLoadReaperPreset(void* hostctx, const char* presetName)
+{
+    if (!hostctx || !presetName)
+        return false;
+
+    DBG("JSFX requesting to load preset: " << presetName);
+
+    // Cast hostctx back to AudioPluginAudioProcessor
+    auto* processor = static_cast<AudioPluginAudioProcessor*>(hostctx);
+
+    // Forward to processor's preset loading logic
+    return processor->loadPresetByName(juce::String(presetName));
+}
+
+const char* hostGetReaperPresetNamesRaw(void* hostctx)
+{
+    if (!hostctx)
+        return nullptr;
+
+    DBG("JSFX requesting preset names list");
+
+    // Cast hostctx back to AudioPluginAudioProcessor
+    auto* processor = static_cast<AudioPluginAudioProcessor*>(hostctx);
+
+    // Forward to processor's preset names getter
+    return processor->getPresetNamesRaw();
 }
 
 //==============================================================================

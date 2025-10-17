@@ -8,10 +8,24 @@
 #include <memory>
 
 //==============================================================================
+// PresetComboBoxLookAndFeel implementation
+juce::PopupMenu::Options
+PresetComboBoxLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label)
+{
+    auto opts = juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu(box, label);
+    if (owner != nullptr && owner->isSearching)
+        return opts.withMaximumNumColumns(1);
+    return opts.withMaximumNumColumns(4);
+}
+
+//==============================================================================
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
     : AudioProcessorEditor(&p)
     , processorRef(p)
 {
+    // Initialize state tree for persistent state management
+    setStateTree(processorRef.getAPVTS().state);
+
     addAndMakeVisible(loadButton);
     loadButton.onClick = [this]() { loadJSFXFile(); };
 
@@ -56,15 +70,13 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(uiButton);
     uiButton.onClick = [this]()
     {
-        auto& state = processorRef.getAPVTS().state;
-
         // Toggle between JUCE controls and LICE-rendered JSFX UI
         if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
         {
             // Currently showing LICE - switch to JUCE
-            // Step 1: Store current LICE size
-            state.setProperty("liceUIWidth", getWidth(), nullptr);
-            state.setProperty("liceUIHeight", getHeight(), nullptr);
+            // Step 1: Store current LICE size (per-JSFX via PersistentState)
+            setStateProperty("liceUIWidth", getWidth());
+            setStateProperty("liceUIHeight", getHeight());
 
             // Step 2: Hide LICE, show JUCE
             jsfxLiceRenderer->setVisible(false);
@@ -74,9 +86,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
             // Step 3: Set JUCE resize limits
             setResizeLimits(700, 170, 700, 1080);
 
-            // Step 4: Read and apply JUCE size
-            int juceWidth = state.getProperty("juceControlsWidth", 700);
-            int juceHeight = state.getProperty("juceControlsHeight", -1);
+            // Step 4: Read and apply JUCE size (per-JSFX via PersistentState)
+            int juceWidth = getStateProperty("juceControlsWidth", 700);
+            int juceHeight = getStateProperty("juceControlsHeight", -1);
 
             if (juceHeight < 0)
             {
@@ -94,9 +106,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
         }
 
         // Currently showing JUCE - switch to LICE
-        // Step 1: Store current JUCE size
-        state.setProperty("juceControlsWidth", getWidth(), nullptr);
-        state.setProperty("juceControlsHeight", getHeight(), nullptr);
+        // Step 1: Store current JUCE size (per-JSFX via PersistentState)
+        setStateProperty("juceControlsWidth", getWidth());
+        setStateProperty("juceControlsHeight", getHeight());
 
         // Step 2: Create LICE renderer if needed
         if (!jsfxLiceRenderer)
@@ -116,9 +128,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
             addAndMakeVisible(*jsfxLiceRenderer);
         }
 
-        // Step 3: Read LICE size
-        int liceWidth = state.getProperty("liceUIWidth", -1);
-        int liceHeight = state.getProperty("liceUIHeight", -1);
+        // Step 3: Read LICE size (per-JSFX via PersistentState)
+        int liceWidth = getStateProperty("liceUIWidth", -1);
+        int liceHeight = getStateProperty("liceUIHeight", -1);
 
         if (liceWidth < 0 || liceHeight < 0)
         {
@@ -152,6 +164,18 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(ioMatrixButton);
     ioMatrixButton.onClick = [this]() { toggleIOMatrix(); };
 
+    // Preset selector
+    addAndMakeVisible(presetLabel);
+    presetLabel.setText("Preset:", juce::dontSendNotification);
+    presetLabel.setJustificationType(juce::Justification::centredRight);
+
+    addAndMakeVisible(presetComboBox);
+    presetComboBox.setEditableText(true); // Allow typing to search
+    presetComboBox.setTextWhenNothingSelected("(Type to search...)");
+    presetComboBox.setTextWhenNoChoicesAvailable("No presets available");
+    presetComboBox.setLookAndFeel(&presetComboBoxLookAndFeel); // Enable multi-column layout
+    presetComboBox.onChange = [this]() { onPresetSelected(); };
+
     // Wet amount slider
     addAndMakeVisible(wetLabel);
     wetLabel.setText("Dry/Wet", juce::dontSendNotification);
@@ -177,22 +201,21 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     setResizable(true, true);
     setResizeLimits(600, 170, 1920, 1080);
 
-    // Restore editor state from processor
-    auto& state = processorRef.getAPVTS().state;
-    bool showingJsfxUI = state.getProperty("editorShowingJsfxUI", true);
+    // Restore editor state from processor (per-JSFX via PersistentState)
+    bool showingJsfxUI = getStateProperty("editorShowingJsfxUI", true);
 
     // Store size to be restored - defer actual resize to avoid DAW override
     if (showingJsfxUI)
     {
-        // Was showing LICE UI - restore LICE size
-        restoredWidth = state.getProperty("liceUIWidth", 700);
-        restoredHeight = state.getProperty("liceUIHeight", 500);
+        // Was showing LICE UI - restore LICE size (per-JSFX)
+        restoredWidth = getStateProperty("liceUIWidth", 700);
+        restoredHeight = getStateProperty("liceUIHeight", 500);
     }
     else
     {
-        // Was showing JUCE controls - restore JUCE size
-        restoredWidth = state.getProperty("juceControlsWidth", 700);
-        restoredHeight = state.getProperty("juceControlsHeight", 500);
+        // Was showing JUCE controls - restore JUCE size (per-JSFX)
+        restoredWidth = getStateProperty("juceControlsWidth", 700);
+        restoredHeight = getStateProperty("juceControlsHeight", 500);
     }
 
     // Set initial size (may be overridden by DAW)
@@ -203,9 +226,12 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     rebuildParameterSliders();
 
-    // If JSFX is already loaded at startup, enable the Edit button
+    // If JSFX is already loaded at startup, enable the Edit button and schedule preset list update
     if (processorRef.getSXInstancePtr() != nullptr)
+    {
         editButton.setEnabled(true);
+        needsPresetListUpdate = true; // Defer preset list update to timer
+    }
 
     // If we should be showing JSFX UI and there's a JSFX loaded, show it
     if (showingJsfxUI && processorRef.getSXInstancePtr() != nullptr)
@@ -220,25 +246,26 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 {
-    // Save editor state to processor
-    auto& state = processorRef.getAPVTS().state;
+    // Save editor state to processor (per-JSFX via PersistentState)
+    setStateProperty("editorShowingJsfxUI", jsfxLiceRenderer && jsfxLiceRenderer->isVisible());
 
-    state.setProperty("editorShowingJsfxUI", jsfxLiceRenderer && jsfxLiceRenderer->isVisible(), nullptr);
-
-    // Save current size to the appropriate property based on which view is showing
+    // Save current size to the appropriate property based on which view is showing (per-JSFX)
     if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
     {
-        state.setProperty("liceUIWidth", getWidth(), nullptr);
-        state.setProperty("liceUIHeight", getHeight(), nullptr);
+        setStateProperty("liceUIWidth", getWidth());
+        setStateProperty("liceUIHeight", getHeight());
     }
     else
     {
-        state.setProperty("juceControlsWidth", getWidth(), nullptr);
-        state.setProperty("juceControlsHeight", getHeight(), nullptr);
+        setStateProperty("juceControlsWidth", getWidth());
+        setStateProperty("juceControlsHeight", getHeight());
     }
 
     // Stop timer first to prevent callbacks during destruction
     stopTimer();
+
+    // Clear custom LookAndFeel before destruction
+    presetComboBox.setLookAndFeel(nullptr);
 
     // Ensure native JSFX UI is torn down before editor destruction
     destroyJsfxUI(); // This now properly destroys the native window too
@@ -268,6 +295,13 @@ void AudioPluginAudioProcessorEditor::timerCallback()
         needsSizeRestoration = false;
     }
 
+    // Apply deferred preset list update (after JSFX has been loaded and preset scanning is complete)
+    if (needsPresetListUpdate)
+    {
+        updatePresetList();
+        needsPresetListUpdate = false;
+    }
+
 #if defined(__linux__) || defined(SWELL_TARGET_GDK)
     // On Linux with GDK, pump the SWELL message loop to process window events, redraws, and timers
     // This is needed for JSFX UI to work properly
@@ -284,6 +318,26 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     // Update wet slider if it changed elsewhere
     if (std::abs(wetSlider.getValue() - processorRef.getWetAmount()) > 0.001)
         wetSlider.setValue(processorRef.getWetAmount(), juce::dontSendNotification);
+
+    // Check for preset search text changes
+    juce::String currentSearchText = presetComboBox.getText();
+    if (currentSearchText != lastPresetSearchText)
+    {
+        lastPresetSearchText = currentSearchText;
+
+        // When user types, show filtered flat list
+        if (currentSearchText.isNotEmpty())
+        {
+            isSearching = true;
+            buildFilteredPresetMenu(currentSearchText);
+        }
+        else if (isSearching)
+        {
+            // User cleared search - restore hierarchical menu
+            isSearching = false;
+            buildHierarchicalPresetMenu();
+        }
+    }
 
     // Sync Edit button text with editor window state
     if (jsfxEditorWindow)
@@ -342,6 +396,11 @@ void AudioPluginAudioProcessorEditor::resized()
     ioMatrixButton.setBounds(buttonArea.removeFromLeft(100));
 
     buttonArea.removeFromLeft(10);
+    presetLabel.setBounds(buttonArea.removeFromLeft(50));
+    buttonArea.removeFromLeft(5);
+    presetComboBox.setBounds(buttonArea.removeFromLeft(200)); // Wider for search
+
+    buttonArea.removeFromLeft(10);
     wetLabel.setBounds(buttonArea.removeFromLeft(50));
     buttonArea.removeFromLeft(5);
     wetSlider.setBounds(buttonArea.removeFromLeft(150));
@@ -355,25 +414,25 @@ void AudioPluginAudioProcessorEditor::resized()
         jsfxLiceRenderer->setBounds(bounds);
 
     // Save current size to appropriate property based on which view is showing
-    // This ensures sizes are persisted when host calls getStateInformation()
-    auto& state = processorRef.getAPVTS().state;
+    // This ensures sizes are persisted when host calls getStateInformation() (per-JSFX via PersistentState)
     if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
     {
-        state.setProperty("liceUIWidth", getWidth(), nullptr);
-        state.setProperty("liceUIHeight", getHeight(), nullptr);
+        setStateProperty("liceUIWidth", getWidth());
+        setStateProperty("liceUIHeight", getHeight());
     }
     else
     {
-        state.setProperty("juceControlsWidth", getWidth(), nullptr);
-        state.setProperty("juceControlsHeight", getHeight(), nullptr);
+        setStateProperty("juceControlsWidth", getWidth());
+        setStateProperty("juceControlsHeight", getHeight());
     }
 }
 
 void AudioPluginAudioProcessorEditor::loadJSFXFile()
 {
     // Use PersistentFileChooser for consistent directory management
+    // Only show files without extension or with .jsfx extension
     auto fileChooser =
-        std::make_unique<PersistentFileChooser>("lastJsfxDirectory", "Select a JSFX file to load...", "*");
+        std::make_unique<PersistentFileChooser>("lastJsfxDirectory", "Select a JSFX file to load...", "*.jsfx;*.");
 
     fileChooser->launchAsync(
         [this](const juce::File& file)
@@ -388,6 +447,10 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                 if (processorRef.loadJSFX(file))
                 {
                     rebuildParameterSliders();
+
+                    // Defer preset list update to allow preset scanning to complete
+                    needsPresetListUpdate = true;
+
                     JsfxLogger::info("Editor", "JSFX loaded successfully");
 
                     // Automatically show the JSFX UI if it has @gfx section
@@ -473,6 +536,10 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
 
                 processorRef.unloadJSFX();
                 rebuildParameterSliders();
+
+                // Clear preset list
+                presetComboBox.clear();
+                presetComboBox.setEnabled(false);
 
                 // Reset UI state - show parameters, update buttons
                 viewport.setVisible(true);
@@ -569,8 +636,8 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
             numJsfxOutputs
         );
 
-        // Load routing state from APVTS
-        auto routingState = processorRef.getAPVTS().state.getProperty("ioMatrixRouting", "").toString();
+        // Load routing state from APVTS (per-JSFX via PersistentState)
+        juce::String routingState = getStateProperty<juce::String>("ioMatrixRouting", juce::String());
         if (routingState.isNotEmpty())
         {
             ioMatrix->setRoutingState(routingState);
@@ -610,7 +677,7 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
                                       numJsfxOutputs]()
         {
             auto state = ioMatrix->getRoutingState();
-            processorRef.getAPVTS().state.setProperty("ioMatrixRouting", state, nullptr);
+            setStateProperty("ioMatrixRouting", state);
 
             // Build RoutingConfig from IOMatrix state and send to processor
             RoutingConfig config;
@@ -650,4 +717,135 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
     ioMatrixWindow->setVisible(true);
     ioMatrixWindow->toFront(true);
     ioMatrixButton.setButtonText("Close I/O Matrix");
+}
+
+void AudioPluginAudioProcessorEditor::updatePresetList()
+{
+    // Build the full hierarchical menu (used when clicking dropdown arrow)
+    buildHierarchicalPresetMenu();
+}
+
+void AudioPluginAudioProcessorEditor::buildFilteredPresetMenu(const juce::String& searchFilter)
+{
+    presetComboBox.clear();
+
+    auto& presetManager = processorRef.getPresetManager();
+    const auto& banks = presetManager.getBanks();
+
+    if (banks.empty())
+    {
+        presetComboBox.setEnabled(false);
+        return;
+    }
+
+    // Single flat list of filtered presets
+    int itemId = 1;
+    bool hasFilter = searchFilter.isNotEmpty();
+
+    for (const auto& bank : banks)
+    {
+        for (const auto& preset : bank.presets)
+        {
+            if (!hasFilter
+                || preset.name.containsIgnoreCase(searchFilter)
+                || bank.libraryName.containsIgnoreCase(searchFilter))
+            {
+                presetComboBox.addItem(preset.name, itemId++);
+            }
+        }
+    }
+
+    presetComboBox.setEnabled(true);
+}
+
+void AudioPluginAudioProcessorEditor::buildHierarchicalPresetMenu()
+{
+    presetComboBox.clear();
+
+    // Get ALL presets from all loaded .rpl files
+    auto& presetManager = processorRef.getPresetManager();
+    const auto& banks = presetManager.getBanks();
+
+    if (banks.empty())
+    {
+        presetComboBox.setEnabled(false);
+        return;
+    }
+
+    // Build hierarchical menu: each library is a submenu with max 4 columns
+    int itemId = 1;
+    const int maxItemsPerPage = 80; // ~20 items per column × 4 columns
+
+    for (const auto& bank : banks)
+    {
+        // Extract readable library name
+        juce::String libraryName = bank.libraryName;
+        if (libraryName.containsChar('/') || libraryName.containsChar('\\'))
+        {
+            juce::File f(libraryName);
+            libraryName = f.getFileNameWithoutExtension();
+        }
+
+        int totalPresets = static_cast<int>(bank.presets.size());
+        int numPages = (totalPresets + maxItemsPerPage - 1) / maxItemsPerPage;
+
+        if (numPages <= 1)
+        {
+            // Single submenu for this library
+            juce::PopupMenu libraryMenu;
+
+            for (const auto& preset : bank.presets)
+                libraryMenu.addItem(itemId++, preset.name);
+
+            presetComboBox.getRootMenu()->addSubMenu(libraryName, libraryMenu);
+        }
+        else
+        {
+            // Multiple pages needed - split the library
+            for (int page = 0; page < numPages; ++page)
+            {
+                juce::PopupMenu pageMenu;
+
+                int startIdx = page * maxItemsPerPage;
+                int endIdx = juce::jmin(startIdx + maxItemsPerPage, totalPresets);
+
+                for (int i = startIdx; i < endIdx; ++i)
+                    pageMenu.addItem(itemId++, bank.presets[i].name);
+
+                // Name format: "LibraryName 1", "LibraryName 2", etc.
+                juce::String pageName = libraryName + " " + juce::String(page + 1);
+                presetComboBox.getRootMenu()->addSubMenu(pageName, pageMenu);
+            }
+        }
+    }
+
+    presetComboBox.setEnabled(true);
+}
+
+void AudioPluginAudioProcessorEditor::onPresetSelected()
+{
+    int selectedId = presetComboBox.getSelectedId();
+    if (selectedId <= 0)
+        return;
+
+    // Find the preset by walking through banks
+    const auto& banks = processorRef.getPresetManager().getBanks();
+    int currentId = 1;
+
+    for (const auto& bank : banks)
+    {
+        for (const auto& preset : bank.presets)
+        {
+            if (currentId == selectedId)
+            {
+                // Found the preset - load it
+                DBG("Loading preset: " << preset.name << " from " << bank.libraryName);
+                processorRef.loadPresetByName(preset.name);
+                return;
+            }
+            currentId++;
+        }
+    }
+
+    DBG("WARNING: Could not find preset with ID " << selectedId);
 }

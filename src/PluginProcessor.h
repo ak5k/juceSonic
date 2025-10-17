@@ -6,6 +6,7 @@
 #include "JsfxHelper.h"
 #include "ParameterSyncManager.h"
 #include "PluginConstants.h"
+#include "PresetManager.h"
 
 #include <atomic>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -146,6 +147,15 @@ public:
     // Update routing configuration from UI (called from message thread)
     void updateRoutingConfig(const RoutingConfig& newConfig);
 
+    // Preset management
+    bool loadPresetByName(const juce::String& presetName);
+    const char* getPresetNamesRaw();
+
+    PresetManager& getPresetManager()
+    {
+        return presetManager;
+    }
+
 private:
     // Helper to restore routing from encoded string
     void restoreRoutingFromString(const juce::String& routingStr);
@@ -202,6 +212,10 @@ private:
     std::unique_ptr<juce::MidiBuffer::Iterator> midiInputIterator; // Iterator for reading MIDI sequentially
     juce::MidiBuffer currentMidiOutputBuffer;                      // Accumulated during processBlock
     std::vector<unsigned char> midiTempBuffer;                     // Temp storage for MIDI messages
+
+    // Preset management
+    PresetManager presetManager;
+    juce::String presetNamesCache; // Cache for preset names list (JSFX expects persistent string)
 
     // Note: Global properties management moved to PersistentFileChooser utility
 
