@@ -1,6 +1,10 @@
 #include "LibraryBrowser.h"
 
 //==============================================================================
+// Static member initialization
+LibraryBrowser* LibraryBrowser::activeWasdInstance = nullptr;
+
+//==============================================================================
 juce::PopupMenu::Options
 LibraryBrowser::BrowserLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label)
 {
@@ -420,11 +424,22 @@ LibraryBrowser::LibraryBrowser()
     dropdownButton.setButtonText("v");
     dropdownButton.onClick = [this]() { showHierarchicalPopup(); };
 
+    addAndMakeVisible(wasdToggleButton);
+    wasdToggleButton.setButtonText("WASD");
+    wasdToggleButton.setClickingTogglesState(true);
+    wasdToggleButton.setTooltip("Enable WASD navigation: D=Next, A=Previous, S=+10, W=-10");
+    wasdToggleButton.onClick = [this]() { updateWasdToggleState(wasdToggleButton.getToggleState()); };
+
     filteredPopup = std::make_unique<FilteredListPopup>(*this);
+
+    setWantsKeyboardFocus(true);
 }
 
 LibraryBrowser::~LibraryBrowser()
 {
+    // Clear static pointer if this instance was the active one
+    if (activeWasdInstance == this)
+        activeWasdInstance = nullptr;
 }
 
 void LibraryBrowser::setLibraryManager(LibraryManager* manager)
@@ -454,6 +469,8 @@ void LibraryBrowser::setPlaceholderText(const juce::String& text)
 
 void LibraryBrowser::updateItemList()
 {
+    // Rebuild flat item list when library content changes
+    buildFlatItemList();
 }
 
 void LibraryBrowser::paint(juce::Graphics& g)
@@ -467,15 +484,20 @@ void LibraryBrowser::resized()
     const int labelWidth = 60;
     const int spacing = 5;
     const int buttonWidth = 20;
+    const int wasdButtonWidth = 50;
 
     // Label on the left
     label.setBounds(area.removeFromLeft(labelWidth));
     area.removeFromLeft(spacing);
 
-    // Dropdown button on the right of remaining area
-    dropdownButton.setBounds(area.removeFromRight(buttonWidth));
+    // WASD toggle button on the far right
+    wasdToggleButton.setBounds(area.removeFromRight(wasdButtonWidth));
 
-    // Text editor fills the remaining space (aligned with dropdown)
+    // Dropdown button to the left of WASD button
+    dropdownButton.setBounds(area.removeFromRight(buttonWidth));
+    area.removeFromRight(spacing);
+
+    // Text editor fills the remaining space
     textEditor.setBounds(area);
 }
 
@@ -556,24 +578,25 @@ void LibraryBrowser::buildFilteredList(std::vector<FilteredListPopup::Item>& ite
 
     auto lowerSearch = searchText.toLowerCase();
 
+    // Iterate through library tree: library -> fileNodes -> categoryNodes -> itemNodes
     for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
     {
-        auto file = library.getChild(fileIdx);
+        auto fileNode = library.getChild(fileIdx);
 
-        for (int bankIdx = 0; bankIdx < file.getNumChildren(); ++bankIdx)
+        for (int categoryIdx = 0; categoryIdx < fileNode.getNumChildren(); ++categoryIdx)
         {
-            auto bank = file.getChild(bankIdx);
-            auto categoryNameVar = bank.getProperty("name");
+            auto categoryNode = fileNode.getChild(categoryIdx);
+            auto categoryNameVar = categoryNode.getProperty("name");
             juce::String categoryName = categoryNameVar.toString();
 
             bool categoryHasMatches = false;
-            for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
+            for (int childIdx = 0; childIdx < categoryNode.getNumChildren(); ++childIdx)
             {
-                auto item = bank.getChild(itemIdx);
-                auto itemLabelVar = item.getProperty("name");
-                juce::String itemLabel = itemLabelVar.toString();
+                auto childNode = categoryNode.getChild(childIdx);
+                auto childLabelVar = childNode.getProperty("name");
+                juce::String childLabel = childLabelVar.toString();
 
-                if (itemLabel.toLowerCase().contains(lowerSearch))
+                if (childLabel.toLowerCase().contains(lowerSearch))
                 {
                     categoryHasMatches = true;
                     break;
@@ -585,18 +608,18 @@ void LibraryBrowser::buildFilteredList(std::vector<FilteredListPopup::Item>& ite
                 // Add category header
                 items.push_back({categoryName, categoryName, -1, true});
 
-                // Add matching items
-                for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
+                // Add matching child nodes
+                for (int childIdx = 0; childIdx < categoryNode.getNumChildren(); ++childIdx)
                 {
-                    auto item = bank.getChild(itemIdx);
-                    auto itemLabelVar = item.getProperty("name");
-                    juce::String itemLabel = itemLabelVar.toString();
+                    auto childNode = categoryNode.getChild(childIdx);
+                    auto childLabelVar = childNode.getProperty("name");
+                    juce::String childLabel = childLabelVar.toString();
 
-                    if (itemLabel.toLowerCase().contains(lowerSearch))
+                    if (childLabel.toLowerCase().contains(lowerSearch))
                     {
                         int index = (int)itemIndices.size();
-                        itemIndices.push_back({fileIdx, bankIdx, itemIdx});
-                        items.push_back({categoryName, itemLabel, index, false});
+                        itemIndices.push_back({fileIdx, categoryIdx, childIdx});
+                        items.push_back({categoryName, childLabel, index, false});
                     }
                 }
             }
@@ -615,21 +638,21 @@ void LibraryBrowser::onFilteredItemSelected(int index)
     if (!library.isValid())
         return;
 
-    auto file = library.getChild(idx.fileIdx);
-    if (!file.isValid())
+    auto fileNode = library.getChild(idx.fileIdx);
+    if (!fileNode.isValid())
         return;
 
-    auto bank = file.getChild(idx.bankIdx);
-    if (!bank.isValid())
+    auto categoryNode = fileNode.getChild(idx.categoryIdx);
+    if (!categoryNode.isValid())
         return;
 
-    auto item = bank.getChild(idx.itemIdx);
-    if (!item.isValid())
+    auto childNode = categoryNode.getChild(idx.childIdx);
+    if (!childNode.isValid())
         return;
 
-    auto categoryVar = bank.getProperty("name");
-    auto labelVar = item.getProperty("name");
-    auto itemDataVar = item.getProperty("data");
+    auto categoryVar = categoryNode.getProperty("name");
+    auto labelVar = childNode.getProperty("name");
+    auto itemDataVar = childNode.getProperty("data");
 
     if (categoryVar.isVoid() || labelVar.isVoid() || itemDataVar.isVoid())
         return;
@@ -658,56 +681,68 @@ void LibraryBrowser::buildHierarchicalMenu(juce::PopupMenu& menu)
     }
     int itemId = 1;
     const int maxItemsPerPage = 80;
+
+    // Build hierarchical menu from ValueTree structure: library -> fileNodes -> categoryNodes -> childNodes
     for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
     {
-        auto file = library.getChild(fileIdx);
-        for (int bankIdx = 0; bankIdx < file.getNumChildren(); ++bankIdx)
+        auto fileNode = library.getChild(fileIdx);
+
+        for (int categoryIdx = 0; categoryIdx < fileNode.getNumChildren(); ++categoryIdx)
         {
-            auto bank = file.getChild(bankIdx);
-            auto bankNameVar = bank.getProperty("name");
-            if (bankNameVar.isVoid())
+            auto categoryNode = fileNode.getChild(categoryIdx);
+            auto categoryNameVar = categoryNode.getProperty("name");
+            if (categoryNameVar.isVoid())
                 continue;
-            juce::String bankName = bankNameVar.toString();
-            int numItems = bank.getNumChildren();
-            if (numItems == 0)
+
+            juce::String categoryName = categoryNameVar.toString();
+            int numChildren = categoryNode.getNumChildren();
+            if (numChildren == 0)
                 continue;
-            if (numItems <= maxItemsPerPage)
+
+            // If category has few children, create single submenu
+            if (numChildren <= maxItemsPerPage)
             {
-                juce::PopupMenu bankMenu;
-                for (int itemIdx = 0; itemIdx < numItems; ++itemIdx)
+                juce::PopupMenu categoryMenu;
+                for (int childIdx = 0; childIdx < numChildren; ++childIdx)
                 {
-                    auto item = bank.getChild(itemIdx);
-                    auto itemNameVar = item.getProperty("name");
-                    if (itemNameVar.isVoid())
+                    auto childNode = categoryNode.getChild(childIdx);
+                    auto childNameVar = childNode.getProperty("name");
+                    if (childNameVar.isVoid())
                         continue;
-                    itemIndices.push_back({fileIdx, bankIdx, itemIdx});
-                    bankMenu.addItem(itemId++, itemNameVar.toString());
+
+                    itemIndices.push_back({fileIdx, categoryIdx, childIdx});
+                    categoryMenu.addItem(itemId++, childNameVar.toString());
                 }
-                menu.addSubMenu(bankName, bankMenu);
+                menu.addSubMenu(categoryName, categoryMenu);
             }
             else
             {
-                int numPages = (numItems + maxItemsPerPage - 1) / maxItemsPerPage;
+                // If category has many children, split into pages
+                int numPages = (numChildren + maxItemsPerPage - 1) / maxItemsPerPage;
                 for (int page = 0; page < numPages; ++page)
                 {
                     juce::PopupMenu pageMenu;
                     int startIdx = page * maxItemsPerPage;
-                    int endIdx = juce::jmin(startIdx + maxItemsPerPage, numItems);
-                    for (int itemIdx = startIdx; itemIdx < endIdx; ++itemIdx)
+                    int endIdx = juce::jmin(startIdx + maxItemsPerPage, numChildren);
+
+                    for (int childIdx = startIdx; childIdx < endIdx; ++childIdx)
                     {
-                        auto item = bank.getChild(itemIdx);
-                        auto itemNameVar = item.getProperty("name");
-                        if (itemNameVar.isVoid())
+                        auto childNode = categoryNode.getChild(childIdx);
+                        auto childNameVar = childNode.getProperty("name");
+                        if (childNameVar.isVoid())
                             continue;
-                        itemIndices.push_back({fileIdx, bankIdx, itemIdx});
-                        pageMenu.addItem(itemId++, itemNameVar.toString());
+
+                        itemIndices.push_back({fileIdx, categoryIdx, childIdx});
+                        pageMenu.addItem(itemId++, childNameVar.toString());
                     }
-                    juce::String pageName = bankName + " " + juce::String(page + 1);
+
+                    juce::String pageName = categoryName + " " + juce::String(page + 1);
                     menu.addSubMenu(pageName, pageMenu);
                 }
             }
         }
     }
+
     if (itemIndices.empty())
         menu.addItem(-1, "No items available", false);
 }
@@ -716,28 +751,187 @@ void LibraryBrowser::onMenuResult(int result)
 {
     if (result == 0 || !libraryManager || !itemSelectedCallback)
         return;
+
     int index = result - 1;
     if (index < 0 || index >= static_cast<int>(itemIndices.size()))
         return;
+
     const auto& idx = itemIndices[index];
+
     auto library = libraryManager->getLibrary(libraryName);
     if (!library.isValid())
         return;
-    auto file = library.getChild(idx.fileIdx);
-    if (!file.isValid())
+
+    auto fileNode = library.getChild(idx.fileIdx);
+    if (!fileNode.isValid())
         return;
-    auto bank = file.getChild(idx.bankIdx);
-    if (!bank.isValid())
+
+    auto categoryNode = fileNode.getChild(idx.categoryIdx);
+    if (!categoryNode.isValid())
         return;
-    auto item = bank.getChild(idx.itemIdx);
-    if (!item.isValid())
+
+    auto childNode = categoryNode.getChild(idx.childIdx);
+    if (!childNode.isValid())
         return;
-    auto categoryVar = bank.getProperty("name");
-    auto labelVar = item.getProperty("name");
-    auto itemDataVar = item.getProperty("data");
+
+    auto categoryVar = categoryNode.getProperty("name");
+    auto labelVar = childNode.getProperty("name");
+    auto itemDataVar = childNode.getProperty("data");
+
     if (categoryVar.isVoid() || labelVar.isVoid() || itemDataVar.isVoid())
         return;
+
     currentItemName = labelVar.toString();
     textEditor.setText(currentItemName, false);
+
     itemSelectedCallback(categoryVar.toString(), labelVar.toString(), itemDataVar.toString());
+}
+
+// WASD Navigation implementation
+void LibraryBrowser::buildFlatItemList()
+{
+    flatItemList.clear();
+    currentFlatIndex = -1;
+
+    if (!libraryManager)
+        return;
+
+    auto library = libraryManager->getLibrary(libraryName);
+    if (!library.isValid())
+        return;
+
+    // Build flat list of all items in order
+    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    {
+        auto fileNode = library.getChild(fileIdx);
+
+        for (int categoryIdx = 0; categoryIdx < fileNode.getNumChildren(); ++categoryIdx)
+        {
+            auto categoryNode = fileNode.getChild(categoryIdx);
+            int numChildren = categoryNode.getNumChildren();
+
+            for (int childIdx = 0; childIdx < numChildren; ++childIdx)
+                flatItemList.push_back({fileIdx, categoryIdx, childIdx});
+        }
+    }
+}
+
+void LibraryBrowser::navigateToFlatIndex(int index)
+{
+    if (flatItemList.empty())
+        buildFlatItemList();
+
+    if (flatItemList.empty())
+        return;
+
+    // Clamp index to valid range
+    index = juce::jlimit(0, (int)flatItemList.size() - 1, index);
+    currentFlatIndex = index;
+
+    applyCurrentItem();
+}
+
+void LibraryBrowser::applyCurrentItem()
+{
+    if (currentFlatIndex < 0
+        || currentFlatIndex >= (int)flatItemList.size()
+        || !libraryManager
+        || !itemSelectedCallback)
+        return;
+
+    const auto& idx = flatItemList[currentFlatIndex];
+
+    auto library = libraryManager->getLibrary(libraryName);
+    if (!library.isValid())
+        return;
+
+    auto fileNode = library.getChild(idx.fileIdx);
+    if (!fileNode.isValid())
+        return;
+
+    auto categoryNode = fileNode.getChild(idx.categoryIdx);
+    if (!categoryNode.isValid())
+        return;
+
+    auto childNode = categoryNode.getChild(idx.childIdx);
+    if (!childNode.isValid())
+        return;
+
+    auto categoryVar = categoryNode.getProperty("name");
+    auto labelVar = childNode.getProperty("name");
+    auto itemDataVar = childNode.getProperty("data");
+
+    if (categoryVar.isVoid() || labelVar.isVoid() || itemDataVar.isVoid())
+        return;
+
+    currentItemName = labelVar.toString();
+    textEditor.setText(currentItemName, false);
+
+    itemSelectedCallback(categoryVar.toString(), labelVar.toString(), itemDataVar.toString());
+}
+
+void LibraryBrowser::updateWasdToggleState(bool enabled)
+{
+    if (enabled)
+    {
+        // If another instance is active, disable it first
+        if (activeWasdInstance != nullptr && activeWasdInstance != this)
+            activeWasdInstance->wasdToggleButton.setToggleState(false, juce::dontSendNotification);
+
+        // Set this instance as the active one
+        activeWasdInstance = this;
+    }
+    else
+    {
+        // If this instance is being disabled and it's the active one, clear the static pointer
+        if (activeWasdInstance == this)
+            activeWasdInstance = nullptr;
+    }
+}
+
+bool LibraryBrowser::keyPressed(const juce::KeyPress& key)
+{
+    // Only handle WASD when toggle is enabled
+    if (!wasdToggleButton.getToggleState())
+        return false;
+
+    // Build flat list on first use
+    if (flatItemList.empty())
+        buildFlatItemList();
+
+    if (flatItemList.empty())
+        return false;
+
+    // If no current index, start at 0
+    if (currentFlatIndex < 0)
+        currentFlatIndex = 0;
+
+    bool handled = false;
+
+    if (key == juce::KeyPress('d') || key == juce::KeyPress('D'))
+    {
+        // D = Next preset
+        navigateToFlatIndex(currentFlatIndex + 1);
+        handled = true;
+    }
+    else if (key == juce::KeyPress('a') || key == juce::KeyPress('A'))
+    {
+        // A = Previous preset
+        navigateToFlatIndex(currentFlatIndex - 1);
+        handled = true;
+    }
+    else if (key == juce::KeyPress('s') || key == juce::KeyPress('S'))
+    {
+        // S = +10 steps forward
+        navigateToFlatIndex(currentFlatIndex + 10);
+        handled = true;
+    }
+    else if (key == juce::KeyPress('w') || key == juce::KeyPress('W'))
+    {
+        // W = -10 steps backward
+        navigateToFlatIndex(currentFlatIndex - 10);
+        handled = true;
+    }
+
+    return handled;
 }

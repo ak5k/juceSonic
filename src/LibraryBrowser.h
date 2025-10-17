@@ -1,18 +1,26 @@
 #pragma once
 
-#include "LibraryManager.h"
+#include "PresetConverter.h"
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_data_structures/juce_data_structures.h>
 #include <functional>
+#include <memory>
 
 /**
- * @brief Generic searchable library browser component
+ * @brief Generic searchable library browser component with integrated ValueTree management
  *
  * A self-contained component for browsing hierarchical library data:
  * - TextEditor for typing/searching
  * - Dropdown button for full hierarchical menu
  * - Smart PopupMenu (filtered when searching, hierarchical from button)
+ * - Direct ValueTree management without external manager
  *
- * Can be used for presets, samples, or any hierarchical data.
+ * ValueTree structure:
+ *   libraryTree (root node for this browser)
+ *     - children: FileNode from converter
+ *       - FileNode (from converter)
+ *         - CategoryNode (from converter)
+ *           - ChildNode (from converter, with "data" property)
  */
 class LibraryBrowser : public juce::Component
 {
@@ -27,8 +35,50 @@ public:
     LibraryBrowser();
     ~LibraryBrowser() override;
 
-    void setLibraryManager(LibraryManager* manager);
-    void setLibraryName(const juce::String& name);
+    /**
+     * @brief Attach to a ValueTree for persistent storage
+     * @param stateTree Parent ValueTree (e.g., from APVTS)
+     * @param propertyName Property name to store library data under
+     */
+    void attachToValueTree(juce::ValueTree stateTree, const juce::Identifier& propertyName);
+
+    /**
+     * @brief Set the converter for parsing preset files
+     * @param converter Converter instance (ownership transferred)
+     */
+    void setConverter(std::unique_ptr<PresetConverter> converter);
+
+    /**
+     * @brief Load library from directory path(s)
+     * @param directoryPath Single directory path to scan
+     * @param recursive Whether to scan subdirectories
+     * @param clearExisting If true, clears existing data before loading
+     * @return Number of files successfully loaded
+     */
+    int loadLibrary(const juce::String& directoryPath, bool recursive = true, bool clearExisting = true);
+
+    /**
+     * @brief Load library from multiple directory paths
+     * @param directoryPaths Array of directory paths to scan
+     * @param recursive Whether to scan subdirectories
+     * @param clearExisting If true, clears existing data before loading
+     * @return Number of files successfully loaded
+     */
+    int loadLibrary(const juce::StringArray& directoryPaths, bool recursive = true, bool clearExisting = true);
+
+    /**
+     * @brief Clear all library data
+     */
+    void clearLibrary();
+
+    /**
+     * @brief Get the library ValueTree (read-only)
+     */
+    const juce::ValueTree& getLibraryTree() const
+    {
+        return libraryTree;
+    }
+
     void setItemSelectedCallback(ItemSelectedCallback callback);
     void updateItemList();
     void setLabelText(const juce::String& text);
@@ -37,6 +87,7 @@ public:
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress& key) override;
 
 private:
     // Custom TextEditor that allows Down arrow to pass through when popup is visible
@@ -81,8 +132,8 @@ private:
     public:
         struct Item
         {
-            juce::String category; // Parent/group name (e.g., bank, folder)
-            juce::String label;    // Item display name
+            juce::String category; // Parent node's name property (category/group identifier)
+            juce::String label;    // Child node's name property (item display name)
             int index;             // Index in flat list
             bool isHeader;         // Whether this is a category header
         };
@@ -130,27 +181,44 @@ private:
     void onFilteredItemSelected(int index);
     void onSearchTextChanged();
 
-    // Item lookup structure (generic - works for any hierarchical data)
-    struct ItemIndex
+    // ValueTree node index structure for hierarchical navigation
+    struct NodeIndex
     {
-        int fileIdx;
-        int bankIdx;
-        int itemIdx;
+        int fileIdx;     // Index of file node in library
+        int categoryIdx; // Index of category node in file
+        int childIdx;    // Index of child node in category
     };
 
-    std::vector<ItemIndex> itemIndices;
+    std::vector<NodeIndex> itemIndices;
+    std::vector<NodeIndex> flatItemList; // Flat list of all items for WASD navigation
 
-    LibraryManager* libraryManager = nullptr;
-    juce::String libraryName;
+    // ValueTree management
+    juce::ValueTree parentState;
+    juce::ValueTree libraryTree;
+    std::unique_ptr<PresetConverter> converter;
+    
     ItemSelectedCallback itemSelectedCallback;
 
     juce::Label label;
     SearchTextEditor textEditor;
     juce::TextButton dropdownButton;
+    juce::TextButton wasdToggleButton;
     BrowserLookAndFeel lookAndFeel;
     std::unique_ptr<FilteredListPopup> filteredPopup;
 
     juce::String currentItemName;
+    int currentFlatIndex = -1; // Current position in flatItemList for WASD navigation
+
+    void buildFlatItemList();
+    void navigateToFlatIndex(int index);
+    void applyCurrentItem();
+    void updateWasdToggleState(bool enabled);
+
+    // Helper methods for library management
+    juce::Array<juce::File> scanFiles(const juce::String& directoryPath, bool recursive);
+    int loadFilesIntoTree(const juce::Array<juce::File>& files);
+
+    static LibraryBrowser* activeWasdInstance; // Track which instance has WASD enabled
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibraryBrowser)
 };
