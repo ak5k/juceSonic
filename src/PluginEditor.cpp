@@ -16,9 +16,6 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Initialize state tree for persistent state management
     setStateTree(processorRef.getAPVTS().state);
 
-    // Initialize LibraryManager with processor's state tree
-    libraryManager = std::make_unique<LibraryManager>(processorRef.getAPVTS().state);
-
     addAndMakeVisible(loadButton);
     loadButton.onClick = [this]() { loadJSFXFile(); };
 
@@ -159,8 +156,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     // Preset library browser
     addAndMakeVisible(libraryBrowser);
-    libraryBrowser.setLibraryManager(libraryManager.get());
-    libraryBrowser.setLibraryName("Presets");                // Browse the "Presets" library
+    libraryBrowser.attachToValueTree(processorRef.getAPVTS().state, "PresetLibrary");
+    libraryBrowser.setConverter(std::make_unique<ReaperPresetConverter>());
     libraryBrowser.setLabelText("Presets:");                 // Set label text
     libraryBrowser.setPlaceholderText("(No preset loaded)"); // Set placeholder
     libraryBrowser.setItemSelectedCallback(
@@ -631,8 +628,7 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
                 rebuildParameterSliders();
 
                 // Clear preset libraries
-                if (libraryManager)
-                    libraryManager->clear();
+                libraryBrowser.clearLibrary();
                 libraryBrowser.updateItemList();
 
                 // Reset UI state - show parameters, update buttons
@@ -815,12 +811,6 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
 
 void AudioPluginAudioProcessorEditor::updatePresetList()
 {
-    if (!libraryManager)
-    {
-        DBG("updatePresetList: libraryManager is null!");
-        return;
-    }
-
     // Scan JSFX preset directories for .rpl files
     juce::StringArray presetPaths;
 
@@ -845,20 +835,15 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
 
     DBG("updatePresetList: Total preset paths to scan: " << presetPaths.size());
 
-    // Prepare the "Presets" library with Reaper preset converter
-    libraryManager->prepareLibrary("Presets", std::make_unique<ReaperPresetConverter>());
-
     // Load presets from directories (converter handles file filtering)
-    int filesLoaded = libraryManager->loadLibrary(
-        "Presets",   // Library name
+    int filesLoaded = libraryBrowser.loadLibrary(
         presetPaths, // Directories to scan
         true,        // Recursive scan
         true         // Clear existing
     );
 
     DBG("updatePresetList: Loaded " << filesLoaded << " preset files");
-    DBG("updatePresetList: Library now has " << libraryManager->getNumLibraries() << " libraries");
-    DBG("updatePresetList: Total children in tree: " << libraryManager->getLibraries().getNumChildren());
+    DBG("updatePresetList: Total children in tree: " << libraryBrowser.getLibraryTree().getNumChildren());
 
     // Update the browser UI to reflect loaded libraries
     libraryBrowser.updateItemList();

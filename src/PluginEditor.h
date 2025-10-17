@@ -5,7 +5,6 @@
 #include "JsfxEditorWindow.h"
 #include "JsfxLiceComponent.h"
 #include "LibraryBrowser.h"
-#include "LibraryManager.h"
 #include "PluginProcessor.h"
 #include "PersistentState.h"
 
@@ -227,8 +226,7 @@ private:
     juce::TextButton editButton{"Editor"};
     juce::TextButton ioMatrixButton{"I/O Matrix"};
 
-    // New architecture: LibraryManager and LibraryBrowser
-    std::unique_ptr<LibraryManager> libraryManager;
+    // LibraryBrowser with integrated ValueTree management
     LibraryBrowser libraryBrowser;
 
     juce::Slider wetSlider;

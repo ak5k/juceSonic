@@ -445,7 +445,7 @@ LibraryBrowser::~LibraryBrowser()
 void LibraryBrowser::attachToValueTree(juce::ValueTree stateTree, const juce::Identifier& propertyName)
 {
     parentState = stateTree;
-    
+
     // Get or create the library node in the parent state
     libraryTree = parentState.getChildWithName(propertyName);
     if (!libraryTree.isValid())
@@ -474,47 +474,43 @@ int LibraryBrowser::loadLibrary(const juce::StringArray& directoryPaths, bool re
         DBG("LibraryBrowser::loadLibrary - No converter set!");
         return 0;
     }
-    
+
     if (!libraryTree.isValid())
     {
         DBG("LibraryBrowser::loadLibrary - Not attached to ValueTree!");
         return 0;
     }
-    
+
     if (clearExisting)
-    {
         libraryTree.removeAllChildren(nullptr);
-    }
-    
+
     juce::Array<juce::File> allFiles;
     for (const auto& path : directoryPaths)
     {
         auto files = scanFiles(path, recursive);
         allFiles.addArray(files);
     }
-    
+
     return loadFilesIntoTree(allFiles);
 }
 
 void LibraryBrowser::clearLibrary()
 {
     if (libraryTree.isValid())
-    {
         libraryTree.removeAllChildren(nullptr);
-    }
 }
 
 juce::Array<juce::File> LibraryBrowser::scanFiles(const juce::String& directoryPath, bool recursive)
 {
     juce::Array<juce::File> results;
-    
+
     if (!converter)
         return results;
-    
+
     juce::File directory(directoryPath);
     if (!directory.exists() || !directory.isDirectory())
         return results;
-    
+
     auto extensions = converter->getSupportedExtensions();
     juce::String wildcardPattern;
     for (int i = 0; i < extensions.size(); ++i)
@@ -523,13 +519,9 @@ juce::Array<juce::File> LibraryBrowser::scanFiles(const juce::String& directoryP
             wildcardPattern += ";";
         wildcardPattern += "*" + extensions[i];
     }
-    
-    results = directory.findChildFiles(
-        juce::File::findFiles,
-        recursive,
-        wildcardPattern
-    );
-    
+
+    results = directory.findChildFiles(juce::File::findFiles, recursive, wildcardPattern);
+
     return results;
 }
 
@@ -537,19 +529,19 @@ int LibraryBrowser::loadFilesIntoTree(const juce::Array<juce::File>& files)
 {
     if (!converter)
         return 0;
-    
+
     int successCount = 0;
-    
+
     for (const auto& file : files)
     {
-        auto fileNode = converter->convertFile(file);
+        auto fileNode = converter->convertFileToTree(file);
         if (fileNode.isValid())
         {
             libraryTree.appendChild(fileNode, nullptr);
             ++successCount;
         }
     }
-    
+
     return successCount;
 }
 
@@ -670,19 +662,15 @@ void LibraryBrowser::buildFilteredList(std::vector<FilteredListPopup::Item>& ite
 {
     itemIndices.clear();
 
-    if (!libraryManager)
-        return;
-
-    auto library = libraryManager->getLibrary(libraryName);
-    if (!library.isValid())
+    if (!libraryTree.isValid())
         return;
 
     auto lowerSearch = searchText.toLowerCase();
 
     // Iterate through library tree: library -> fileNodes -> categoryNodes -> itemNodes
-    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    for (int fileIdx = 0; fileIdx < libraryTree.getNumChildren(); ++fileIdx)
     {
-        auto fileNode = library.getChild(fileIdx);
+        auto fileNode = libraryTree.getChild(fileIdx);
 
         for (int categoryIdx = 0; categoryIdx < fileNode.getNumChildren(); ++categoryIdx)
         {
@@ -730,16 +718,12 @@ void LibraryBrowser::buildFilteredList(std::vector<FilteredListPopup::Item>& ite
 
 void LibraryBrowser::onFilteredItemSelected(int index)
 {
-    if (index < 0 || index >= (int)itemIndices.size() || !libraryManager || !itemSelectedCallback)
+    if (index < 0 || index >= (int)itemIndices.size() || !libraryTree.isValid() || !itemSelectedCallback)
         return;
 
     const auto& idx = itemIndices[index];
 
-    auto library = libraryManager->getLibrary(libraryName);
-    if (!library.isValid())
-        return;
-
-    auto fileNode = library.getChild(idx.fileIdx);
+    auto fileNode = libraryTree.getChild(idx.fileIdx);
     if (!fileNode.isValid())
         return;
 
@@ -769,24 +753,19 @@ void LibraryBrowser::onFilteredItemSelected(int index)
 void LibraryBrowser::buildHierarchicalMenu(juce::PopupMenu& menu)
 {
     itemIndices.clear();
-    if (!libraryManager)
+    if (!libraryTree.isValid())
     {
-        menu.addItem(-1, "No library manager", false);
+        menu.addItem(-1, "No library data", false);
         return;
     }
-    auto library = libraryManager->getLibrary(libraryName);
-    if (!library.isValid())
-    {
-        menu.addItem(-1, "Invalid library", false);
-        return;
-    }
+
     int itemId = 1;
     const int maxItemsPerPage = 80;
 
     // Build hierarchical menu from ValueTree structure: library -> fileNodes -> categoryNodes -> childNodes
-    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    for (int fileIdx = 0; fileIdx < libraryTree.getNumChildren(); ++fileIdx)
     {
-        auto fileNode = library.getChild(fileIdx);
+        auto fileNode = libraryTree.getChild(fileIdx);
 
         for (int categoryIdx = 0; categoryIdx < fileNode.getNumChildren(); ++categoryIdx)
         {
@@ -850,7 +829,7 @@ void LibraryBrowser::buildHierarchicalMenu(juce::PopupMenu& menu)
 
 void LibraryBrowser::onMenuResult(int result)
 {
-    if (result == 0 || !libraryManager || !itemSelectedCallback)
+    if (result == 0 || !libraryTree.isValid() || !itemSelectedCallback)
         return;
 
     int index = result - 1;
@@ -859,11 +838,7 @@ void LibraryBrowser::onMenuResult(int result)
 
     const auto& idx = itemIndices[index];
 
-    auto library = libraryManager->getLibrary(libraryName);
-    if (!library.isValid())
-        return;
-
-    auto fileNode = library.getChild(idx.fileIdx);
+    auto fileNode = libraryTree.getChild(idx.fileIdx);
     if (!fileNode.isValid())
         return;
 
@@ -894,17 +869,13 @@ void LibraryBrowser::buildFlatItemList()
     flatItemList.clear();
     currentFlatIndex = -1;
 
-    if (!libraryManager)
-        return;
-
-    auto library = libraryManager->getLibrary(libraryName);
-    if (!library.isValid())
+    if (!libraryTree.isValid())
         return;
 
     // Build flat list of all items in order
-    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    for (int fileIdx = 0; fileIdx < libraryTree.getNumChildren(); ++fileIdx)
     {
-        auto fileNode = library.getChild(fileIdx);
+        auto fileNode = libraryTree.getChild(fileIdx);
 
         for (int categoryIdx = 0; categoryIdx < fileNode.getNumChildren(); ++categoryIdx)
         {
@@ -936,17 +907,13 @@ void LibraryBrowser::applyCurrentItem()
 {
     if (currentFlatIndex < 0
         || currentFlatIndex >= (int)flatItemList.size()
-        || !libraryManager
+        || !libraryTree.isValid()
         || !itemSelectedCallback)
         return;
 
     const auto& idx = flatItemList[currentFlatIndex];
 
-    auto library = libraryManager->getLibrary(libraryName);
-    if (!library.isValid())
-        return;
-
-    auto fileNode = library.getChild(idx.fileIdx);
+    auto fileNode = libraryTree.getChild(idx.fileIdx);
     if (!fileNode.isValid())
         return;
 
