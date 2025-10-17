@@ -451,3 +451,39 @@ void* JsfxHelper::getHostAPIFunction(const char* functionName)
     // Return nullptr for functions we don't implement
     return nullptr;
 }
+
+juce::String JsfxHelper::parseJSFXAuthor(const juce::File& jsfxFile)
+{
+    if (!jsfxFile.existsAsFile())
+        return "Unknown";
+
+    juce::FileInputStream stream(jsfxFile);
+    if (!stream.openedOk())
+        return "Unknown";
+
+    // Read file line by line looking for "author:" tag
+    juce::String line;
+    while (!stream.isExhausted())
+    {
+        line = stream.readNextLine();
+
+        // Check if line starts with "author:" (case insensitive)
+        if (line.trimStart().startsWithIgnoreCase("author:"))
+        {
+            // Extract everything after "author:" and trim whitespace
+            auto authorStart = line.indexOf(":");
+            if (authorStart >= 0)
+            {
+                juce::String author = line.substring(authorStart + 1).trim();
+                if (author.isNotEmpty())
+                    return author;
+            }
+        }
+
+        // Stop reading after first code section starts (optimization)
+        if (line.trimStart().startsWith("@"))
+            break;
+    }
+
+    return "Unknown";
+}

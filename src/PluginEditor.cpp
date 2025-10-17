@@ -4,6 +4,7 @@
 #include "PersistentFileChooser.h"
 #include "PluginConstants.h"
 #include "PluginProcessor.h"
+#include "PresetManager.h"
 #include "ReaperPresetConverter.h"
 
 #include <jsfx.h>
@@ -159,6 +160,16 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(ioMatrixButton);
     ioMatrixButton.onClick = [this]() { toggleIOMatrix(); };
 
+    // Preset management menu
+    addAndMakeVisible(presetManagementMenu);
+    setupPresetManagementMenu();
+
+    // Create preset manager
+    presetManager = std::make_unique<PresetManager>(processorRef);
+
+    // Set callback to refresh preset list when presets are saved/imported/deleted
+    presetManager->setOnPresetsChangedCallback([this]() { updatePresetList(); });
+
     // Preset library browser
     addAndMakeVisible(libraryBrowser);
     libraryBrowser.attachToValueTree(processorRef.getAPVTS().state, "PresetLibrary");
@@ -222,11 +233,17 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     rebuildParameterSliders();
 
-    // If JSFX is already loaded at startup, enable the Edit button
+    // If JSFX is already loaded at startup, enable the Edit button and load presets
     if (processorRef.getSXInstancePtr() != nullptr)
     {
         editButton.setEnabled(true);
-        // Preset list will be updated on first timer callback to avoid blocking startup
+        // Load preset list for the currently loaded JSFX
+        updatePresetList();
+
+        // Apply default preset if one exists for this JSFX
+        // This happens during state restoration, but saved state will overwrite these values
+        if (presetManager && presetManager->applyDefaultPresetIfExists())
+            DBG("Applied default preset for JSFX on startup (may be overwritten by saved state)");
     }
 
     // If we should be showing JSFX UI and there's a JSFX loaded, show it
@@ -509,6 +526,7 @@ void AudioPluginAudioProcessorEditor::resized()
 
     // Fixed minimum sizes that must fit
     int buttonWidth = 60;        // Minimum for each button
+    int presetMenuWidth = 40;    // Width for preset management menu (just arrow)
     int wetLabelWidth = 60;      // Enough for "Dry/Wet" text
     int wetSliderMinWidth = 100; // Minimum usable slider width
     int wetSliderMaxWidth = 200; // Maximum to prevent it getting too large
@@ -517,6 +535,8 @@ void AudioPluginAudioProcessorEditor::resized()
     // Calculate minimum required width
     int minRequired = (buttonWidth * 5)
                     + (spacing * 4)
+                    + spacing
+                    + presetMenuWidth
                     + (spacing * 2)
                     + libraryMinWidth
                     + (spacing * 2)
@@ -547,6 +567,9 @@ void AudioPluginAudioProcessorEditor::resized()
     uiButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
     buttonArea.removeFromLeft(spacing);
     ioMatrixButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+
+    buttonArea.removeFromLeft(spacing);
+    presetManagementMenu.setBounds(buttonArea.removeFromLeft(presetMenuWidth));
 
     buttonArea.removeFromLeft(spacing * 2);
     libraryBrowser.setBounds(buttonArea.removeFromLeft(libraryWidth));
@@ -676,6 +699,14 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                     updatePresetList();
 
                     DBG("JSFX loaded successfully");
+
+                    // Apply default preset if one exists for this JSFX
+                    if (presetManager && presetManager->applyDefaultPresetIfExists())
+                    {
+                        DBG("Applied default preset for JSFX");
+                        // Rebuild sliders to reflect the default preset values
+                        rebuildParameterSliders();
+                    }
 
                     // Restore JSFX state after loading (internal "constructor")
                     restoreJsfxState();
@@ -915,42 +946,118 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
 
 void AudioPluginAudioProcessorEditor::updatePresetList()
 {
-    // Scan JSFX preset directories for .rpl files
-    juce::StringArray presetPaths;
+    // Clear existing presets first
+    libraryBrowser.clearLibrary();
 
-    // Add default JSFX Effects path if it exists
-    auto jsfxPath = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                        .getChildFile("REAPER")
-                        .getChildFile("Effects");
-
-    DBG("updatePresetList: Checking JSFX path: " << jsfxPath.getFullPathName());
-    DBG("updatePresetList: Path exists: " << (jsfxPath.exists() ? "YES" : "NO"));
-
-    if (jsfxPath.exists())
+    // Get current JSFX filename (without extension) for filtering
+    auto currentJsfxPath = processorRef.getCurrentJSFXPath();
+    if (currentJsfxPath.isEmpty())
     {
-        presetPaths.add(jsfxPath.getFullPathName());
-
-        // List .rpl files found
-        auto rplFiles = jsfxPath.findChildFiles(juce::File::findFiles, true, "*.rpl");
-        DBG("updatePresetList: Found " << rplFiles.size() << " .rpl files");
+        DBG("updatePresetList: No JSFX loaded, clearing preset list");
+        libraryBrowser.updateItemList();
+        return;
     }
 
-    // TODO: Add any additional preset paths from plugin settings/configuration
+    juce::File currentJsfxFile(currentJsfxPath);
+    juce::String currentJsfxName = currentJsfxFile.getFileNameWithoutExtension();
+    DBG("updatePresetList: Current JSFX: " << currentJsfxName.toRawUTF8());
 
-    DBG("updatePresetList: Total preset paths to scan: " << presetPaths.size());
+    // Create a converter for processing preset files
+    auto converter = std::make_unique<ReaperPresetConverter>();
+    juce::Array<juce::File> matchingPresetFiles;
 
-    // Load presets from directories (converter handles file filtering)
-    int filesLoaded = libraryBrowser.loadLibrary(
-        presetPaths, // Directories to scan
-        true,        // Recursive scan
-        true         // Clear existing
-    );
+    // 1. Check same directory as loaded JSFX file (any .rpl files)
+    juce::File jsfxDirectory = currentJsfxFile.getParentDirectory();
+    DBG("updatePresetList: Checking JSFX directory: " << jsfxDirectory.getFullPathName().toRawUTF8());
 
-    DBG("updatePresetList: Loaded " << filesLoaded << " preset files");
-    DBG("updatePresetList: Total children in tree: " << libraryBrowser.getLibraryTree().getNumChildren());
+    if (jsfxDirectory.exists())
+    {
+        auto localRplFiles = jsfxDirectory.findChildFiles(juce::File::findFiles, false, "*.rpl");
+        DBG("updatePresetList: Found " << localRplFiles.size() << " .rpl files in JSFX directory");
+
+        for (const auto& file : localRplFiles)
+        {
+            matchingPresetFiles.add(file);
+            DBG("  Adding local preset: " << file.getFileName().toRawUTF8());
+        }
+    }
+
+    // 2. Add presets from persistent storage for this JSFX (imported presets)
+    if (presetManager)
+    {
+        juce::File storageDir = presetManager->getJsfxStorageDirectory();
+        DBG("updatePresetList: AppData storage directory: " << storageDir.getFullPathName().toRawUTF8());
+        DBG("updatePresetList: Storage directory exists: " << (storageDir.exists() ? "true" : "false"));
+        DBG("updatePresetList: Storage directory is directory: " << (storageDir.isDirectory() ? "true" : "false"));
+
+        if (storageDir.exists() && storageDir.isDirectory())
+        {
+            auto storedPresets = storageDir.findChildFiles(juce::File::findFiles, false, "*.rpl");
+            DBG("updatePresetList: Found " << storedPresets.size() << " imported presets in AppData");
+
+            for (const auto& file : storedPresets)
+            {
+                matchingPresetFiles.add(file);
+                DBG("  Adding imported preset: " << file.getFileName().toRawUTF8());
+            }
+        }
+        else
+        {
+            DBG("updatePresetList: WARNING - Storage directory not accessible!");
+        }
+    }
+    else
+    {
+        DBG("updatePresetList: WARNING - No presetManager available!");
+    }
+
+    // 3. Check REAPER Effects directory (recursive, filtered by JSFX name)
+    auto reaperEffectsPath = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                 .getChildFile("REAPER")
+                                 .getChildFile("Effects");
+
+    DBG("updatePresetList: Checking REAPER Effects path: " << reaperEffectsPath.getFullPathName().toRawUTF8());
+
+    if (reaperEffectsPath.exists())
+    {
+        auto rplFiles = reaperEffectsPath.findChildFiles(juce::File::findFiles, true, "*.rpl");
+        DBG("updatePresetList: Found " << rplFiles.size() << " .rpl files in REAPER Effects (recursive)");
+
+        // Filter to only include files matching current JSFX name
+        for (const auto& file : rplFiles)
+        {
+            juce::String filename = file.getFileNameWithoutExtension();
+            // Match if filename equals JSFX name (case-insensitive)
+            if (filename.equalsIgnoreCase(currentJsfxName))
+            {
+                matchingPresetFiles.add(file);
+                DBG("  Matched REAPER preset file: " << file.getFileName().toRawUTF8());
+            }
+        }
+    }
+
+    DBG("updatePresetList: Total matching preset files: " << matchingPresetFiles.size());
+
+    // Load the matching preset files by converting them and adding to the library tree
+    if (!matchingPresetFiles.isEmpty())
+    {
+        for (const auto& file : matchingPresetFiles)
+        {
+            auto fileNode = converter->convertFileToTree(file);
+            if (fileNode.isValid())
+            {
+                // Access the mutable tree (cast away const)
+                const_cast<juce::ValueTree&>(libraryBrowser.getLibraryTree()).appendChild(fileNode, nullptr);
+            }
+        }
+    }
 
     // Update the browser UI to reflect loaded libraries
     libraryBrowser.updateItemList();
+
+    DBG("updatePresetList: Preset list updated with "
+        << libraryBrowser.getLibraryTree().getNumChildren()
+        << " preset file(s)");
 }
 
 void AudioPluginAudioProcessorEditor::onPresetSelected(
@@ -959,14 +1066,109 @@ void AudioPluginAudioProcessorEditor::onPresetSelected(
     const juce::String& itemData
 )
 {
-    DBG("LibraryBrowser item selected: " << label);
+    // Track the currently selected preset for delete operations
+    currentPresetBankName = category;
+    currentPresetName = label;
+
+    DBG("Preset selected: " + category + " / " + label);
 
     // Delegate to processor for preset loading
     // This ensures presets can be loaded from anywhere (MIDI, automation, editor, etc.)
-    if (processorRef.loadPresetFromBase64(itemData))
-        DBG("Preset loaded successfully: " << label);
-    else
-        DBG("Failed to load preset: " << label);
+    processorRef.loadPresetFromBase64(itemData);
+}
+
+//==============================================================================
+// Preset Management
+
+void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
+{
+    presetManagementMenu.setTextWhenNothingSelected(""); // No text, just arrow
+    presetManagementMenu.setTextWhenNoChoicesAvailable("");
+
+    // Add menu items
+    presetManagementMenu.addItem("Reset", 1);
+    presetManagementMenu.addItem("Save As...", 2);
+    presetManagementMenu.addItem("Set as Default", 3);
+    presetManagementMenu.addSeparator();
+    presetManagementMenu.addItem("Import...", 4);
+    presetManagementMenu.addItem("Export...", 5);
+    presetManagementMenu.addSeparator();
+    presetManagementMenu.addItem("Delete...", 6);
+
+    // Handle selection
+    presetManagementMenu.onChange = [this]()
+    {
+        int selectedId = presetManagementMenu.getSelectedId();
+        if (selectedId > 0)
+        {
+            handlePresetManagementSelection(selectedId);
+            // Reset to "nothing selected" after action
+            presetManagementMenu.setSelectedId(0, juce::dontSendNotification);
+        }
+    };
+}
+
+void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int selectedId)
+{
+    if (!presetManager)
+        return;
+
+    switch (selectedId)
+    {
+    case 1: // Reset
+        presetManager->resetToDefault(this);
+        break;
+
+    case 2: // Save As...
+        presetManager->saveAs(this);
+        // After saving, update preset list to show new preset
+        juce::MessageManager::callAsync([this]() { updatePresetList(); });
+        break;
+
+    case 3: // Set as Default
+        presetManager->setAsDefault(this);
+        break;
+
+    case 4: // Import...
+        presetManager->importPreset(this);
+        // After importing, update preset list
+        juce::MessageManager::callAsync([this]() { updatePresetList(); });
+        break;
+
+    case 5: // Export...
+        presetManager->exportPreset(this);
+        break;
+
+    case 6: // Delete...
+    {
+        // Use the currently selected preset from library browser
+        if (currentPresetName.isEmpty())
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                "No Preset Selected",
+                "Please select a preset from the library browser first."
+            );
+            return;
+        }
+
+        presetManager->deletePreset(this, currentPresetBankName, currentPresetName);
+        // After deleting, update preset list
+        juce::MessageManager::callAsync(
+            [this]()
+            {
+                updatePresetList();
+                // Clear current selection since the preset was deleted
+                currentPresetName = "";
+                currentPresetBankName = "";
+            }
+        );
+        break;
+    }
+
+    default:
+        break;
+    }
 }
 
 //==============================================================================

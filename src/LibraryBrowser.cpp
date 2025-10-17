@@ -413,7 +413,7 @@ LibraryBrowser::LibraryBrowser()
     textEditor.onFocusLost = [this]() {};
 
     addAndMakeVisible(dropdownButton);
-    dropdownButton.setButtonText("v");
+    dropdownButton.setButtonText("Browse");
     dropdownButton.onClick = [this]() { showHierarchicalPopup(); };
 
     addAndMakeVisible(wasdToggleButton);
@@ -559,6 +559,24 @@ void LibraryBrowser::updateItemList()
     buildFlatItemList();
 }
 
+void LibraryBrowser::setBrowseButtonVisible(bool visible)
+{
+    browseButtonVisible = visible;
+    resized();
+}
+
+void LibraryBrowser::setWasdButtonVisible(bool visible)
+{
+    wasdButtonVisible = visible;
+    resized();
+}
+
+void LibraryBrowser::setLabelVisible(bool visible)
+{
+    labelVisible = visible;
+    resized();
+}
+
 void LibraryBrowser::paint(juce::Graphics& g)
 {
     g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
@@ -568,7 +586,7 @@ void LibraryBrowser::resized()
 {
     auto area = getLocalBounds();
     const int spacing = 5;
-    const int buttonWidth = 20;
+    const int buttonWidth = 60; // Browse button width
     const int wasdButtonWidth = 50;
 
     int totalWidth = area.getWidth();
@@ -580,15 +598,20 @@ void LibraryBrowser::resized()
     else if (totalWidth < 250)
         labelWidth = 50;
 
-    // Label on the left (may be hidden at very small widths)
-    if (labelWidth > 0)
+    // Label on the left (may be hidden at very small widths or by visibility flag)
+    if (labelVisible && labelWidth > 0)
     {
         label.setBounds(area.removeFromLeft(labelWidth));
+        label.setVisible(true);
         area.removeFromLeft(spacing);
     }
+    else
+    {
+        label.setVisible(false);
+    }
 
-    // Hide WASD button when space is very tight
-    bool showWasd = totalWidth >= 150;
+    // Hide WASD button when space is very tight or by visibility flag
+    bool showWasd = wasdButtonVisible && (totalWidth >= 150);
     wasdToggleButton.setVisible(showWasd);
 
     if (showWasd)
@@ -599,8 +622,17 @@ void LibraryBrowser::resized()
     }
 
     // Dropdown button to the left of WASD button (or far right if WASD hidden)
-    dropdownButton.setBounds(area.removeFromRight(buttonWidth));
-    area.removeFromRight(spacing);
+    // Only show if visibility flag is true
+    if (browseButtonVisible)
+    {
+        dropdownButton.setBounds(area.removeFromRight(buttonWidth));
+        dropdownButton.setVisible(true);
+        area.removeFromRight(spacing);
+    }
+    else
+    {
+        dropdownButton.setVisible(false);
+    }
 
     // Text editor fills the remaining space
     textEditor.setBounds(area);

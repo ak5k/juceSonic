@@ -50,6 +50,9 @@ public:
     // API function getter for JSFX to retrieve host callbacks
     static void* getHostAPIFunction(const char* functionName);
 
+    // Parse author tag from JSFX file
+    static juce::String parseJSFXAuthor(const juce::File& jsfxFile);
+
 protected:
     // Initialize JSFX system for this instance
     void initializeJsfxSystem();

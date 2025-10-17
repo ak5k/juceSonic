@@ -10,6 +10,7 @@
 #include "PersistentState.h"
 
 class PersistentFileChooser;
+class PresetManager;
 
 //==============================================================================
 // Custom LookAndFeel with dark theme
@@ -56,6 +57,11 @@ public:
         setColour(juce::TooltipWindow::backgroundColourId, lighter);
         setColour(juce::TooltipWindow::textColourId, textColor);
         setColour(juce::TooltipWindow::outlineColourId, lightest);
+
+        // AlertWindow colors
+        setColour(juce::AlertWindow::backgroundColourId, baseBackground);
+        setColour(juce::AlertWindow::textColourId, textColor);
+        setColour(juce::AlertWindow::outlineColourId, lightest);
 
         // Set this as the default LookAndFeel
         juce::LookAndFeel::setDefaultLookAndFeel(this);
@@ -289,6 +295,9 @@ private:
     juce::TextButton editButton{"Editor"};
     juce::TextButton ioMatrixButton{"I/O Matrix"};
 
+    // Preset management dropdown
+    juce::ComboBox presetManagementMenu;
+
     // LibraryBrowser with integrated ValueTree management
     LibraryBrowser libraryBrowser;
 
@@ -308,11 +317,20 @@ private:
     std::unique_ptr<JsfxEditorWindow> jsfxEditorWindow;
     std::unique_ptr<JsfxLiceFullscreenWindow> jsfxLiceFullscreenWindow;
 
+    // Preset manager
+    std::unique_ptr<PresetManager> presetManager;
+
+    // Track currently selected preset for delete operations
+    juce::String currentPresetBankName;
+    juce::String currentPresetName;
+
     juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
 
     void destroyJsfxUI();
     void toggleIOMatrix();
     void toggleLiceFullscreen();
+    void setupPresetManagementMenu();
+    void handlePresetManagementSelection(int selectedId);
 
     // JSFX lifecycle management (internal constructor/destructor pattern)
     void saveJsfxState();    // Internal "destructor" - save state before unloading JSFX

@@ -144,8 +144,9 @@ bool AudioPluginAudioProcessor::loadPresetFromBase64(const juce::String& base64D
 
     // Decode base64 data to text
     juce::MemoryOutputStream decodedStream;
+    juce::Base64::convertFromBase64(decodedStream, base64Data);
 
-    // Check if we got any data (ignore the return value, JUCE can return false even on successful decode)
+    // Check if we got any data (ignore return value - JUCE can return false even on successful decode)
     if (decodedStream.getDataSize() == 0)
     {
         DBG("loadPresetFromBase64: Failed to decode preset data - no output data");
@@ -642,6 +643,10 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                                 currentJSFXName = jsfxFile.getFileNameWithoutExtension();
                         }
 
+                        // Parse author from JSFX file
+                        currentJSFXAuthor = JsfxHelper::parseJSFXAuthor(jsfxFile);
+                        DBG("JSFX author: " << currentJSFXAuthor);
+
                         // Set sample rate
                         JesusonicAPI
                             .sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
@@ -777,6 +782,10 @@ void AudioPluginAudioProcessor::restoreRoutingFromString(const juce::String& rou
 
     // Apply the restored routing config
     updateRoutingConfig(newConfig);
+
+    // Update JSFX with the current channel count if instance exists
+    if (sxInstance)
+        JesusonicAPI.sx_updateHostNch(sxInstance, getTotalNumInputChannels());
 }
 
 bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
@@ -851,6 +860,10 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
 
     DBG("JSFX loaded successfully: " << currentJSFXName);
 
+    // Parse author from JSFX file
+    currentJSFXAuthor = JsfxHelper::parseJSFXAuthor(jsfxFile);
+    DBG("JSFX author: " << currentJSFXAuthor);
+
     return true;
 }
 
@@ -873,6 +886,7 @@ void AudioPluginAudioProcessor::unloadJSFX()
     apvts.state.setProperty(jsfxPathParamID, "", nullptr);
 
     currentJSFXName.clear();
+    currentJSFXAuthor.clear();
     numActiveParams = 0;
 }
 

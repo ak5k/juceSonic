@@ -115,6 +115,11 @@ public:
         return currentJSFXName;
     }
 
+    juce::String getCurrentJSFXAuthor() const
+    {
+        return currentJSFXAuthor;
+    }
+
     // Note: Directory management moved to PersistentFileChooser utility
 
     int getNumActiveParameters() const
@@ -180,6 +185,7 @@ private:
     juce::AudioBuffer<double> tempBuffer;
 
     juce::String currentJSFXName;
+    juce::String currentJSFXAuthor;
     juce::String jsfxRootDir;
     int numActiveParams = 0;
     double lastSampleRate = 44100.0;

@@ -84,6 +84,24 @@ public:
     void setLabelText(const juce::String& text);
     void setPlaceholderText(const juce::String& text);
 
+    /**
+     * @brief Show or hide the Browse button
+     * @param visible True to show, false to hide
+     */
+    void setBrowseButtonVisible(bool visible);
+
+    /**
+     * @brief Show or hide the WASD navigation button
+     * @param visible True to show, false to hide
+     */
+    void setWasdButtonVisible(bool visible);
+
+    /**
+     * @brief Show or hide the text label
+     * @param visible True to show, false to hide
+     */
+    void setLabelVisible(bool visible);
+
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -200,6 +218,11 @@ private:
 
     juce::String currentItemName;
     int currentFlatIndex = -1; // Current position in flatItemList for WASD navigation
+
+    // Visibility preferences
+    bool browseButtonVisible = true;
+    bool wasdButtonVisible = true;
+    bool labelVisible = true;
 
     void buildFlatItemList();
     void navigateToFlatIndex(int index);
