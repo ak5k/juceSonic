@@ -251,6 +251,10 @@ private:
     void destroyJsfxUI();
     void toggleIOMatrix();
 
+    // JSFX lifecycle management (internal constructor/destructor pattern)
+    void saveJsfxState();    // Internal "destructor" - save state before unloading JSFX
+    void restoreJsfxState(); // Internal "constructor" - restore state after loading JSFX
+
     // Deferred size restoration for DAW compatibility
     bool needsSizeRestoration = false;
     int restoredWidth = 700;

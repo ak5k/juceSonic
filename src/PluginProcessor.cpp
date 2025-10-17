@@ -561,7 +561,8 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                         numActiveParams = JesusonicAPI.sx_getNumParms(sxInstance);
                         numActiveParams = juce::jmin(numActiveParams, PluginConstants::MaxParameters);
 
-                        // Step 4: Restore parameter values from APVTS to JSFX
+                        // Step 4: Manually restore parameter values from APVTS to JSFX
+                        // This is necessary because we're restoring a saved state, not loading fresh defaults
                         DBG("=== RESTORING PARAMETERS FROM STATE ===");
                         for (int i = 0; i < numActiveParams; ++i)
                         {
@@ -586,7 +587,7 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                             }
                         }
 
-                        // Step 5: Initialize parameter sync with the restored values
+                        // Step 5: Initialize parameter sync manager (just snapshots current state, doesn't push)
                         parameterSync.initialize(parameterCache, sxInstance, numActiveParams, lastSampleRate);
 
                         // Set latency
@@ -836,6 +837,8 @@ void AudioPluginAudioProcessor::updateParameterMapping()
     numActiveParams = JesusonicAPI.sx_getNumParms(sxInstance);
     numActiveParams = juce::jmin(numActiveParams, PluginConstants::MaxParameters);
 
+    // Read JSFX default values and update APVTS parameters
+    // This initializes APVTS with the NEW JSFX's default state
     for (int i = 0; i < numActiveParams; ++i)
     {
         double currentVal = JesusonicAPI.sx_getParmVal(
@@ -863,12 +866,13 @@ void AudioPluginAudioProcessor::updateParameterMapping()
 
         if (auto* param = parameterCache[i])
         {
+            // Update APVTS with JSFX's default value (not the other way around!)
             float normalizedValue = ParameterUtils::actualToNormalizedValue(sxInstance, i, currentVal);
             param->setValueNotifyingHost(normalizedValue);
         }
     }
 
-    // Initialize the parameter sync manager with current state
+    // Initialize the parameter sync manager - it will now sync the JSFX defaults to audio thread
     parameterSync.initialize(parameterCache, sxInstance, numActiveParams, lastSampleRate);
 }
 

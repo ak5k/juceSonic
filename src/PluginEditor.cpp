@@ -273,6 +273,152 @@ void AudioPluginAudioProcessorEditor::destroyJsfxUI()
     }
 }
 
+//==============================================================================
+// JSFX Lifecycle Management (Internal Constructor/Destructor Pattern)
+
+void AudioPluginAudioProcessorEditor::saveJsfxState()
+{
+    // Save current editor state before unloading JSFX (internal "destructor")
+    // This ensures state is preserved when reloading the same JSFX
+
+    if (jsfxLiceRenderer)
+    {
+        setStateProperty("editorShowingJsfxUI", jsfxLiceRenderer->isVisible());
+
+        if (jsfxLiceRenderer->isVisible())
+        {
+            setStateProperty("liceUIWidth", getWidth());
+            setStateProperty("liceUIHeight", getHeight());
+            DBG("Saved LICE UI state: " << getWidth() << "x" << getHeight());
+        }
+        else
+        {
+            setStateProperty("juceControlsWidth", getWidth());
+            setStateProperty("juceControlsHeight", getHeight());
+            DBG("Saved JUCE controls state: " << getWidth() << "x" << getHeight());
+        }
+    }
+    else if (viewport.isVisible())
+    {
+        // No LICE renderer - must be showing JUCE controls
+        setStateProperty("editorShowingJsfxUI", false);
+        setStateProperty("juceControlsWidth", getWidth());
+        setStateProperty("juceControlsHeight", getHeight());
+        DBG("Saved JUCE controls state (no LICE): " << getWidth() << "x" << getHeight());
+    }
+}
+
+void AudioPluginAudioProcessorEditor::restoreJsfxState()
+{
+    // Restore editor state after loading JSFX (internal "constructor")
+    // Uses per-JSFX saved state if available, otherwise uses defaults
+
+    // Check if this JSFX has saved state (PersistentState is automatically per-JSFX)
+    bool hasSavedState = getStateProperty("editorShowingJsfxUI", juce::var()).isVoid() == false;
+    bool showingJsfxUI = getStateProperty("editorShowingJsfxUI", true);
+
+    DBG("Restoring JSFX state - hasSavedState="
+        << (hasSavedState ? "true" : "false")
+        << ", showingJsfxUI="
+        << (showingJsfxUI ? "true" : "false"));
+
+    auto* sx = processorRef.getSXInstancePtr();
+    if (sx && sx->gfx_hasCode())
+    {
+        // JSFX has @gfx section - create LICE renderer
+        jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
+        addAndMakeVisible(*jsfxLiceRenderer);
+        viewport.setVisible(false);
+        uiButton.setButtonText("Params");
+        uiButton.setEnabled(true);
+        editButton.setEnabled(true);
+
+        // Calculate default size from JSFX's @gfx dimensions
+        auto bounds = jsfxLiceRenderer->getRecommendedBounds();
+        int defaultHeight = 40 + 30 + bounds.getHeight();
+        int defaultWidth = juce::jmax(700, bounds.getWidth());
+        defaultHeight = juce::jlimit(300, 1080, defaultHeight);
+        defaultWidth = juce::jlimit(400, 1920, defaultWidth);
+
+        // Make fully resizable
+        setResizeLimits(400, 300, 1920, 1080);
+
+        // Restore state based on what was showing before
+        if (hasSavedState && showingJsfxUI)
+        {
+            // Was showing LICE UI - restore saved LICE size
+            restoredWidth = getStateProperty("liceUIWidth", defaultWidth);
+            restoredHeight = getStateProperty("liceUIHeight", defaultHeight);
+            DBG("Restoring LICE UI size: " << restoredWidth << "x" << restoredHeight);
+        }
+        else if (hasSavedState && !showingJsfxUI)
+        {
+            // Was showing JUCE controls - restore JUCE size and switch view
+            int numParams = processorRef.getNumActiveParameters();
+            int sliderHeight = 60;
+            int defaultJuceHeight = 40 + 30 + (numParams * sliderHeight) + 20;
+            defaultJuceHeight = juce::jlimit(170, 800, defaultJuceHeight);
+
+            restoredWidth = getStateProperty("juceControlsWidth", 700);
+            restoredHeight = getStateProperty("juceControlsHeight", defaultJuceHeight);
+
+            // Switch to JUCE view
+            jsfxLiceRenderer->setVisible(false);
+            viewport.setVisible(true);
+            uiButton.setButtonText("UI");
+            setResizeLimits(700, 170, 700, 1080);
+
+            DBG("Restoring JUCE controls view: " << restoredWidth << "x" << restoredHeight);
+        }
+        else
+        {
+            // No saved state - use defaults (show LICE UI)
+            restoredWidth = defaultWidth;
+            restoredHeight = defaultHeight;
+            DBG("No saved state - using LICE defaults: " << restoredWidth << "x" << restoredHeight);
+        }
+
+        // Defer resize to next timer tick for DAW compatibility
+        needsSizeRestoration = true;
+    }
+    else
+    {
+        // No @gfx section - show JUCE parameter controls
+        viewport.setVisible(true);
+        uiButton.setButtonText("UI");
+        uiButton.setEnabled(false);
+        editButton.setEnabled(true);
+
+        // Make resizable only vertically for JUCE controls
+        setResizeLimits(700, 170, 700, 1080);
+
+        // Calculate default size to fit parameters
+        int numParams = processorRef.getNumActiveParameters();
+        int sliderHeight = 60;
+        int defaultHeight = 40 + 30 + (numParams * sliderHeight) + 20;
+        defaultHeight = juce::jlimit(170, 800, defaultHeight);
+
+        // Use saved state if available, otherwise use defaults
+        if (hasSavedState)
+        {
+            restoredWidth = getStateProperty("juceControlsWidth", 700);
+            restoredHeight = getStateProperty("juceControlsHeight", defaultHeight);
+            DBG("Restoring JUCE controls (no GFX): " << restoredWidth << "x" << restoredHeight);
+        }
+        else
+        {
+            restoredWidth = 700;
+            restoredHeight = defaultHeight;
+            DBG("No saved state - using JUCE defaults: " << restoredWidth << "x" << restoredHeight);
+        }
+
+        // Defer resize to next timer tick for DAW compatibility
+        needsSizeRestoration = true;
+    }
+}
+
+//==============================================================================
+
 void AudioPluginAudioProcessorEditor::timerCallback()
 {
     // Apply deferred size restoration (once, after DAW has initialized the window)
@@ -406,6 +552,9 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
             {
                 JsfxLogger::info("Editor", "User selected JSFX file: " + file.getFullPathName());
 
+                // Save current JSFX state before unloading (internal "destructor")
+                saveJsfxState();
+
                 // Ensure any native window is closed before reloading a new JSFX
                 destroyJsfxUI();
 
@@ -426,49 +575,8 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
 
                     JsfxLogger::info("Editor", "JSFX loaded successfully");
 
-                    // Automatically show the JSFX UI if it has @gfx section
-                    auto* sx = processorRef.getSXInstancePtr();
-                    if (sx && sx->gfx_hasCode())
-                    {
-                        // Use LICE rendering component
-                        jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
-                        addAndMakeVisible(*jsfxLiceRenderer);
-                        viewport.setVisible(false);
-                        uiButton.setButtonText("Params");
-                        uiButton.setEnabled(true);   // Enable UI button for toggling
-                        editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
-
-                        // Get recommended size from JSFX
-                        auto bounds = jsfxLiceRenderer->getRecommendedBounds();
-                        int totalHeight = 40 + 30 + bounds.getHeight();
-                        int totalWidth = juce::jmax(700, bounds.getWidth());
-                        totalHeight = juce::jlimit(300, 1080, totalHeight);
-                        totalWidth = juce::jlimit(400, 1920, totalWidth);
-
-                        // Make fully resizable
-                        setResizeLimits(400, 300, 1920, 1080);
-                        setSize(totalWidth, totalHeight);
-                        resized();
-                    }
-                    else
-                    {
-                        // No @gfx section, show JUCE parameter controls
-                        viewport.setVisible(true);
-                        uiButton.setButtonText("UI");
-                        uiButton.setEnabled(false);  // Disable UI button if no @gfx
-                        editButton.setEnabled(true); // Enable Edit button when JSFX is loaded
-
-                        // Make resizable only vertically for JUCE controls
-                        setResizeLimits(700, 170, 700, 1080);
-
-                        // Resize to fit parameters
-                        int numParams = processorRef.getNumActiveParameters();
-                        int sliderHeight = 60;
-                        int totalHeight = 40 + 30 + (numParams * sliderHeight) + 20;
-                        totalHeight = juce::jlimit(170, 800, totalHeight);
-                        setSize(700, totalHeight);
-                        resized();
-                    }
+                    // Restore JSFX state after loading (internal "constructor")
+                    restoreJsfxState();
                 }
                 else
                 {
@@ -504,6 +612,9 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
         {
             if (result == 1) // Yes button
             {
+                // Save current JSFX state before unloading (internal "destructor")
+                saveJsfxState();
+
                 // Ensure any native window is closed before unloading JSFX
                 destroyJsfxUI();
 
