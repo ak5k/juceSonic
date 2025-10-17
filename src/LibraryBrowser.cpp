@@ -247,6 +247,7 @@ void LibraryBrowser::FilteredListPopup::mouseExit(const juce::MouseEvent&)
 
 //==============================================================================
 LibraryBrowser::LibraryBrowser()
+    : textEditor(*this) // Initialize SearchTextEditor with owner reference
 {
     addAndMakeVisible(label);
     label.setText("", juce::dontSendNotification);
@@ -285,9 +286,6 @@ LibraryBrowser::LibraryBrowser()
     dropdownButton.onClick = [this]() { showHierarchicalPopup(); };
 
     filteredPopup = std::make_unique<FilteredListPopup>(*this);
-
-    // Allow this component to intercept keyboard events
-    setWantsKeyboardFocus(true);
 }
 
 LibraryBrowser::~LibraryBrowser()
@@ -367,22 +365,6 @@ void LibraryBrowser::onSearchTextChanged()
         if (filteredPopup && filteredPopup->isVisible())
             filteredPopup->hide();
     }
-}
-
-bool LibraryBrowser::keyPressed(const juce::KeyPress& key)
-{
-    // If text editor has focus and Down arrow is pressed while popup is visible,
-    // transfer focus to the popup
-    if (textEditor.hasKeyboardFocus(true) && key == juce::KeyPress::downKey)
-    {
-        if (filteredPopup && filteredPopup->isVisible())
-        {
-            filteredPopup->grabKeyboardFocus();
-            return true;
-        }
-    }
-
-    return false;
 }
 
 void LibraryBrowser::showHierarchicalPopup()

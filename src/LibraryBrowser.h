@@ -37,15 +37,17 @@ public:
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
-    bool keyPressed(const juce::KeyPress& key) override;
 
 private:
     // Custom TextEditor that allows Down arrow to pass through when popup is visible
     class SearchTextEditor : public juce::TextEditor
     {
     public:
-        SearchTextEditor(LibraryBrowser& owner) : owner(owner) {}
-        
+        SearchTextEditor(LibraryBrowser& owner)
+            : owner(owner)
+        {
+        }
+
         bool keyPressed(const juce::KeyPress& key) override
         {
             // If Down arrow and popup is visible, transfer focus to popup
@@ -57,11 +59,11 @@ private:
                     return true;
                 }
             }
-            
+
             // Otherwise, handle normally
             return juce::TextEditor::keyPressed(key);
         }
-        
+
     private:
         LibraryBrowser& owner;
     };
@@ -139,7 +141,7 @@ private:
     ItemSelectedCallback itemSelectedCallback;
 
     juce::Label label;
-    juce::TextEditor textEditor;
+    SearchTextEditor textEditor;
     juce::TextButton dropdownButton;
     BrowserLookAndFeel lookAndFeel;
     std::unique_ptr<FilteredListPopup> filteredPopup;
