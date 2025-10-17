@@ -1,7 +1,6 @@
 #include "LibraryBrowser.h"
 
 //==============================================================================
-// BrowserLookAndFeel implementation
 juce::PopupMenu::Options
 LibraryBrowser::BrowserLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label)
 {
@@ -10,98 +9,48 @@ LibraryBrowser::BrowserLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBo
 }
 
 //==============================================================================
-// BrowserMouseListener implementation
-LibraryBrowser::BrowserMouseListener::BrowserMouseListener(LibraryBrowser* ownerIn)
-    : owner(ownerIn)
-{
-}
-
-void LibraryBrowser::BrowserMouseListener::mouseDown(const juce::MouseEvent& event)
-{
-    if (!owner)
-        return;
-
-    auto& combo = owner->comboBox;
-    auto arrowBounds = combo.getLocalBounds().removeFromRight(combo.getHeight());
-    auto localPos = combo.getLocalPoint(&combo, event.getPosition());
-
-    if (arrowBounds.contains(localPos))
-    {
-        // User clicked arrow - show popup
-        // Only rebuild menu if cache is invalid (library changed)
-        if (!owner->menuCacheValid)
-        {
-            DBG("LibraryBrowser: Menu cache invalid, rebuilding...");
-            owner->buildHierarchicalMenu();
-            owner->menuCacheValid = true;
-        }
-        else
-        {
-            DBG("LibraryBrowser: Using cached menu");
-        }
-
-        combo.hidePopup();
-        combo.showPopup();
-    }
-}
-
-//==============================================================================
-// LibraryBrowser implementation
 LibraryBrowser::LibraryBrowser()
 {
     addAndMakeVisible(label);
-    label.setText("Presets:", juce::dontSendNotification);
+    label.setText("", juce::dontSendNotification);
     label.setJustificationType(juce::Justification::centredRight);
 
-    addAndMakeVisible(comboBox);
-    comboBox.setTextWhenNothingSelected("(No preset loaded)");
-    comboBox.setTextWhenNoChoicesAvailable("No presets available");
-    comboBox.setLookAndFeel(&lookAndFeel);
-
-    // Enable text editing for search functionality
-    comboBox.setEditableText(true);
-
-    // onChange fires both when item selected AND when text changes
-    comboBox.onChange = [this]()
+    addAndMakeVisible(textEditor);
+    textEditor.setTextToShowWhenEmpty("", getLookAndFeel().findColour(juce::TextEditor::textColourId).withAlpha(0.5f));
+    textEditor.onTextChange = [this]() { onSearchTextChanged(); };
+    textEditor.onReturnKey = [this]()
     {
-        // If selected item index is valid, user selected from menu
-        if (comboBox.getSelectedItemIndex() >= 0)
-        {
-            onPresetSelected();
-        }
-        else
-        {
-            // User is typing - trigger search
-            onSearchTextChanged();
-        }
+        auto text = textEditor.getText();
+        if (text.length() >= 3)
+            showFilteredPopup(text);
+        else if (text.isEmpty())
+            showHierarchicalPopup();
     };
+    textEditor.onEscapeKey = [this]() { unfocusAllComponents(); };
+    textEditor.onFocusLost = [this]() {};
 
-    mouseListener = std::make_unique<BrowserMouseListener>(this);
-    comboBox.addMouseListener(mouseListener.get(), false);
+    addAndMakeVisible(dropdownButton);
+    dropdownButton.setButtonText("v");
+    dropdownButton.onClick = [this]() { showHierarchicalPopup(); };
 }
 
 LibraryBrowser::~LibraryBrowser()
 {
-    comboBox.setLookAndFeel(nullptr);
 }
 
 void LibraryBrowser::setLibraryManager(LibraryManager* manager)
 {
     libraryManager = manager;
-    menuCacheValid = false; // Invalidate cache when manager changes
-    updatePresetList();
 }
 
-void LibraryBrowser::setSubLibraryName(const juce::String& name)
+void LibraryBrowser::setLibraryName(const juce::String& name)
 {
-    subLibraryName = name;
-    menuCacheValid = false; // Invalidate cache when library name changes
-    updatePresetList();
+    libraryName = name;
 }
 
-void LibraryBrowser::setPresetSelectedCallback(PresetSelectedCallback callback)
+void LibraryBrowser::setItemSelectedCallback(ItemSelectedCallback callback)
 {
-    presetSelectedCallback = std::move(callback);
+    itemSelectedCallback = std::move(callback);
 }
 
 void LibraryBrowser::setLabelText(const juce::String& text)
@@ -109,187 +58,13 @@ void LibraryBrowser::setLabelText(const juce::String& text)
     label.setText(text, juce::dontSendNotification);
 }
 
-void LibraryBrowser::updatePresetList()
+void LibraryBrowser::setPlaceholderText(const juce::String& text)
 {
-    DBG("LibraryBrowser::updatePresetList called - invalidating cache");
-    menuCacheValid = false; // Invalidate cache when library data changes
-    buildHierarchicalMenu();
-    menuCacheValid = true; // Mark as valid after rebuild
+    textEditor.setTextToShowWhenEmpty(text, juce::Colours::grey);
 }
 
-void LibraryBrowser::buildHierarchicalMenu()
+void LibraryBrowser::updateItemList()
 {
-    DBG("LibraryBrowser::buildHierarchicalMenu - Starting");
-    comboBox.clear();
-    presetIndices.clear();      // Clear the index
-    presetIndices.reserve(500); // Reserve space for typical preset count
-
-    if (!libraryManager)
-    {
-        DBG("  No library manager!");
-        comboBox.setEnabled(false);
-        return;
-    }
-
-    // Get the library we're browsing (e.g., "Presets")
-    // This returns a reference to the ValueTree, not a copy
-    auto library = libraryManager->getLibrary(subLibraryName);
-    if (!library.isValid())
-    {
-        DBG("  Library '" << subLibraryName << "' not found!");
-        comboBox.setEnabled(false);
-        return;
-    }
-
-    DBG("  Library '" << subLibraryName << "' has " << library.getNumChildren() << " children");
-
-    int itemId = 1;
-    const int maxPresetsPerPage = 80;
-
-    // Structure: Library > PresetFile > PresetBank > Preset
-    // We want to show: PresetBank as submenu > Presets
-
-    // Iterate through PresetFiles
-    int numFiles = library.getNumChildren();
-    for (int fileIdx = 0; fileIdx < numFiles; ++fileIdx)
-    {
-        auto presetFile = library.getChild(fileIdx);
-        DBG("  Processing PresetFile " << fileIdx << ", type: " << presetFile.getType().toString());
-
-        // Iterate through banks in this file
-        int numBanks = presetFile.getNumChildren();
-        DBG("    Has " << numBanks << " banks");
-
-        for (int bankIdx = 0; bankIdx < numBanks; ++bankIdx)
-        {
-            auto bank = presetFile.getChild(bankIdx);
-            DBG("    Processing Bank " << bankIdx << ", type: " << bank.getType().toString());
-
-            // Read bank name directly from property (no string copy until necessary)
-            auto bankNameVar = bank.getProperty("name");
-            if (bankNameVar.isVoid())
-                continue;
-
-            juce::String bankName = bankNameVar.toString();
-            DBG("      Bank name: " << bankName);
-
-            int numPresets = bank.getNumChildren();
-            DBG("      Num presets: " << numPresets);
-
-            if (numPresets == 0)
-                continue;
-
-            if (numPresets <= maxPresetsPerPage)
-            {
-                // Single page - create submenu with all presets
-                juce::PopupMenu bankMenu;
-
-                for (int presetIdx = 0; presetIdx < numPresets; ++presetIdx)
-                {
-                    auto preset = bank.getChild(presetIdx);
-
-                    // Read preset name directly (no copy until menu creation)
-                    auto presetNameVar = preset.getProperty("name");
-                    if (presetNameVar.isVoid())
-                        continue;
-
-                    // Store index for fast lookup later
-                    presetIndices.push_back({fileIdx, bankIdx, presetIdx});
-
-                    bankMenu.addItem(itemId++, presetNameVar.toString());
-                }
-
-                comboBox.getRootMenu()->addSubMenu(bankName, bankMenu);
-            }
-            else
-            {
-                // Multiple pages needed - split into chunks
-                int numPages = (numPresets + maxPresetsPerPage - 1) / maxPresetsPerPage;
-
-                for (int page = 0; page < numPages; ++page)
-                {
-                    juce::PopupMenu pageMenu;
-                    int startIdx = page * maxPresetsPerPage;
-                    int endIdx = juce::jmin(startIdx + maxPresetsPerPage, numPresets);
-
-                    for (int presetIdx = startIdx; presetIdx < endIdx; ++presetIdx)
-                    {
-                        auto preset = bank.getChild(presetIdx);
-
-                        // Read preset name directly
-                        auto presetNameVar = preset.getProperty("name");
-                        if (presetNameVar.isVoid())
-                            continue;
-
-                        // Store index for fast lookup later
-                        presetIndices.push_back({fileIdx, bankIdx, presetIdx});
-
-                        pageMenu.addItem(itemId++, presetNameVar.toString());
-                    }
-
-                    juce::String pageName = bankName + " " + juce::String(page + 1);
-                    comboBox.getRootMenu()->addSubMenu(pageName, pageMenu);
-                }
-            }
-        }
-    }
-
-    DBG("  Total items indexed: " << presetIndices.size());
-    DBG("  Enabling comboBox: " << (itemId > 1 ? "YES" : "NO"));
-
-    comboBox.setEnabled(itemId > 1); // Enable if we have presets
-}
-
-void LibraryBrowser::onPresetSelected()
-{
-    int selectedId = comboBox.getSelectedId();
-    if (selectedId == 0 || !libraryManager || !presetSelectedCallback)
-        return;
-
-    // Convert menu item ID to array index (IDs start at 1)
-    int index = selectedId - 1;
-
-    // Bounds check
-    if (index < 0 || index >= static_cast<int>(presetIndices.size()))
-    {
-        DBG("LibraryBrowser::onPresetSelected - Invalid index: " << index);
-        return;
-    }
-
-    // Direct lookup using pre-built index (O(1) instead of O(n) tree traversal)
-    const auto& idx = presetIndices[index];
-
-    // Get the library (returns reference, no copy)
-    auto library = libraryManager->getLibrary(subLibraryName);
-    if (!library.isValid())
-        return;
-
-    // Navigate directly to the preset using cached indices
-    auto presetFile = library.getChild(idx.fileIdx);
-    if (!presetFile.isValid())
-        return;
-
-    auto bank = presetFile.getChild(idx.bankIdx);
-    if (!bank.isValid())
-        return;
-
-    auto preset = bank.getChild(idx.presetIdx);
-    if (!preset.isValid())
-        return;
-
-    // Read properties directly (minimal string copies)
-    auto libraryNameVar = bank.getProperty("name");
-    auto presetNameVar = preset.getProperty("name");
-    auto presetDataVar = preset.getProperty("data");
-
-    if (libraryNameVar.isVoid() || presetNameVar.isVoid() || presetDataVar.isVoid())
-    {
-        DBG("LibraryBrowser::onPresetSelected - Missing required properties");
-        return;
-    }
-
-    // Only convert to strings when calling the callback
-    presetSelectedCallback(libraryNameVar.toString(), presetNameVar.toString(), presetDataVar.toString());
 }
 
 void LibraryBrowser::paint(juce::Graphics& g)
@@ -300,117 +75,227 @@ void LibraryBrowser::paint(juce::Graphics& g)
 void LibraryBrowser::resized()
 {
     auto area = getLocalBounds();
-
-    // Label on the left (fixed width)
     const int labelWidth = 60;
+    const int spacing = 5;
+    const int buttonWidth = 20;
+
+    // Label on the left
     label.setBounds(area.removeFromLeft(labelWidth));
+    area.removeFromLeft(spacing);
 
-    // Small gap
-    area.removeFromLeft(5);
+    // Dropdown button on the right of remaining area
+    dropdownButton.setBounds(area.removeFromRight(buttonWidth));
 
-    // ComboBox takes the rest
-    comboBox.setBounds(area);
+    // Text editor fills the remaining space (aligned with dropdown)
+    textEditor.setBounds(area);
 }
 
 void LibraryBrowser::onSearchTextChanged()
 {
-    auto searchText = comboBox.getText();
-
-    // If search is empty, show all presets
-    if (searchText.isEmpty())
-    {
-        menuCacheValid = false;
-        buildHierarchicalMenu();
-        menuCacheValid = true;
-    }
-    else
-    {
-        // Build filtered menu (don't cache search results)
-        buildFilteredMenu(searchText);
-
-        // Show the filtered results immediately
-        comboBox.showPopup();
-    }
 }
 
-void LibraryBrowser::buildFilteredMenu(const juce::String& searchText)
+void LibraryBrowser::showHierarchicalPopup()
 {
-    comboBox.clear();
-    presetIndices.clear();
+    juce::PopupMenu menu;
+    buildHierarchicalMenu(menu);
+    menu.setLookAndFeel(&lookAndFeel);
 
+    auto options = juce::PopupMenu::Options()
+                       .withTargetComponent(&textEditor)
+                       .withMinimumWidth(textEditor.getWidth() + dropdownButton.getWidth())
+                       .withMaximumNumColumns(4);
+
+    menu.showMenuAsync(
+        options,
+        [this](int result)
+        {
+            if (result > 0)
+                onMenuResult(result);
+        }
+    );
+}
+
+void LibraryBrowser::showFilteredPopup(const juce::String& searchText)
+{
+    juce::PopupMenu menu;
+    buildFilteredMenu(menu, searchText);
+
+    if (itemIndices.empty())
+        return;
+
+    menu.setLookAndFeel(&lookAndFeel);
+
+    auto options = juce::PopupMenu::Options()
+                       .withTargetComponent(&textEditor)
+                       .withMinimumWidth(textEditor.getWidth() + dropdownButton.getWidth())
+                       .withMaximumNumColumns(1);
+
+    menu.showMenuAsync(
+        options,
+        [this](int result)
+        {
+            if (result > 0)
+                onMenuResult(result);
+        }
+    );
+}
+
+void LibraryBrowser::buildHierarchicalMenu(juce::PopupMenu& menu)
+{
+    itemIndices.clear();
     if (!libraryManager)
     {
-        DBG("LibraryBrowser::buildFilteredMenu - No library manager set");
+        menu.addItem(-1, "No library manager", false);
         return;
     }
-
-    auto library = libraryManager->getLibrary(subLibraryName);
+    auto library = libraryManager->getLibrary(libraryName);
     if (!library.isValid())
     {
-        DBG("LibraryBrowser::buildFilteredMenu - Invalid library: " << subLibraryName);
+        menu.addItem(-1, "Invalid library", false);
         return;
     }
-
-    // Build popup menu with bank separators
-    juce::PopupMenu menu;
-    int menuItemId = 1;
-    auto lowerSearch = searchText.toLowerCase();
-
+    int itemId = 1;
+    const int maxItemsPerPage = 80;
     for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
     {
-        auto presetFile = library.getChild(fileIdx);
-
-        for (int bankIdx = 0; bankIdx < presetFile.getNumChildren(); ++bankIdx)
+        auto file = library.getChild(fileIdx);
+        for (int bankIdx = 0; bankIdx < file.getNumChildren(); ++bankIdx)
         {
-            auto bank = presetFile.getChild(bankIdx);
+            auto bank = file.getChild(bankIdx);
+            auto bankNameVar = bank.getProperty("name");
+            if (bankNameVar.isVoid())
+                continue;
+            juce::String bankName = bankNameVar.toString();
+            int numItems = bank.getNumChildren();
+            if (numItems == 0)
+                continue;
+            if (numItems <= maxItemsPerPage)
+            {
+                juce::PopupMenu bankMenu;
+                for (int itemIdx = 0; itemIdx < numItems; ++itemIdx)
+                {
+                    auto item = bank.getChild(itemIdx);
+                    auto itemNameVar = item.getProperty("name");
+                    if (itemNameVar.isVoid())
+                        continue;
+                    itemIndices.push_back({fileIdx, bankIdx, itemIdx});
+                    bankMenu.addItem(itemId++, itemNameVar.toString());
+                }
+                menu.addSubMenu(bankName, bankMenu);
+            }
+            else
+            {
+                int numPages = (numItems + maxItemsPerPage - 1) / maxItemsPerPage;
+                for (int page = 0; page < numPages; ++page)
+                {
+                    juce::PopupMenu pageMenu;
+                    int startIdx = page * maxItemsPerPage;
+                    int endIdx = juce::jmin(startIdx + maxItemsPerPage, numItems);
+                    for (int itemIdx = startIdx; itemIdx < endIdx; ++itemIdx)
+                    {
+                        auto item = bank.getChild(itemIdx);
+                        auto itemNameVar = item.getProperty("name");
+                        if (itemNameVar.isVoid())
+                            continue;
+                        itemIndices.push_back({fileIdx, bankIdx, itemIdx});
+                        pageMenu.addItem(itemId++, itemNameVar.toString());
+                    }
+                    juce::String pageName = bankName + " " + juce::String(page + 1);
+                    menu.addSubMenu(pageName, pageMenu);
+                }
+            }
+        }
+    }
+    if (itemIndices.empty())
+        menu.addItem(-1, "No items available", false);
+}
+
+void LibraryBrowser::buildFilteredMenu(juce::PopupMenu& menu, const juce::String& searchText)
+{
+    itemIndices.clear();
+    if (!libraryManager)
+    {
+        menu.addItem(-1, "No library manager", false);
+        return;
+    }
+    auto library = libraryManager->getLibrary(libraryName);
+    if (!library.isValid())
+    {
+        menu.addItem(-1, "Invalid library", false);
+        return;
+    }
+    int menuItemId = 1;
+    auto lowerSearch = searchText.toLowerCase();
+    for (int fileIdx = 0; fileIdx < library.getNumChildren(); ++fileIdx)
+    {
+        auto file = library.getChild(fileIdx);
+        for (int bankIdx = 0; bankIdx < file.getNumChildren(); ++bankIdx)
+        {
+            auto bank = file.getChild(bankIdx);
             auto bankNameVar = bank.getProperty("name");
             juce::String bankName = bankNameVar.toString();
-
-            // First pass: check if this bank has any matching presets
             bool bankHasMatches = false;
-            for (int presetIdx = 0; presetIdx < bank.getNumChildren(); ++presetIdx)
+            for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
             {
-                auto preset = bank.getChild(presetIdx);
-                auto presetNameVar = preset.getProperty("name");
-                juce::String presetName = presetNameVar.toString();
-
-                if (presetName.toLowerCase().contains(lowerSearch))
+                auto item = bank.getChild(itemIdx);
+                auto itemNameVar = item.getProperty("name");
+                juce::String itemName = itemNameVar.toString();
+                if (itemName.toLowerCase().contains(lowerSearch))
                 {
                     bankHasMatches = true;
                     break;
                 }
             }
-
-            // If bank has matches, add section heading and presets
             if (bankHasMatches)
             {
-                // Add bank name as section header
-                juce::PopupMenu::Item header(bankName);
-                header.itemID = 0;
-                header.isSectionHeader = true;
-                menu.addItem(header);
+                // Add bank name as a disabled item (using negative ID) to keep alignment
+                menu.addItem(-1, bankName, false);
 
-                for (int presetIdx = 0; presetIdx < bank.getNumChildren(); ++presetIdx)
+                for (int itemIdx = 0; itemIdx < bank.getNumChildren(); ++itemIdx)
                 {
-                    auto preset = bank.getChild(presetIdx);
-                    auto presetNameVar = preset.getProperty("name");
-                    juce::String presetName = presetNameVar.toString();
-
-                    // Case-insensitive substring match on preset name
-                    if (presetName.toLowerCase().contains(lowerSearch))
+                    auto item = bank.getChild(itemIdx);
+                    auto itemNameVar = item.getProperty("name");
+                    juce::String itemName = itemNameVar.toString();
+                    if (itemName.toLowerCase().contains(lowerSearch))
                     {
-                        menu.addItem(menuItemId, presetName);
-                        presetIndices.push_back({fileIdx, bankIdx, presetIdx});
+                        menu.addItem(menuItemId, itemName);
+                        itemIndices.push_back({fileIdx, bankIdx, itemIdx});
                         menuItemId++;
                     }
                 }
             }
         }
     }
+    if (itemIndices.empty())
+        menu.addItem(-1, "(No matching items)", false);
+}
 
-    if (presetIndices.empty())
-        menu.addItem(-1, "(No matching presets)", false);
-
-    comboBox.getRootMenu()->clear();
-    *comboBox.getRootMenu() = menu;
+void LibraryBrowser::onMenuResult(int result)
+{
+    if (result == 0 || !libraryManager || !itemSelectedCallback)
+        return;
+    int index = result - 1;
+    if (index < 0 || index >= static_cast<int>(itemIndices.size()))
+        return;
+    const auto& idx = itemIndices[index];
+    auto library = libraryManager->getLibrary(libraryName);
+    if (!library.isValid())
+        return;
+    auto file = library.getChild(idx.fileIdx);
+    if (!file.isValid())
+        return;
+    auto bank = file.getChild(idx.bankIdx);
+    if (!bank.isValid())
+        return;
+    auto item = bank.getChild(idx.itemIdx);
+    if (!item.isValid())
+        return;
+    auto bankNameVar = bank.getProperty("name");
+    auto itemNameVar = item.getProperty("name");
+    auto itemDataVar = item.getProperty("data");
+    if (bankNameVar.isVoid() || itemNameVar.isVoid() || itemDataVar.isVoid())
+        return;
+    currentItemName = itemNameVar.toString();
+    textEditor.setText(currentItemName, false);
+    itemSelectedCallback(bankNameVar.toString(), itemNameVar.toString(), itemDataVar.toString());
 }

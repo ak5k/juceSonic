@@ -160,8 +160,10 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Preset library browser
     addAndMakeVisible(libraryBrowser);
     libraryBrowser.setLibraryManager(libraryManager.get());
-    libraryBrowser.setSubLibraryName("Presets"); // Browse the "Presets" library
-    libraryBrowser.setPresetSelectedCallback(
+    libraryBrowser.setLibraryName("Presets");                // Browse the "Presets" library
+    libraryBrowser.setLabelText("Presets:");                 // Set label text
+    libraryBrowser.setPlaceholderText("(No preset loaded)"); // Set placeholder
+    libraryBrowser.setItemSelectedCallback(
         [this](const juce::String& libraryName, const juce::String& presetName, const juce::String& presetData)
         { onPresetSelected(libraryName, presetName, presetData); }
     );
@@ -631,7 +633,7 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
                 // Clear preset libraries
                 if (libraryManager)
                     libraryManager->clear();
-                libraryBrowser.updatePresetList();
+                libraryBrowser.updateItemList();
 
                 // Reset UI state - show parameters, update buttons
                 viewport.setVisible(true);
@@ -859,7 +861,7 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
     DBG("updatePresetList: Total children in tree: " << libraryManager->getLibraries().getNumChildren());
 
     // Update the browser UI to reflect loaded libraries
-    libraryBrowser.updatePresetList();
+    libraryBrowser.updateItemList();
 }
 
 void AudioPluginAudioProcessorEditor::onPresetSelected(

@@ -5,109 +5,74 @@
 #include <functional>
 
 /**
- * @brief UI component for browsing and searching preset libraries
+ * @brief Generic searchable library browser component
  *
- * A self-contained component with a label and ComboBox for browsing presets.
- * Displays presets in a hierarchical multi-column menu organized by library.
- * PluginEditor simply adds this component and sets its bounds.
+ * A self-contained component for browsing hierarchical library data:
+ * - TextEditor for typing/searching
+ * - Dropdown button for full hierarchical menu
+ * - Smart PopupMenu (filtered when searching, hierarchical from button)
+ *
+ * Can be used for presets, samples, or any hierarchical data.
  */
 class LibraryBrowser : public juce::Component
 {
 public:
     /**
-     * @brief Callback type for preset selection
-     * @param libraryName The name of the library containing the preset
-     * @param presetName The name of the selected preset
-     * @param presetData The base64-encoded preset data
+     * @brief Callback type for item selection
+     * Parameters: bankName, itemName, itemData
      */
-    using PresetSelectedCallback = std::function<
-        void(const juce::String& libraryName, const juce::String& presetName, const juce::String& presetData)>;
+    using ItemSelectedCallback =
+        std::function<void(const juce::String& bankName, const juce::String& itemName, const juce::String& itemData)>;
 
     LibraryBrowser();
     ~LibraryBrowser() override;
 
-    /**
-     * @brief Set the library manager to browse
-     */
     void setLibraryManager(LibraryManager* manager);
-
-    /**
-     * @brief Set which sub-library to browse (e.g., "Presets")
-     */
-    void setSubLibraryName(const juce::String& name);
-
-    /**
-     * @brief Set callback for when user selects a preset
-     */
-    void setPresetSelectedCallback(PresetSelectedCallback callback);
-
-    /**
-     * @brief Rebuild the preset menu from current library data
-     */
-    void updatePresetList();
-
-    /**
-     * @brief Set the text displayed on the label
-     */
+    void setLibraryName(const juce::String& name);
+    void setItemSelectedCallback(ItemSelectedCallback callback);
+    void updateItemList();
     void setLabelText(const juce::String& text);
-
-    /**
-     * @brief Get the ComboBox for direct access if needed
-     */
-    juce::ComboBox& getComboBox()
-    {
-        return comboBox;
-    }
+    void setPlaceholderText(const juce::String& text);
 
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
 
 private:
-    // Custom LookAndFeel for multi-column menu
+    // Custom LookAndFeel for multi-column hierarchical menu
     class BrowserLookAndFeel : public juce::LookAndFeel_V4
     {
     public:
         juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label) override;
     };
 
-    // Mouse listener to handle dropdown arrow clicks
-    class BrowserMouseListener : public juce::MouseListener
-    {
-    public:
-        explicit BrowserMouseListener(LibraryBrowser* owner);
-        void mouseDown(const juce::MouseEvent& event) override;
-
-    private:
-        LibraryBrowser* owner;
-    };
-
-    void buildHierarchicalMenu();
-    void buildFilteredMenu(const juce::String& searchText);
-    void onPresetSelected();
+    void buildHierarchicalMenu(juce::PopupMenu& menu);
+    void buildFilteredMenu(juce::PopupMenu& menu, const juce::String& searchText);
+    void showHierarchicalPopup();
+    void showFilteredPopup(const juce::String& searchText);
+    void onMenuResult(int result);
     void onSearchTextChanged();
 
-    // Lightweight index for preset lookup (avoids tree traversal on selection)
-    struct PresetIndex
+    // Item lookup structure (generic - works for any hierarchical data)
+    struct ItemIndex
     {
         int fileIdx;
         int bankIdx;
-        int presetIdx;
+        int itemIdx;
     };
 
-    std::vector<PresetIndex> presetIndices; // Maps menu item ID to tree location
-
-    // Cache validity flag - set to false when library data changes
-    bool menuCacheValid = false;
+    std::vector<ItemIndex> itemIndices;
 
     LibraryManager* libraryManager = nullptr;
-    juce::String subLibraryName = "Presets"; // Default sub-library name
-    PresetSelectedCallback presetSelectedCallback;
+    juce::String libraryName;
+    ItemSelectedCallback itemSelectedCallback;
 
-    juce::ComboBox comboBox;
     juce::Label label;
+    juce::TextEditor textEditor;
+    juce::TextButton dropdownButton;
     BrowserLookAndFeel lookAndFeel;
-    std::unique_ptr<BrowserMouseListener> mouseListener;
+
+    juce::String currentItemName;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibraryBrowser)
 };
