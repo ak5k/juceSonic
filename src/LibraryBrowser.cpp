@@ -442,14 +442,115 @@ LibraryBrowser::~LibraryBrowser()
         activeWasdInstance = nullptr;
 }
 
-void LibraryBrowser::setLibraryManager(LibraryManager* manager)
+void LibraryBrowser::attachToValueTree(juce::ValueTree stateTree, const juce::Identifier& propertyName)
 {
-    libraryManager = manager;
+    parentState = stateTree;
+    
+    // Get or create the library node in the parent state
+    libraryTree = parentState.getChildWithName(propertyName);
+    if (!libraryTree.isValid())
+    {
+        libraryTree = juce::ValueTree(propertyName);
+        parentState.appendChild(libraryTree, nullptr);
+    }
 }
 
-void LibraryBrowser::setLibraryName(const juce::String& name)
+void LibraryBrowser::setConverter(std::unique_ptr<PresetConverter> newConverter)
 {
-    libraryName = name;
+    converter = std::move(newConverter);
+}
+
+int LibraryBrowser::loadLibrary(const juce::String& directoryPath, bool recursive, bool clearExisting)
+{
+    juce::StringArray paths;
+    paths.add(directoryPath);
+    return loadLibrary(paths, recursive, clearExisting);
+}
+
+int LibraryBrowser::loadLibrary(const juce::StringArray& directoryPaths, bool recursive, bool clearExisting)
+{
+    if (!converter)
+    {
+        DBG("LibraryBrowser::loadLibrary - No converter set!");
+        return 0;
+    }
+    
+    if (!libraryTree.isValid())
+    {
+        DBG("LibraryBrowser::loadLibrary - Not attached to ValueTree!");
+        return 0;
+    }
+    
+    if (clearExisting)
+    {
+        libraryTree.removeAllChildren(nullptr);
+    }
+    
+    juce::Array<juce::File> allFiles;
+    for (const auto& path : directoryPaths)
+    {
+        auto files = scanFiles(path, recursive);
+        allFiles.addArray(files);
+    }
+    
+    return loadFilesIntoTree(allFiles);
+}
+
+void LibraryBrowser::clearLibrary()
+{
+    if (libraryTree.isValid())
+    {
+        libraryTree.removeAllChildren(nullptr);
+    }
+}
+
+juce::Array<juce::File> LibraryBrowser::scanFiles(const juce::String& directoryPath, bool recursive)
+{
+    juce::Array<juce::File> results;
+    
+    if (!converter)
+        return results;
+    
+    juce::File directory(directoryPath);
+    if (!directory.exists() || !directory.isDirectory())
+        return results;
+    
+    auto extensions = converter->getSupportedExtensions();
+    juce::String wildcardPattern;
+    for (int i = 0; i < extensions.size(); ++i)
+    {
+        if (i > 0)
+            wildcardPattern += ";";
+        wildcardPattern += "*" + extensions[i];
+    }
+    
+    results = directory.findChildFiles(
+        juce::File::findFiles,
+        recursive,
+        wildcardPattern
+    );
+    
+    return results;
+}
+
+int LibraryBrowser::loadFilesIntoTree(const juce::Array<juce::File>& files)
+{
+    if (!converter)
+        return 0;
+    
+    int successCount = 0;
+    
+    for (const auto& file : files)
+    {
+        auto fileNode = converter->convertFile(file);
+        if (fileNode.isValid())
+        {
+            libraryTree.appendChild(fileNode, nullptr);
+            ++successCount;
+        }
+    }
+    
+    return successCount;
 }
 
 void LibraryBrowser::setItemSelectedCallback(ItemSelectedCallback callback)

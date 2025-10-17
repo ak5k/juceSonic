@@ -196,7 +196,7 @@ private:
     juce::ValueTree parentState;
     juce::ValueTree libraryTree;
     std::unique_ptr<PresetConverter> converter;
-    
+
     ItemSelectedCallback itemSelectedCallback;
 
     juce::Label label;
