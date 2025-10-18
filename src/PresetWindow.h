@@ -27,6 +27,20 @@ public:
     void resized() override;
     void visibilityChanged() override;
 
+    /**
+     * @brief Configure whether to show management buttons (Import, Export, etc.)
+     * Set to false when embedding in editor for minimal UI
+     */
+    void setShowManagementButtons(bool show);
+
+    /**
+     * @brief Get direct access to the tree view for integration
+     */
+    PresetTreeView& getTreeView()
+    {
+        return presetTreeView;
+    }
+
 private:
     void refreshPresetList();
     void importPresetFile();
@@ -51,6 +65,8 @@ private:
     PresetTreeView presetTreeView;
 
     juce::Label statusLabel;
+
+    bool showManagementButtons = true;
 
     juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
 

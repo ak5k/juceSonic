@@ -164,6 +164,10 @@ public:
     // Receives array of selected items
     std::function<void(const juce::Array<juce::TreeViewItem*>&)> onCommand;
 
+    // Search results callback - called after filtering completes
+    // Receives: (searchTerm, matchCount)
+    std::function<void(const juce::String&, int)> onSearchResultsChanged;
+
     // Control whether Enter in search field triggers command (default: false)
     bool triggerCommandFromSearchField = false;
 
@@ -281,6 +285,48 @@ public:
      */
     bool markMatches(juce::TreeViewItem* item, const juce::String& searchTerm);
 
+    /**
+     * @brief Control visibility of search field
+     */
+    void setShowSearchField(bool show);
+
+    /**
+     * @brief Control visibility of metadata label
+     */
+    void setShowMetadataLabel(bool show);
+
+    /**
+     * @brief Control tree visibility directly
+     */
+    void setTreeVisible(bool visible);
+
+    /**
+     * @brief Enable auto-hiding tree when no search results
+     * When true, tree is only visible when search produces matches
+     */
+    void setAutoHideTreeWithoutResults(bool autoHide);
+
+    /**
+     * @brief Get current visibility state of search field
+     */
+    bool isSearchFieldVisible() const
+    {
+        return showSearchField;
+    }
+
+    /**
+     * @brief Get current visibility state of metadata label
+     */
+    bool isMetadataLabelVisible() const
+    {
+        return showMetadataLabel;
+    }
+
+    /**
+     * @brief Check if there are any matched items in the current search
+     */
+    bool hasMatches() const;
+
     // Current search term
     juce::String currentSearchTerm;
 
@@ -291,6 +337,12 @@ private:
     FilteredTreeView treeView;
     juce::Label metadataLabel;
     std::unique_ptr<juce::TreeViewItem> rootItem;
+
+    // UI visibility flags
+    bool showSearchField = true;
+    bool showMetadataLabel = true;
+    bool autoHideTreeWithoutResults = false;
+    int matchCount = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SearchableTreeView)
 };

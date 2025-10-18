@@ -5,7 +5,7 @@
 #include "JsfxEditorWindow.h"
 #include "JsfxLiceComponent.h"
 #include "JsfxLiceFullscreenWindow.h"
-#include "LibraryBrowser.h"
+#include "PresetWindow.h"
 #include "PluginProcessor.h"
 #include "PersistentState.h"
 #include "JuceSonicLookAndFeel.h"
@@ -221,6 +221,7 @@ private:
     void rebuildParameterSliders();
     void updatePresetList();
     void onPresetSelected(const juce::String& category, const juce::String& label, const juce::String& itemData);
+    void onPresetTreeItemSelected(juce::TreeViewItem* item);
 
     // ValueTree::Listener
     void valueTreeChildAdded(juce::ValueTree& parent, juce::ValueTree& child) override;
@@ -249,8 +250,8 @@ private:
     // Preset management dropdown
     juce::ComboBox presetManagementMenu;
 
-    // LibraryBrowser with integrated ValueTree management
-    LibraryBrowser libraryBrowser;
+    // PresetWindow embedded as component (minimal UI mode)
+    PresetWindow presetBrowser;
 
     juce::Slider wetSlider;
     juce::Label wetLabel;

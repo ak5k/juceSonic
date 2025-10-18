@@ -701,7 +701,7 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                         INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
                         bool isInstrument = (flags & 1) != 0;
                         DBG("JSFX flags: " << flags << ", isInstrument=" << (isInstrument ? "YES" : "NO"));
-                        
+
                         // Trigger preset loading for restored JSFX
                         DBG("State restoration: Triggering preset loader for: " << jsfxFile.getFullPathName());
                         if (presetLoader)

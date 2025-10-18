@@ -19,6 +19,7 @@ extern jsfxAPI JesusonicAPI;
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
     : AudioProcessorEditor(&p)
     , processorRef(p)
+    , presetBrowser(p)
 {
     setLookAndFeel(&sharedLookAndFeel->lf);
 
@@ -167,16 +168,19 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(presetManagementMenu);
     setupPresetManagementMenu();
 
-    // Preset library browser
-    addAndMakeVisible(libraryBrowser);
-    libraryBrowser.attachToValueTree(processorRef.getAPVTS().state, "PresetLibrary");
-    libraryBrowser.setConverter(std::make_unique<ReaperPresetConverter>());
-    libraryBrowser.setLabelVisible(false);       // Hide the label
-    libraryBrowser.setPlaceholderText("search"); // Set placeholder
-    libraryBrowser.setItemSelectedCallback(
-        [this](const juce::String& category, const juce::String& label, const juce::String& itemData)
-        { onPresetSelected(category, label, itemData); }
-    );
+    // Preset browser (embedded, minimal UI)
+    addAndMakeVisible(presetBrowser);
+    presetBrowser.setShowManagementButtons(false);                   // Hide import/export/etc buttons
+    presetBrowser.getTreeView().setShowMetadataLabel(false);         // Hide metadata label
+    presetBrowser.getTreeView().setAutoHideTreeWithoutResults(true); // Only show tree when search has results
+
+    // Handle preset selection
+    presetBrowser.getTreeView().onCommand = [this](const juce::Array<juce::TreeViewItem*>& selectedItems)
+    {
+        if (!selectedItems.isEmpty())
+            if (auto* firstItem = selectedItems[0])
+                onPresetTreeItemSelected(firstItem);
+    };
 
     // Wet amount slider
     addAndMakeVisible(wetLabel);
@@ -518,6 +522,7 @@ void AudioPluginAudioProcessorEditor::paint(juce::Graphics& g)
 void AudioPluginAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds();
+    auto originalBounds = bounds; // Keep original bounds for tree overlay calculation
 
     auto buttonArea = bounds.removeFromTop(40);
     buttonArea.reduce(5, 5);
@@ -573,7 +578,14 @@ void AudioPluginAudioProcessorEditor::resized()
     presetManagementMenu.setBounds(buttonArea.removeFromLeft(presetMenuWidth));
 
     buttonArea.removeFromLeft(spacing * 2);
-    libraryBrowser.setBounds(buttonArea.removeFromLeft(libraryWidth));
+
+    // Calculate preset browser bounds - search field in button bar, tree extends down
+    auto presetBrowserArea = buttonArea.removeFromLeft(libraryWidth);
+    // Extend tree downward from button bar to bottom of window (for dropdown effect)
+    // Search field stays in button bar, tree drops below it
+    int treeDropHeight = originalBounds.getHeight() - 45; // Leave 5px from bottom
+    presetBrowserArea.setHeight(treeDropHeight);
+    presetBrowser.setBounds(presetBrowserArea);
 
     buttonArea.removeFromLeft(spacing * 2);
     wetLabel.setBounds(buttonArea.removeFromLeft(wetLabelWidth));
@@ -754,9 +766,8 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
 
                 rebuildParameterSliders();
 
-                // Clear preset libraries
-                libraryBrowser.clearLibrary();
-                libraryBrowser.updateItemList();
+                // Clear preset browser (PresetLoader will handle clearing APVTS)
+                presetBrowser.getTreeView().refreshTree();
 
                 // Reset UI state - show parameters, update buttons
                 viewport.setVisible(true);
@@ -939,39 +950,18 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
 
 void AudioPluginAudioProcessorEditor::updatePresetList()
 {
-    // Clear existing presets first
-    libraryBrowser.clearLibrary();
-
-    // Read presets from APVTS state (populated by PresetLoader in background)
+    // PresetWindow automatically reads from APVTS when refreshed
+    // Just trigger a refresh to update the tree view
     auto& state = processorRef.getAPVTS().state;
     auto presetsNode = state.getChildWithName("presets");
 
     if (!presetsNode.isValid() || presetsNode.getNumChildren() == 0)
-    {
         DBG("updatePresetList: No presets in APVTS state");
-        libraryBrowser.updateItemList();
-        return;
-    }
+    else
+        DBG("updatePresetList: " << presetsNode.getNumChildren() << " preset files available");
 
-    DBG("updatePresetList: Loading " << presetsNode.getNumChildren() << " preset files from APVTS state");
-
-    // Copy preset files from APVTS state to library browser
-    for (int i = 0; i < presetsNode.getNumChildren(); ++i)
-    {
-        auto fileNode = presetsNode.getChild(i);
-        if (fileNode.isValid())
-        {
-            // Access the mutable tree (cast away const) and append a copy
-            const_cast<juce::ValueTree&>(libraryBrowser.getLibraryTree()).appendChild(fileNode.createCopy(), nullptr);
-        }
-    }
-
-    // Update the browser UI to reflect loaded libraries
-    libraryBrowser.updateItemList();
-
-    DBG("updatePresetList: Preset list updated with "
-        << libraryBrowser.getLibraryTree().getNumChildren()
-        << " preset file(s)");
+    // Trigger tree refresh - PresetTreeView will load from APVTS
+    presetBrowser.getTreeView().refreshTree();
 }
 
 void AudioPluginAudioProcessorEditor::onPresetSelected(
@@ -989,6 +979,33 @@ void AudioPluginAudioProcessorEditor::onPresetSelected(
     // Delegate to processor for preset loading
     // This ensures presets can be loaded from anywhere (MIDI, automation, editor, etc.)
     processorRef.loadPresetFromBase64(itemData);
+}
+
+void AudioPluginAudioProcessorEditor::onPresetTreeItemSelected(juce::TreeViewItem* item)
+{
+    if (!item)
+        return;
+
+    // Cast to PresetTreeItem to access preset data
+    if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
+    {
+        // Only load if it's an actual preset (not a directory/file/bank)
+        if (presetItem->getType() == PresetTreeItem::ItemType::Preset)
+        {
+            juce::String bankName = presetItem->getBankName();
+            juce::String presetName = presetItem->getPresetName();
+            juce::String presetData = presetItem->getPresetData();
+
+            // Track for delete operations
+            currentPresetBankName = bankName;
+            currentPresetName = presetName;
+
+            DBG("Preset selected from tree: " + bankName + " / " + presetName);
+
+            // Load the preset
+            processorRef.loadPresetFromBase64(presetData);
+        }
+    }
 }
 
 //==============================================================================

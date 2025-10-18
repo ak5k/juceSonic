@@ -545,20 +545,31 @@ void SearchableTreeView::resized()
 {
     auto bounds = getLocalBounds();
 
-    // Search bar at top
-    auto searchArea = bounds.removeFromTop(30);
-    searchLabel.setBounds(searchArea.removeFromLeft(60));
-    searchField.setBounds(searchArea);
+    // Search bar at top (if visible)
+    if (showSearchField)
+    {
+        auto searchArea = bounds.removeFromTop(30);
+        searchLabel.setBounds(searchArea.removeFromLeft(60));
+        searchField.setBounds(searchArea);
 
-    // Add some spacing between search and tree
-    bounds.removeFromTop(8);
+        // Add some spacing between search and tree
+        bounds.removeFromTop(8);
+    }
 
-    // Metadata label at bottom
-    auto metadataArea = bounds.removeFromBottom(20);
-    metadataLabel.setBounds(metadataArea);
+    // Metadata label at bottom (if visible)
+    if (showMetadataLabel)
+    {
+        auto metadataArea = bounds.removeFromBottom(20);
+        metadataLabel.setBounds(metadataArea);
+    }
 
-    // Tree view takes remaining space
+    // Tree view takes remaining space (always set bounds, visibility is separate)
     treeView.setBounds(bounds);
+
+    DBG("SearchableTreeView::resized() - tree bounds: "
+        << bounds.toString()
+        << ", visible="
+        << (treeView.isVisible() ? "true" : "false"));
 }
 
 void SearchableTreeView::textEditorTextChanged(juce::TextEditor& editor)
@@ -699,6 +710,7 @@ void SearchableTreeView::filterTree()
 
         // Clear all matches and collapse
         clearMatches();
+        matchCount = 0;
 
         // Collapse all top-level items
         for (int i = 0; i < rootItem->getNumSubItems(); ++i)
@@ -708,6 +720,17 @@ void SearchableTreeView::filterTree()
         treeView.clearSelectedItems();
         treeView.repaint();
         onSelectionChanged();
+
+        // Auto-hide tree when no search is active
+        if (autoHideTreeWithoutResults)
+        {
+            treeView.setVisible(false);
+            resized();
+        }
+
+        // Notify parent that search was cleared
+        if (onSearchResultsChanged)
+            onSearchResultsChanged(currentSearchTerm, 0);
         return;
     }
 
@@ -717,11 +740,93 @@ void SearchableTreeView::filterTree()
     // Clear all matches first
     clearMatches();
     treeView.clearSelectedItems();
+    matchCount = 0;
 
-    // Mark matching items
+    // Mark matching items and count matches
     for (int i = 0; i < rootItem->getNumSubItems(); ++i)
-        markMatches(rootItem->getSubItem(i), currentSearchTerm);
+        if (markMatches(rootItem->getSubItem(i), currentSearchTerm))
+            matchCount++;
+
+    // Auto-show/hide tree based on match results
+    if (autoHideTreeWithoutResults)
+    {
+        DBG("SearchableTreeView: filterTree - matchCount="
+            << matchCount
+            << ", setting tree visible="
+            << (matchCount > 0 ? "true" : "false"));
+        bool wasVisible = treeView.isVisible();
+        treeView.setVisible(matchCount > 0);
+
+        // Bring parent to front when tree becomes visible (for dropdown overlay effect)
+        if (!wasVisible && matchCount > 0)
+        {
+            if (auto* parent = getParentComponent())
+            {
+                parent->toFront(false); // false = don't grab focus
+                DBG("SearchableTreeView: Brought parent to front for overlay");
+            }
+        }
+
+        resized();
+    }
 
     treeView.repaint();
     onSelectionChanged();
+
+    // Notify parent of search results
+    if (onSearchResultsChanged)
+        onSearchResultsChanged(currentSearchTerm, matchCount);
+}
+
+void SearchableTreeView::setShowSearchField(bool show)
+{
+    if (showSearchField == show)
+        return;
+
+    showSearchField = show;
+    searchLabel.setVisible(show);
+    searchField.setVisible(show);
+    resized();
+}
+
+void SearchableTreeView::setShowMetadataLabel(bool show)
+{
+    if (showMetadataLabel == show)
+        return;
+
+    showMetadataLabel = show;
+    metadataLabel.setVisible(show);
+    resized();
+}
+
+void SearchableTreeView::setTreeVisible(bool visible)
+{
+    if (treeView.isVisible() == visible)
+        return;
+
+    treeView.setVisible(visible);
+    resized();
+}
+
+void SearchableTreeView::setAutoHideTreeWithoutResults(bool autoHide)
+{
+    if (autoHideTreeWithoutResults == autoHide)
+        return;
+
+    autoHideTreeWithoutResults = autoHide;
+
+    DBG("SearchableTreeView: setAutoHideTreeWithoutResults(" << (autoHide ? "true" : "false") << ")");
+
+    // If enabling auto-hide and currently no active search, hide the tree
+    if (autoHideTreeWithoutResults && currentSearchTerm.length() < getMinSearchLength())
+    {
+        DBG("SearchableTreeView: Hiding tree (no active search)");
+        treeView.setVisible(false);
+        resized();
+    }
+}
+
+bool SearchableTreeView::hasMatches() const
+{
+    return matchCount > 0;
 }

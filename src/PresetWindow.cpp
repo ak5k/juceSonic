@@ -53,27 +53,45 @@ void PresetWindow::resized()
 {
     auto bounds = getLocalBounds().reduced(4);
 
-    // Top button row
-    auto topButtons = bounds.removeFromTop(30);
-    importButton.setBounds(topButtons.removeFromLeft(80));
-    topButtons.removeFromLeft(4);
-    exportButton.setBounds(topButtons.removeFromLeft(80));
-    topButtons.removeFromLeft(4);
-    deleteButton.setBounds(topButtons.removeFromLeft(80));
-    topButtons.removeFromLeft(4);
-    topButtons.removeFromLeft(20); // Spacer
-    directoriesButton.setBounds(topButtons.removeFromLeft(100));
-    topButtons.removeFromLeft(4);
-    refreshButton.setBounds(topButtons.removeFromLeft(80));
+    // Top button row (if visible)
+    if (showManagementButtons)
+    {
+        auto topButtons = bounds.removeFromTop(30);
+        importButton.setBounds(topButtons.removeFromLeft(80));
+        topButtons.removeFromLeft(4);
+        exportButton.setBounds(topButtons.removeFromLeft(80));
+        topButtons.removeFromLeft(4);
+        deleteButton.setBounds(topButtons.removeFromLeft(80));
+        topButtons.removeFromLeft(4);
+        topButtons.removeFromLeft(20); // Spacer
+        directoriesButton.setBounds(topButtons.removeFromLeft(100));
+        topButtons.removeFromLeft(4);
+        refreshButton.setBounds(topButtons.removeFromLeft(80));
 
-    bounds.removeFromTop(4);
+        bounds.removeFromTop(4);
 
-    // Status label at bottom
-    statusLabel.setBounds(bounds.removeFromBottom(20));
-    bounds.removeFromBottom(4);
+        // Status label at bottom
+        statusLabel.setBounds(bounds.removeFromBottom(20));
+        bounds.removeFromBottom(4);
+    }
 
     // Tree view fills remaining space
     presetTreeView.setBounds(bounds);
+}
+
+void PresetWindow::setShowManagementButtons(bool show)
+{
+    if (showManagementButtons == show)
+        return;
+
+    showManagementButtons = show;
+    importButton.setVisible(show);
+    exportButton.setVisible(show);
+    deleteButton.setVisible(show);
+    directoriesButton.setVisible(show);
+    refreshButton.setVisible(show);
+    statusLabel.setVisible(show);
+    resized();
 }
 
 void PresetWindow::visibilityChanged()
