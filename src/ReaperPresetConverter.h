@@ -102,12 +102,19 @@ public:
 
             DBG("  Found library: " << libraryName);
 
+            // Find closing > for the opening tag first
+            int openTagEnd = nameEnd + 1;
+            while (openTagEnd < len && data[openTagEnd] != '>')
+                openTagEnd++;
+
+            if (openTagEnd >= len)
+                break;
+
             // Find closing > for this library (bracket matching, skip quoted sections)
             int depth = 1;
-            int searchPos = nameEnd + 1;
             int libraryEnd = -1;
 
-            for (int i = searchPos; i < len && depth > 0; i++)
+            for (int i = openTagEnd + 1; i < len && depth > 0; i++)
             {
                 char c = data[i];
                 // Skip over quoted sections

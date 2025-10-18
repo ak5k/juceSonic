@@ -5,6 +5,8 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     : repositoryManager(repoManager)
     , repositoryTreeView(repoManager)
 {
+    setLookAndFeel(&sharedLookAndFeel->lf);
+
     // Setup repository tree view with callbacks
     addAndMakeVisible(repositoryTreeView);
     repositoryTreeView.onInstallPackage = [this](const RepositoryManager::JSFXPackage& pkg) { installPackage(pkg); };
@@ -41,7 +43,7 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
 
     // Setup repository controls
     addAndMakeVisible(manageReposButton);
-    manageReposButton.setButtonText("Manage Repositories...");
+    manageReposButton.setButtonText("Repositories...");
     manageReposButton.onClick = [this]() { showRepositoryEditor(); };
 
     addAndMakeVisible(refreshButton);
@@ -82,6 +84,7 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
 RepositoryWindow::~RepositoryWindow()
 {
     stopTimer();
+    setLookAndFeel(nullptr);
 }
 
 void RepositoryWindow::visibilityChanged()
@@ -172,7 +175,7 @@ void RepositoryWindow::refreshRepositoryList()
         isLoading = false;
         stopTimer();
         statusLabel.setText(
-            "No repositories configured. Click 'Manage Repositories' to add some.",
+            "No repositories configured. Click 'Repositories' to add some.",
             juce::dontSendNotification
         );
         refreshButton.setEnabled(true);
@@ -1100,11 +1103,10 @@ void RepositoryWindow::showRepositoryEditor()
 
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(editor);
-    options.dialogTitle = "Manage Repositories";
+    options.dialogTitle = "Repositories";
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
     options.resizable = false;
-    options.dialogBackgroundColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
 
     options.launchAsync();
 }
@@ -1117,6 +1119,8 @@ RepositoryEditorDialog::RepositoryEditorDialog(RepositoryManager& repoManager, s
     : repositoryManager(repoManager)
     , closeCallback(onClose)
 {
+    setLookAndFeel(&sharedLookAndFeel->lf);
+
     addAndMakeVisible(instructionsLabel);
     instructionsLabel.setMultiLine(true);
     instructionsLabel.setReadOnly(true);
@@ -1152,7 +1156,10 @@ RepositoryEditorDialog::RepositoryEditorDialog(RepositoryManager& repoManager, s
     setSize(600, 400);
 }
 
-RepositoryEditorDialog::~RepositoryEditorDialog() = default;
+RepositoryEditorDialog::~RepositoryEditorDialog()
+{
+    setLookAndFeel(nullptr);
+}
 
 void RepositoryEditorDialog::paint(juce::Graphics& g)
 {

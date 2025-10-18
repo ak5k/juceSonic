@@ -1,6 +1,5 @@
 #include "RepositoryManager.h"
 #include "PluginProcessor.h"
-#include "PresetManager.h"
 #include "FileIO.h"
 
 RepositoryManager::RepositoryManager(AudioPluginAudioProcessor& proc)

@@ -85,9 +85,64 @@ void PresetWindow::visibilityChanged()
 void PresetWindow::refreshPresetList()
 {
     auto directories = getPresetDirectories();
-    presetTreeView.loadPresets(directories);
 
-    int totalPresets = 0;
+    // Always include the default install root directory (but don't add it to the saved list)
+    auto defaultInstallRoot = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                  .getChildFile("juceSonic")
+                                  .getChildFile("data")
+                                  .getChildFile("local");
+
+    juce::StringArray dirsToScan = directories;
+    if (defaultInstallRoot.exists())
+    {
+        // Add the default install root to scan, but only temporarily for this scan
+        dirsToScan.add(defaultInstallRoot.getFullPathName());
+    }
+
+    // Check if current JSFX is loaded
+    juce::String jsfxPath = processor.getCurrentJSFXPath();
+    if (jsfxPath.isNotEmpty())
+    {
+        juce::File jsfxFile(jsfxPath);
+        juce::String jsfxFilename = jsfxFile.getFileNameWithoutExtension();
+        juce::File jsfxDir = jsfxFile.getParentDirectory();
+        juce::String jsfxDirPath = jsfxDir.getFullPathName();
+
+        auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                           .getChildFile("juceSonic")
+                           .getChildFile("data");
+
+        bool isInDataDir = jsfxDirPath.startsWith(dataDir.getFullPathName());
+
+        // If it's an external JSFX, add its directory to scan
+        if (!isInDataDir && jsfxDir.exists() && !dirsToScan.contains(jsfxDirPath))
+            dirsToScan.add(jsfxDirPath);
+
+        // Look for matching JSFX files in remote/ directory structure
+        auto remoteRoot = dataDir.getChildFile("remote");
+        if (remoteRoot.exists())
+        {
+            // Search recursively for JSFX files with the same name
+            auto matchingJsfxFiles = remoteRoot.findChildFiles(
+                juce::File::findFiles,
+                true, // recursive
+                jsfxFilename + ".jsfx"
+            );
+
+            // Add the parent directory of each matching JSFX file
+            for (const auto& matchingJsfx : matchingJsfxFiles)
+            {
+                auto matchingDir = matchingJsfx.getParentDirectory();
+                auto matchingDirPath = matchingDir.getFullPathName();
+
+                if (matchingDir.exists() && !dirsToScan.contains(matchingDirPath))
+                    dirsToScan.add(matchingDirPath);
+            }
+        }
+    }
+
+    presetTreeView.loadPresets(dirsToScan);
+
     // Count presets (could traverse tree, but for simplicity just show directories)
     statusLabel.setText(
         "Loaded presets from " + juce::String(directories.size()) + " directories",
@@ -109,49 +164,71 @@ void PresetWindow::importPresetFile()
             if (!file.existsAsFile())
                 return;
 
-            // Get first preset directory or use default
-            auto directories = getPresetDirectories();
-            juce::File targetDir;
-
-            if (directories.isEmpty())
+            // Get current JSFX filename (without extension)
+            juce::String jsfxPath = processor.getCurrentJSFXPath();
+            if (jsfxPath.isEmpty())
             {
-                // Use default preset directory
-                targetDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                .getChildFile("juceSonic")
-                                .getChildFile("presets");
-                targetDir.createDirectory();
-
-                // Add to directories
-                directories.add(targetDir.getFullPathName());
-                setPresetDirectories(directories);
-            }
-            else
-            {
-                targetDir = juce::File(directories[0]);
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Import Failed",
+                    "No JSFX loaded. Please load a JSFX before importing presets.",
+                    "OK",
+                    nullptr
+                );
+                return;
             }
 
-            // Copy file to target directory
+            juce::File jsfxFile(jsfxPath);
+            juce::String jsfxFilename = jsfxFile.getFileNameWithoutExtension();
+
+            // Build target directory: <appdata>/juceSonic/data/local/<jsfx-filename>/
+            auto targetDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                 .getChildFile("juceSonic")
+                                 .getChildFile("data")
+                                 .getChildFile("local")
+                                 .getChildFile(jsfxFilename);
+
+            // Create directory structure if needed
+            if (!targetDir.exists() && !targetDir.createDirectory())
+            {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Import Failed",
+                    "Failed to create preset directory: " + targetDir.getFullPathName(),
+                    "OK",
+                    nullptr
+                );
+                return;
+            }
+
+            // Target file path
             auto targetFile = targetDir.getChildFile(file.getFileName());
 
+            // Check if file exists and ask to overwrite
             if (targetFile.existsAsFile())
             {
                 auto result = juce::AlertWindow::showOkCancelBox(
                     juce::MessageBoxIconType::QuestionIcon,
                     "File Exists",
-                    "A preset file with this name already exists. Overwrite?",
+                    "A preset file with this name already exists:\n" + targetFile.getFullPathName() + "\n\nOverwrite?",
                     "Overwrite",
                     "Cancel",
                     nullptr,
                     nullptr
                 );
 
-                if (result == 0)
+                if (result == 0) // User clicked Cancel
                     return;
             }
 
+            // Copy file to target directory
             if (file.copyFileTo(targetFile))
             {
-                statusLabel.setText("Imported: " + file.getFileName(), juce::dontSendNotification);
+                statusLabel.setText(
+                    "Imported: " + file.getFileName() + " to " + jsfxFilename,
+                    juce::dontSendNotification
+                );
+
                 refreshPresetList();
             }
             else
@@ -159,7 +236,7 @@ void PresetWindow::importPresetFile()
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::MessageBoxIconType::WarningIcon,
                     "Import Failed",
-                    "Failed to import preset file.",
+                    "Failed to copy file from:\n" + file.getFullPathName() + "\n\nto:\n" + targetFile.getFullPathName(),
                     "OK",
                     nullptr
                 );
@@ -388,13 +465,13 @@ void PresetWindow::showDirectoryEditor()
 
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(editor);
-    options.dialogTitle = "Edit Preset Directories";
+    options.dialogTitle = "Preset Directories";
     options.resizable = true;
     options.useNativeTitleBar = true;
 
     auto* window = options.launchAsync();
     if (window != nullptr)
-        window->centreWithSize(500, 400);
+        window->centreWithSize(600, 400);
 }
 
 void PresetWindow::updateButtonsForSelection()
@@ -414,12 +491,8 @@ juce::StringArray PresetWindow::getPresetDirectories() const
 
     if (dirString.isEmpty())
     {
-        // Return default directory
-        auto defaultDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                              .getChildFile("juceSonic")
-                              .getChildFile("presets")
-                              .getFullPathName();
-        return juce::StringArray(defaultDir);
+        // Return empty array - the default install root will be added automatically
+        return juce::StringArray();
     }
 
     juce::StringArray directories;
@@ -450,24 +523,31 @@ PresetDirectoryEditor::PresetDirectoryEditor(
     instructionsLabel.setReadOnly(true);
     instructionsLabel.setScrollbarsShown(false);
     instructionsLabel.setCaretVisible(false);
+    instructionsLabel.setPopupMenuEnabled(true);
     instructionsLabel.setText(
         "Enter preset search directories (one per line):\n"
         "The preset browser will scan these directories for .rpl files."
     );
+    instructionsLabel.setFont(juce::FontOptions(12.0f));
+    instructionsLabel.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    instructionsLabel.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
 
     addAndMakeVisible(directoryEditor);
     directoryEditor.setMultiLine(true);
     directoryEditor.setReturnKeyStartsNewLine(true);
     directoryEditor.setScrollbarsShown(true);
+    directoryEditor.setFont(juce::FontOptions(12.0f));
     directoryEditor.setText(currentDirectories.joinIntoString("\n"));
 
     addAndMakeVisible(saveButton);
+    saveButton.setButtonText("Save");
     saveButton.onClick = [this]() { saveAndClose(); };
 
     addAndMakeVisible(cancelButton);
+    cancelButton.setButtonText("Cancel");
     cancelButton.onClick = [this]() { cancel(); };
 
-    setSize(500, 400);
+    setSize(600, 400);
 }
 
 PresetDirectoryEditor::~PresetDirectoryEditor()
@@ -482,17 +562,17 @@ void PresetDirectoryEditor::paint(juce::Graphics& g)
 
 void PresetDirectoryEditor::resized()
 {
-    auto bounds = getLocalBounds().reduced(8);
+    auto bounds = getLocalBounds().reduced(10);
 
-    instructionsLabel.setBounds(bounds.removeFromTop(60));
-    bounds.removeFromTop(8);
+    instructionsLabel.setBounds(bounds.removeFromTop(40));
+    bounds.removeFromTop(5);
 
-    auto buttons = bounds.removeFromBottom(30);
-    cancelButton.setBounds(buttons.removeFromRight(80));
-    buttons.removeFromRight(8);
-    saveButton.setBounds(buttons.removeFromRight(80));
+    auto buttonBar = bounds.removeFromBottom(30);
+    cancelButton.setBounds(buttonBar.removeFromRight(80));
+    buttonBar.removeFromRight(5);
+    saveButton.setBounds(buttonBar.removeFromRight(80));
+    bounds.removeFromBottom(10);
 
-    bounds.removeFromBottom(8);
     directoryEditor.setBounds(bounds);
 }
 

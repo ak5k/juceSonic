@@ -641,7 +641,10 @@ void SearchableTreeView::clearMatches(juce::TreeViewItem* item)
         return;
 
     if (auto* searchableItem = dynamic_cast<SearchableTreeItem*>(item))
+    {
         searchableItem->setMatched(false);
+        searchableItem->setHidden(false); // Show all items when clearing filter
+    }
 
     for (int i = 0; i < item->getNumSubItems(); ++i)
         clearMatches(item->getSubItem(i));
@@ -666,18 +669,22 @@ bool SearchableTreeView::markMatches(juce::TreeViewItem* item, const juce::Strin
         if (markMatches(item->getSubItem(i), searchTerm))
             childrenMatch = true;
 
-    // Only mark this item if it matches and has no matching children
-    // (we want deepest matches only)
-    if (thisMatches && !childrenMatch)
-        searchableItem->setMatched(true);
+    // An item should be visible if it matches OR any of its children match
+    bool shouldBeVisible = thisMatches || childrenMatch;
 
-    // Expand if this item or children match
-    if (thisMatches || childrenMatch)
+    // Mark as matched if this item specifically matches (for highlighting)
+    searchableItem->setMatched(thisMatches);
+
+    // Hide items that don't match and have no matching children
+    searchableItem->setHidden(!shouldBeVisible);
+
+    // Expand if this item or children match (so we can see the matches)
+    if (shouldBeVisible)
         item->setOpen(true);
     else
         item->setOpen(false);
 
-    return thisMatches || childrenMatch;
+    return shouldBeVisible;
 }
 
 void SearchableTreeView::filterTree()

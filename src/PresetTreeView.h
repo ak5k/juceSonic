@@ -9,7 +9,7 @@ class PresetTreeView;
 
 /**
  * @brief Tree item for preset browser
- * Hierarchy: Directory > File > Bank > Preset
+ * Supports flexible hierarchical structure for organizing presets
  */
 class PresetTreeItem : public SearchableTreeItem
 {
@@ -94,11 +94,9 @@ private:
 /**
  * @brief Searchable tree view for JSFX presets
  *
- * Displays preset files in hierarchical structure:
- * - Directory (scan root)
- *   - File (.rpl file)
- *     - Bank (preset bank/category)
- *       - Preset (individual preset)
+ * Displays preset files in flexible hierarchical structure with automatic
+ * organization based on directory structure and preset file contents.
+ * Supports unlimited nesting depth.
  *
  * No metadata display or command callback needed.
  */
@@ -172,6 +170,9 @@ private:
     {
         juce::File directory;
         std::vector<FileEntry> files;
+        bool isDefaultRoot = false;  // True if this is the default install location
+        bool isExternalRoot = false; // True if this is an external JSFX directory
+        bool isRemoteRoot = false;   // True if this is from remote/ directory
     };
 
     std::vector<DirectoryEntry> presetDirectories;

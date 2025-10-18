@@ -36,8 +36,27 @@ public:
         return isFocused;
     }
 
+    // Hidden state for filtering (items that don't match search)
+    void setHidden(bool hidden)
+    {
+        isHidden = hidden;
+    }
+
+    bool getHidden() const
+    {
+        return isHidden;
+    }
+
     // Override to customize match highlighting
     virtual void paintMatchHighlight(juce::Graphics& g, int width, int height);
+
+    // Override getItemHeight to hide filtered items
+    int getItemHeight() const override
+    {
+        if (isHidden)
+            return 0;
+        return juce::TreeViewItem::getItemHeight();
+    }
 
     // Check if this item should be auto-expanded (has metadata children)
     virtual bool shouldAutoExpand() const
@@ -48,6 +67,7 @@ public:
 protected:
     bool isMatched = false;
     bool isFocused = false;
+    bool isHidden = false;
 };
 
 /**

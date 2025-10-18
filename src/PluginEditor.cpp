@@ -1070,7 +1070,7 @@ void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
     presetManagementMenu.setTextWhenNoChoicesAvailable("");
 
     // Add menu items
-    presetManagementMenu.addItem("Preset Manager...", 1);
+    presetManagementMenu.addItem("Presets...", 1);
     presetManagementMenu.addItem("Repositories...", 2);
     presetManagementMenu.addSeparator();
     presetManagementMenu.addItem("About...", 3);
@@ -1092,7 +1092,7 @@ void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int select
 {
     switch (selectedId)
     {
-    case 1: // Preset Manager...
+    case 1: // Presets...
         showPresetBrowser();
         break;
 
@@ -1220,7 +1220,7 @@ void AudioPluginAudioProcessorEditor::showRepositoryBrowser()
 
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(repoWindow);
-    options.dialogTitle = "Repository Browser";
+    options.dialogTitle = "Repository Manager";
     options.resizable = true;
     options.useNativeTitleBar = true;
 

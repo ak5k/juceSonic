@@ -143,6 +143,26 @@ void PresetTreeView::loadPresets(const juce::StringArray& directoryPaths)
 {
     presetDirectories.clear();
 
+    // Determine which directory is the default install root
+    auto defaultInstallRoot = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                  .getChildFile("juceSonic")
+                                  .getChildFile("data")
+                                  .getChildFile("local")
+                                  .getFullPathName();
+
+    // Determine the data directory to identify external directories
+    auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                       .getChildFile("juceSonic")
+                       .getChildFile("data")
+                       .getFullPathName();
+
+    // Determine the remote directory
+    auto remoteDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                         .getChildFile("juceSonic")
+                         .getChildFile("data")
+                         .getChildFile("remote")
+                         .getFullPathName();
+
     for (const auto& path : directoryPaths)
     {
         juce::File dir(path);
@@ -152,8 +172,23 @@ void PresetTreeView::loadPresets(const juce::StringArray& directoryPaths)
         DirectoryEntry dirEntry;
         dirEntry.directory = dir;
 
-        // Find all .rpl files in this directory (non-recursive for now)
-        auto files = dir.findChildFiles(juce::File::findFiles, false, "*.rpl");
+        // Check if this is the default install root - if so, scan recursively
+        bool isDefaultRoot = (path == defaultInstallRoot);
+        dirEntry.isDefaultRoot = isDefaultRoot;
+
+        // Check if this is from the remote directory - if so, scan recursively
+        bool isRemote = path.startsWith(remoteDir);
+        dirEntry.isRemoteRoot = isRemote;
+
+        // Check if this is an external directory (outside the data directory)
+        bool isExternal = !isDefaultRoot && !isRemote && !path.startsWith(dataDir);
+        dirEntry.isExternalRoot = isExternal;
+
+        // Scan recursively for default root and remote directories
+        bool scanRecursively = isDefaultRoot || isRemote;
+
+        // Find all .rpl files in this directory
+        auto files = dir.findChildFiles(juce::File::findFiles, scanRecursively, "*.rpl");
 
         for (const auto& file : files)
         {
@@ -214,10 +249,18 @@ void PresetTreeView::parsePresetFile(const juce::File& file, FileEntry& fileEntr
         if (bankName.startsWith("JS: "))
             bankName = bankName.substring(4);
 
-        // Find closing > for library
+        // Find closing > for the opening tag first
+        int openTagEnd = nameEnd + 1;
+        while (openTagEnd < len && data[openTagEnd] != '>')
+            openTagEnd++;
+
+        if (openTagEnd >= len)
+            break;
+
+        // Find closing > for library (now we're inside the tag)
         int depth = 1;
         int libraryEnd = -1;
-        for (int i = nameEnd + 1; i < len && depth > 0; i++)
+        for (int i = openTagEnd + 1; i < len && depth > 0; i++)
         {
             char c = data[i];
             if (c == '`' || c == '"' || c == '\'')
@@ -248,7 +291,7 @@ void PresetTreeView::parsePresetFile(const juce::File& file, FileEntry& fileEntr
         bankEntry.bankName = bankName;
 
         // Parse presets in this bank
-        int presetPos = nameEnd + 1;
+        int presetPos = openTagEnd + 1;
         while (presetPos < libraryEnd)
         {
             int presetStart = presetPos;
@@ -341,8 +384,19 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
 
     for (const auto& dirEntry : presetDirectories)
     {
+        // Determine display name based on directory type
+        juce::String displayName;
+        if (dirEntry.isDefaultRoot)
+            displayName = "local";
+        else if (dirEntry.isRemoteRoot)
+            displayName = dirEntry.directory.getFileName() + " (remote)";
+        else if (dirEntry.isExternalRoot)
+            displayName = dirEntry.directory.getFileName() + " (external)";
+        else
+            displayName = dirEntry.directory.getFileName();
+
         auto dirItem = std::make_unique<PresetTreeItem>(
-            dirEntry.directory.getFileName(),
+            displayName,
             PresetTreeItem::ItemType::Directory,
             dirEntry.directory,
             juce::String(),

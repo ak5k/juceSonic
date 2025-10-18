@@ -3,6 +3,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "RepositoryManager.h"
 #include "RepositoryTreeView.h"
+#include "JuceSonicLookAndFeel.h"
 
 /**
  * @brief Window for managing JSFX repositories
@@ -63,6 +64,8 @@ private:
     bool isLoading = false;
     bool isInstalling = false;
 
+    juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
+
     // Helper methods for refactored operations
     struct PackageCollectionResult
     {
@@ -109,6 +112,8 @@ private:
     juce::TextEditor repositoryEditor;
     juce::TextButton saveButton;
     juce::TextButton cancelButton;
+
+    juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RepositoryEditorDialog)
 };
