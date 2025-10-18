@@ -46,7 +46,8 @@ AboutWindow::ContentComponent::ContentComponent()
 
     // Version label
     addAndMakeVisible(versionLabel);
-    juce::String versionText = juce::String("Version ") + juce::String(juce::CharPointer_UTF8(JucePlugin_VersionString));
+    juce::String versionText =
+        juce::String("Version ") + juce::String(juce::CharPointer_UTF8(JucePlugin_VersionString));
     versionLabel.setText(versionText, juce::dontSendNotification);
     versionLabel.setFont(juce::Font(14.0f, juce::Font::plain));
     versionLabel.setJustificationType(juce::Justification::centred);
@@ -111,9 +112,8 @@ void AboutWindow::ContentComponent::resized()
     auto font = juce::Font(juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
     int charWidth = font.getStringWidth("M"); // Use 'M' as reference for monospace width
     int textWidth = charWidth * 82;
-    
+
     // Center the text editor with 82-char width
-    auto textArea = area.withTrimmedLeft((area.getWidth() - textWidth) / 2)
-                        .withWidth(textWidth);
+    auto textArea = area.withTrimmedLeft((area.getWidth() - textWidth) / 2).withWidth(textWidth);
     licenseTextEditor.setBounds(textArea);
 }
