@@ -15,13 +15,14 @@ class AudioPluginAudioProcessor;
  *
  * Presets are stored in the following structure:
  * - Global persistent storage: <AppData>/juceSonic/data/
- *   - /author-name/
+ *   - /local/
  *     - /jsfx-filename/
  *       - default.rpl (default preset for that JSFX)
  *       - imported presets (.rpl files)
- *
- * The author name is parsed from the "author:" tag in the JSFX file.
- * If no author is found, "Unknown" is used as the default author folder.
+ *   - /remote/
+ *     - /repository-index-name/
+ *       - /package-name/
+ *         - JSFX files installed from repositories
  *
  * When a JSFX is loaded, the manager checks for a default preset and applies it
  * after the JSFX is initialized.
@@ -131,6 +132,12 @@ public:
     {
         onPresetsChanged = callback;
     }
+
+    /**
+     * Show repository manager window for browsing and installing JSFX from remote repositories.
+     * @param parentComponent Parent component for modal window
+     */
+    void showRepositoryManager(juce::Component* parentComponent);
 
 private:
     AudioPluginAudioProcessor& processor;

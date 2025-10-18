@@ -1,6 +1,8 @@
 #include "PresetManager.h"
 #include "PluginProcessor.h"
 #include "PluginConstants.h"
+#include "RepositoryManager.h"
+#include "RepositoryWindow.h"
 
 #include <jsfx.h>
 
@@ -40,18 +42,12 @@ juce::File PresetManager::getJsfxStorageDirectory() const
     if (jsfxPath.isEmpty())
         return {};
 
-    // Get author name from processor
-    juce::String author = processor.getCurrentJSFXAuthor();
-    if (author.isEmpty())
-        author = "Unknown";
-
-    // Get JSFX name
+    // Get JSFX name (don't use author for local presets)
     juce::File jsfxFile(jsfxPath);
     juce::String jsfxName = sanitizeFilename(jsfxFile.getFileNameWithoutExtension());
 
-    // Create path: <appdata>/data/author-name/jsfx-name
-    auto storageDir =
-        getPresetRootDirectory().getChildFile("data").getChildFile(sanitizeFilename(author)).getChildFile(jsfxName);
+    // Create path: <appdata>/data/local/jsfx-filename
+    auto storageDir = getPresetRootDirectory().getChildFile("data").getChildFile("local").getChildFile(jsfxName);
 
     // Create directory if it doesn't exist
     if (!storageDir.exists())
@@ -1311,4 +1307,51 @@ bool PresetManager::combinePresetFiles(const juce::Array<juce::File>& files, con
 
     // Write to output file
     return outputFile.replaceWithText(combinedContent);
+}
+
+void PresetManager::showRepositoryManager(juce::Component* parentComponent)
+{
+    // Create repository manager instance owned by the window
+    auto repositoryManager = std::make_shared<RepositoryManager>(processor);
+
+    // Create and show repository window in a dialog
+    // Capture repositoryManager in a custom component to manage lifetime
+    class RepositoryWindowWrapper : public juce::Component
+    {
+    public:
+        RepositoryWindowWrapper(std::shared_ptr<RepositoryManager> mgr)
+            : manager(mgr)
+            , window(*manager)
+        {
+            addAndMakeVisible(window);
+            setSize(650, 700); // Narrower width to fit controls
+        }
+
+        void resized() override
+        {
+            window.setBounds(getLocalBounds());
+        }
+
+    private:
+        std::shared_ptr<RepositoryManager> manager;
+        RepositoryWindow window;
+    };
+
+    auto* repoWindow = new RepositoryWindowWrapper(repositoryManager);
+    repoWindow->setSize(650, 700); // Ensure size is set before launching
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(repoWindow);
+    options.dialogTitle = "JSFX Repository Browser";
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+
+    if (parentComponent)
+    {
+        options.dialogBackgroundColour =
+            parentComponent->getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+    }
+
+    options.launchAsync();
 }

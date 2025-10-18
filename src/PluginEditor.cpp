@@ -1092,8 +1092,9 @@ void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
     presetManagementMenu.addSeparator();
     presetManagementMenu.addItem("Import...", 4);
     presetManagementMenu.addItem("Export...", 5);
+    presetManagementMenu.addItem("Repositories...", 6);
     presetManagementMenu.addSeparator();
-    presetManagementMenu.addItem("Delete...", 6);
+    presetManagementMenu.addItem("Delete...", 7);
 
     // Handle selection
     presetManagementMenu.onChange = [this]()
@@ -1139,7 +1140,11 @@ void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int select
         presetManager->exportPreset(this);
         break;
 
-    case 6: // Delete...
+    case 6: // Repositories...
+        presetManager->showRepositoryManager(this);
+        break;
+
+    case 7: // Delete...
     {
         // Use the currently selected preset from library browser
         if (currentPresetName.isEmpty())
