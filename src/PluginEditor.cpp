@@ -174,8 +174,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(libraryBrowser);
     libraryBrowser.attachToValueTree(processorRef.getAPVTS().state, "PresetLibrary");
     libraryBrowser.setConverter(std::make_unique<ReaperPresetConverter>());
-    libraryBrowser.setLabelText("Presets:");                 // Set label text
-    libraryBrowser.setPlaceholderText("(No preset loaded)"); // Set placeholder
+    libraryBrowser.setLabelVisible(false);       // Hide the label
+    libraryBrowser.setPlaceholderText("search"); // Set placeholder
     libraryBrowser.setItemSelectedCallback(
         [this](const juce::String& category, const juce::String& label, const juce::String& itemData)
         { onPresetSelected(category, label, itemData); }

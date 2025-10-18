@@ -154,7 +154,6 @@ juce_add_plugin(${PROJECT_NAME}
 
 file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/*.h)
 # Exclude StandaloneApp.cpp from the main source files - it's only for standalone builds
-list(FILTER SOURCE_FILES EXCLUDE REGEX ".*StandaloneApp\\.cpp$")
 target_sources(${PROJECT_NAME} PRIVATE ${SOURCE_FILES})
 
 # Add StandaloneApp.cpp only to the Standalone target

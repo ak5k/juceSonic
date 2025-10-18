@@ -45,6 +45,10 @@ public:
         : StandaloneFilterWindow(title, backgroundColour, std::move(holder))
     {
         // LookAndFeel is set globally by the app's SharedResourcePointer<SharedJuceSonicLookAndFeel>
+
+        // Use JUCE's custom title bar instead of native OS title bar
+        // This allows full customization of the title bar and buttons
+        setUsingNativeTitleBar(false);
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CustomStandaloneFilterWindow)
