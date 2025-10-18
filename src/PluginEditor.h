@@ -9,6 +9,7 @@
 #include "PluginProcessor.h"
 #include "PersistentState.h"
 #include "JuceSonicLookAndFeel.h"
+#include "VersionChecker.h"
 
 class PersistentFileChooser;
 class PresetManager;
@@ -257,6 +258,9 @@ private:
     juce::String currentPresetBankName;
     juce::String currentPresetName;
 
+    // Version checker
+    std::unique_ptr<VersionChecker> versionChecker;
+
     juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
 
     void destroyJsfxUI();
@@ -265,6 +269,8 @@ private:
     void setupPresetManagementMenu();
     void handlePresetManagementSelection(int selectedId);
     void showAboutWindow();
+    void checkForUpdatesIfNeeded();
+    void showUpdateNotification(const juce::String& latestVersion, const juce::String& downloadUrl);
 
     // JSFX lifecycle management (internal constructor/destructor pattern)
     void saveJsfxState();    // Internal "destructor" - save state before unloading JSFX

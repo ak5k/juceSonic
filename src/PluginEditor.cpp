@@ -259,6 +259,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     // Enable keyboard focus for F11 fullscreen toggle
     setWantsKeyboardFocus(true);
+
+    // Check for updates monthly
+    checkForUpdatesIfNeeded();
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
@@ -1183,6 +1186,85 @@ void AudioPluginAudioProcessorEditor::showAboutWindow()
     // Create About window as a top-level window
     // It will delete itself when closed
     new AboutWindow();
+}
+
+void AudioPluginAudioProcessorEditor::checkForUpdatesIfNeeded()
+{
+    // Check if user has opted out of update checks
+    bool shouldCheck = getGlobalProperty("shouldCheckForUpdates", true);
+    if (!shouldCheck)
+        return;
+
+    // Get last check timestamp (stored as int64 milliseconds since epoch)
+    auto lastCheck = getGlobalProperty("lastUpdateCheckTime", (juce::int64)0);
+    auto now = juce::Time::currentTimeMillis();
+
+    // Check once per month (30 days = 2,592,000,000 milliseconds)
+    const juce::int64 monthInMs = 30LL * 24 * 60 * 60 * 1000;
+
+    if (now - lastCheck < monthInMs)
+        return; // Already checked recently
+
+    // Update last check time
+    setGlobalProperty("lastUpdateCheckTime", now);
+
+    // Get repository URL from CMake configuration
+#ifdef JUCESONIC_REPO_URL
+    juce::String repoUrl = JUCESONIC_REPO_URL;
+#else
+    juce::String repoUrl = "https://github.com/ak5k/jucesonic";
+#endif
+
+    // Start async version check
+    if (!versionChecker)
+        versionChecker = std::make_unique<VersionChecker>();
+
+    versionChecker->onUpdateCheckComplete =
+        [this](bool updateAvailable, const juce::String& latestVersion, const juce::String& downloadUrl)
+    {
+        if (updateAvailable)
+        {
+            DBG("Update available: " << latestVersion);
+            showUpdateNotification(latestVersion, downloadUrl);
+        }
+        else
+        {
+            DBG("No update available");
+        }
+    };
+
+    versionChecker->checkForUpdates(JucePlugin_VersionString, repoUrl);
+}
+
+void AudioPluginAudioProcessorEditor::showUpdateNotification(
+    const juce::String& latestVersion,
+    const juce::String& downloadUrl
+)
+{
+    // Show a non-modal alert with a clickable link
+    juce::String message = "A new version of juceSonic is available!\n\n"
+                           "Current version: " + juce::String(JucePlugin_VersionString) + "\n"
+                           "Latest version: " + latestVersion + "\n\n"
+                           "Would you like to download it now?";
+
+    auto options = juce::MessageBoxOptions()
+                       .withIconType(juce::MessageBoxIconType::InfoIcon)
+                       .withTitle("Update Available")
+                       .withMessage(message)
+                       .withButton("Download")
+                       .withButton("Later")
+                       .withButton("Don't Ask Again");
+
+    juce::AlertWindow::showAsync(
+        options,
+        [downloadUrl, this](int result)
+        {
+            if (result == 1) // Download button
+                juce::URL(downloadUrl).launchInDefaultBrowser();
+            else if (result == 3) // Don't Ask Again
+                setGlobalProperty("shouldCheckForUpdates", false);
+        }
+    );
 }
 
 //==============================================================================

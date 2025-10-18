@@ -166,13 +166,54 @@ target_sources(${PROJECT_NAME}_Standalone PRIVATE src/StandaloneApp.cpp)
 # definitions will be visible both to your code, and also the JUCE module code, so for new
 # definitions, pick unique names that are unlikely to collide! This is a standard CMake command.
 
+# ==============================================================================
+# Repository URL Configuration for Version Checking
+# ==============================================================================
+
+# Detect repository URL from environment or git (for CI builds)
+if(NOT DEFINED JUCESONIC_REPO_URL)
+    # Try GitHub Actions environment variables first
+    if(DEFINED ENV{GITHUB_SERVER_URL} AND DEFINED ENV{GITHUB_REPOSITORY})
+        set(JUCESONIC_REPO_URL "$ENV{GITHUB_SERVER_URL}/$ENV{GITHUB_REPOSITORY}")
+        message(STATUS "Using GitHub Actions repository URL: ${JUCESONIC_REPO_URL}")
+    # Try to get from git remote if available
+    elseif(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} config --get remote.origin.url
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            OUTPUT_VARIABLE GIT_REMOTE_URL
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE GIT_REMOTE_RESULT
+        )
+        if(GIT_REMOTE_RESULT EQUAL "0" AND NOT GIT_REMOTE_URL STREQUAL "")
+            # Convert SSH URL to HTTPS if needed (git@github.com:user/repo.git -> https://github.com/user/repo)
+            string(REGEX REPLACE "^git@github\\.com:" "https://github.com/" GIT_REMOTE_URL "${GIT_REMOTE_URL}")
+            # Remove .git suffix
+            string(REGEX REPLACE "\\.git$" "" GIT_REMOTE_URL "${GIT_REMOTE_URL}")
+            set(JUCESONIC_REPO_URL "${GIT_REMOTE_URL}")
+            message(STATUS "Using git remote repository URL: ${JUCESONIC_REPO_URL}")
+        else()
+            # Fallback to hardcoded default
+            set(JUCESONIC_REPO_URL "https://github.com/ak5k/jucesonic")
+            message(STATUS "Using default repository URL: ${JUCESONIC_REPO_URL}")
+        endif()
+    else()
+        # Fallback to hardcoded default
+        set(JUCESONIC_REPO_URL "https://github.com/ak5k/jucesonic")
+        message(STATUS "Using default repository URL: ${JUCESONIC_REPO_URL}")
+    endif()
+    set(JUCESONIC_REPO_URL "${JUCESONIC_REPO_URL}" CACHE STRING "GitHub repository URL for version checking")
+endif()
+
 target_compile_definitions(${PROJECT_NAME}
     PUBLIC
         # JUCE_WEB_BROWSER and JUCE_USE_CURL would be on by default, but you might not need them.
         JUCE_WEB_BROWSER=0  # If you remove this, add `NEEDS_WEB_BROWSER TRUE` to the `juce_add_plugin` call
         JUCE_USE_CURL=0     # If you remove this, add `NEEDS_CURL TRUE` to the `juce_add_plugin` call
         JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
+        JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
+    PRIVATE
+        JUCESONIC_REPO_URL="${JUCESONIC_REPO_URL}")
 
 # ==============================================================================
 # Collect and Combine License Files
