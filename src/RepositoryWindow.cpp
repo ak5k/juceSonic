@@ -85,6 +85,7 @@ public:
         else if (type == ItemType::Category)
         {
             // Category - check if all, some, or none packages are installed
+            // Exclude ignored packages from counts
             int totalPackages = 0;
             int installedPackages = 0;
 
@@ -94,6 +95,10 @@ public:
                 {
                     if (child->getType() == ItemType::Package && child->getPackage())
                     {
+                        // Skip ignored packages - they don't count
+                        if (repositoryManager->isPackageIgnored(*child->getPackage()))
+                            continue;
+
                         totalPackages++;
                         if (repositoryManager->isPackageInstalled(*child->getPackage()))
                             installedPackages++;
@@ -130,6 +135,7 @@ public:
         else if (type == ItemType::Index)
         {
             // Index/Repository - check if all, some, or none categories are fully installed
+            // Exclude ignored packages from counts
             int totalCategories = 0;
             int fullyInstalledCategories = 0;
             int partiallyInstalledCategories = 0;
@@ -150,6 +156,10 @@ public:
                             {
                                 if (packageItem->getType() == ItemType::Package && packageItem->getPackage())
                                 {
+                                    // Skip ignored packages - they don't count
+                                    if (repositoryManager->isPackageIgnored(*packageItem->getPackage()))
+                                        continue;
+
                                     totalPackages++;
                                     if (repositoryManager->isPackageInstalled(*packageItem->getPackage()))
                                         installedPackages++;
