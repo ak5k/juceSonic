@@ -247,9 +247,60 @@ public:
 
     bool convertTreeToFile(const juce::ValueTree& tree, const juce::File& targetFile) override
     {
-        // TODO: Implement writing Reaper preset files
-        // For now, this is read-only
-        juce::ignoreUnused(tree, targetFile);
+        if (!tree.isValid() || tree.getType().toString() != "PresetFile")
+        {
+            DBG("convertTreeToFile: Invalid tree structure");
+            return false;
+        }
+
+        juce::String output;
+
+        // Write each bank
+        for (int i = 0; i < tree.getNumChildren(); ++i)
+        {
+            auto bank = tree.getChild(i);
+            if (bank.getType().toString() != "PresetBank")
+                continue;
+
+            auto bankName = bank.getProperty("name").toString();
+
+            // Write library header with backtick delimiter
+            output += "<REAPER_PRESET_LIBRARY `" + bankName + "`\n";
+
+            // Write each preset in the bank
+            for (int j = 0; j < bank.getNumChildren(); ++j)
+            {
+                auto preset = bank.getChild(j);
+                if (preset.getType().toString() != "Preset")
+                    continue;
+
+                auto presetName = preset.getProperty("name").toString();
+                auto presetData = preset.getProperty("data").toString();
+
+                // Write preset with backtick delimiter
+                output += "  <PRESET `" + presetName + "`\n";
+
+                // Write preset data (already base64 encoded)
+                // Add proper indentation
+                auto lines = juce::StringArray::fromLines(presetData);
+                for (const auto& line : lines)
+                    if (line.isNotEmpty())
+                        output += "    " + line + "\n";
+
+                output += "  >\n";
+            }
+
+            output += ">\n";
+        }
+
+        // Write to file
+        if (targetFile.replaceWithText(output))
+        {
+            DBG("Successfully wrote preset file: " << targetFile.getFullPathName());
+            return true;
+        }
+
+        DBG("Failed to write preset file: " << targetFile.getFullPathName());
         return false;
     }
 

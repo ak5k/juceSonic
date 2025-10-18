@@ -3,6 +3,7 @@
 #include "PluginConstants.h"
 #include "RepositoryManager.h"
 #include "RepositoryWindow.h"
+#include "PresetBrowser.h"
 
 #include <jsfx.h>
 
@@ -1343,6 +1344,30 @@ void PresetManager::showRepositoryManager(juce::Component* parentComponent)
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(repoWindow);
     options.dialogTitle = "JSFX Repository Browser";
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+
+    if (parentComponent)
+    {
+        options.dialogBackgroundColour =
+            parentComponent->getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+    }
+
+    options.launchAsync();
+}
+
+void PresetManager::showPresetManager(juce::Component* parentComponent)
+{
+    // Get current JSFX path
+    juce::String jsfxPath = processor.getCurrentJSFXPath();
+
+    auto* presetBrowser = new PresetBrowserWindow(*this, jsfxPath);
+    presetBrowser->setSize(500, 600);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(presetBrowser);
+    options.dialogTitle = "Preset Manager";
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
     options.resizable = true;

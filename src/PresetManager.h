@@ -134,6 +134,12 @@ public:
     }
 
     /**
+     * Show preset manager window for browsing, importing, exporting, and deleting presets.
+     * @param parentComponent Parent component for modal window
+     */
+    void showPresetManager(juce::Component* parentComponent);
+
+    /**
      * Show repository manager window for browsing and installing JSFX from remote repositories.
      * @param parentComponent Parent component for modal window
      */

@@ -1090,11 +1090,10 @@ void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
     presetManagementMenu.addItem("Save As...", 2);
     presetManagementMenu.addItem("Set as Default", 3);
     presetManagementMenu.addSeparator();
-    presetManagementMenu.addItem("Import...", 4);
-    presetManagementMenu.addItem("Export...", 5);
-    presetManagementMenu.addItem("Repositories...", 6);
+    presetManagementMenu.addItem("Presets...", 4);
+    presetManagementMenu.addItem("Repositories...", 5);
     presetManagementMenu.addSeparator();
-    presetManagementMenu.addItem("Delete...", 7);
+    presetManagementMenu.addItem("Delete...", 6);
 
     // Handle selection
     presetManagementMenu.onChange = [this]()
@@ -1130,21 +1129,17 @@ void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int select
         presetManager->setAsDefault(this);
         break;
 
-    case 4: // Import...
-        presetManager->importPreset(this);
-        // After importing, update preset list
+    case 4: // Presets...
+        presetManager->showPresetManager(this);
+        // After closing preset manager, update preset list
         juce::MessageManager::callAsync([this]() { updatePresetList(); });
         break;
 
-    case 5: // Export...
-        presetManager->exportPreset(this);
-        break;
-
-    case 6: // Repositories...
+    case 5: // Repositories...
         presetManager->showRepositoryManager(this);
         break;
 
-    case 7: // Delete...
+    case 6: // Delete...
     {
         // Use the currently selected preset from library browser
         if (currentPresetName.isEmpty())

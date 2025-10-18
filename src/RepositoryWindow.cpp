@@ -1,13 +1,127 @@
 #include "RepositoryWindow.h"
+#include "ReaperPresetConverter.h"
+
+// Forward declare RepositoryTreeItem
+class RepositoryTreeItem : public juce::TreeViewItem
+{
+public:
+    enum class ItemType
+    {
+        Index,
+        Category,
+        Package,
+        Metadata
+    };
+
+    RepositoryTreeItem(
+        const juce::String& name,
+        ItemType t,
+        const RepositoryManager::JSFXPackage* pkg = nullptr,
+        RepositoryWindow* window = nullptr
+    )
+        : itemName(name)
+        , type(t)
+        , package(pkg)
+        , repositoryWindow(window)
+    {
+    }
+
+    bool mightContainSubItems() override
+    {
+        return type == ItemType::Index || type == ItemType::Category;
+    }
+
+    bool canBeSelected() const override
+    {
+        // Only Index and Category items can be selected, not Package or Metadata
+        return type == ItemType::Index || type == ItemType::Category;
+    }
+
+    void paintItem(juce::Graphics& g, int width, int height) override
+    {
+        if (isSelected())
+            g.fillAll(juce::Colours::blue.withAlpha(0.35f));
+
+        g.setColour(type == ItemType::Metadata ? juce::Colours::grey : juce::Colours::white);
+        g.setFont(juce::Font(type == ItemType::Metadata ? 11.0f : 14.0f));
+
+        // Main item name
+        g.drawText(itemName, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
+
+        // For categories, show [INSTALLED] badge if any package in the category is installed
+        if (type == ItemType::Category && repositoryManager)
+        {
+            bool anyInstalled = false;
+            // Check all children (Package items) to see if any are installed
+            for (int i = 0; i < getNumSubItems(); ++i)
+            {
+                if (auto* child = dynamic_cast<RepositoryTreeItem*>(getSubItem(i)))
+                {
+                    if (child->getType() == ItemType::Package && child->getPackage())
+                    {
+                        if (repositoryManager->isPackageInstalled(*child->getPackage()))
+                        {
+                            anyInstalled = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (anyInstalled)
+            {
+                g.setColour(juce::Colours::green);
+                g.setFont(juce::Font(11.0f));
+                g.drawText("[INSTALLED]", width - 100, 0, 90, height, juce::Justification::centredRight, true);
+            }
+        }
+    }
+
+    void itemSelectionChanged(bool isNowSelected) override
+    {
+        TreeViewItem::itemSelectionChanged(isNowSelected);
+        if (repositoryWindow)
+            repositoryWindow->updateButtonsForSelection();
+    }
+
+    juce::String getName() const
+    {
+        return itemName;
+    }
+
+    const RepositoryManager::JSFXPackage* getPackage() const
+    {
+        return package;
+    }
+
+    ItemType getType() const
+    {
+        return type;
+    }
+
+    void setRepositoryManager(RepositoryManager* mgr)
+    {
+        repositoryManager = mgr;
+    }
+
+    void setRepositoryWindow(RepositoryWindow* window)
+    {
+        repositoryWindow = window;
+    }
+
+private:
+    juce::String itemName;
+    ItemType type;
+    const RepositoryManager::JSFXPackage* package;
+    RepositoryManager* repositoryManager = nullptr;
+    RepositoryWindow* repositoryWindow = nullptr;
+};
 
 RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     : repositoryManager(repoManager)
+    , progressBar(progressValue)
 {
     // Setup repository controls
-    addAndMakeVisible(repositoriesLabel);
-    repositoriesLabel.setText("JSFX Repositories", juce::dontSendNotification);
-    repositoriesLabel.setFont(juce::FontOptions(16.0f).withStyle("Bold"));
-
     addAndMakeVisible(manageReposButton);
     manageReposButton.setButtonText("Manage Repositories...");
     manageReposButton.onClick = [this]() { showRepositoryEditor(); };
@@ -16,17 +130,10 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     refreshButton.setButtonText("Refresh");
     refreshButton.onClick = [this]() { refreshRepositoryList(); };
 
-    // Setup package list
-    addAndMakeVisible(packagesLabel);
-    packagesLabel.setText("Available JSFX", juce::dontSendNotification);
-    packagesLabel.setFont(juce::FontOptions(16.0f).withStyle("Bold"));
-
-    addAndMakeVisible(packageList);
-    packageList.setModel(this);
-    packageList.setColour(juce::ListBox::backgroundColourId, juce::Colours::white);
-    packageList.setColour(juce::ListBox::outlineColourId, juce::Colours::grey);
-    packageList.setOutlineThickness(1);
-    packageList.setRowHeight(60);
+    // Setup tree view
+    addAndMakeVisible(repoTree);
+    repoTree.setMultiSelectEnabled(true);
+    repoTree.setRootItemVisible(false); // Hide the root "Repositories" item
 
     addAndMakeVisible(installButton);
     installButton.setButtonText("Install Selected");
@@ -42,6 +149,10 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     statusLabel.setText("", juce::dontSendNotification);
     statusLabel.setJustificationType(juce::Justification::centred);
 
+    addAndMakeVisible(progressBar);
+    progressBar.setPercentageDisplay(true);
+    progressBar.setVisible(false); // Initially hidden
+
     setSize(600, 600); // Narrower width to fit controls
 
     // Start loading repositories
@@ -51,7 +162,7 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
 RepositoryWindow::~RepositoryWindow()
 {
     stopTimer();
-    packageList.setModel(nullptr);
+    repoTree.setRootItem(nullptr);
 }
 
 void RepositoryWindow::visibilityChanged()
@@ -60,7 +171,7 @@ void RepositoryWindow::visibilityChanged()
     if (isVisible() && !allPackages.empty())
     {
         DBG("RepositoryWindow became visible - refreshing installation status");
-        packageList.repaint();
+        repoTree.repaint();
     }
 }
 
@@ -75,21 +186,20 @@ void RepositoryWindow::resized()
 
     // Top controls
     auto topBar = bounds.removeFromTop(30);
-    repositoriesLabel.setBounds(topBar.removeFromLeft(200));
-    topBar.removeFromLeft(10);
-    manageReposButton.setBounds(topBar.removeFromLeft(150));
+    manageReposButton.setBounds(topBar.removeFromLeft(170));
     topBar.removeFromLeft(5);
     refreshButton.setBounds(topBar.removeFromLeft(80));
 
     bounds.removeFromTop(10);
 
-    // Package list label
-    packagesLabel.setBounds(bounds.removeFromTop(25));
-    bounds.removeFromTop(5);
-
     // Status at bottom
     auto statusBar = bounds.removeFromBottom(25);
     statusLabel.setBounds(statusBar);
+    bounds.removeFromBottom(5);
+
+    // Progress bar above status
+    auto progressBarBounds = bounds.removeFromBottom(20);
+    progressBar.setBounds(progressBarBounds);
     bounds.removeFromBottom(5);
 
     // Install button
@@ -99,122 +209,13 @@ void RepositoryWindow::resized()
     installButton.setBounds(buttonBar.removeFromRight(150));
     bounds.removeFromBottom(10);
 
-    // Package list
-    packageList.setBounds(bounds);
+    // Tree
+    repoTree.setBounds(bounds);
 }
 
-int RepositoryWindow::getNumRows()
-{
-    return static_cast<int>(allPackages.size());
-}
+// (ListBox painting replaced by TreeView items)
 
-void RepositoryWindow::paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected)
-{
-    if (rowNumber < 0 || rowNumber >= static_cast<int>(allPackages.size()))
-        return;
-
-    const auto& package = allPackages[rowNumber];
-
-    // Background
-    if (rowIsSelected)
-        g.fillAll(juce::Colours::lightblue);
-    else if (rowNumber % 2 == 0)
-        g.fillAll(juce::Colours::white);
-    else
-        g.fillAll(juce::Colour(0xfff8f8f8));
-
-    // Border
-    g.setColour(juce::Colours::lightgrey);
-    g.drawLine(0, height - 1, width, height - 1);
-
-    auto bounds = juce::Rectangle<int>(5, 0, width - 10, height);
-
-    // Package name
-    g.setColour(juce::Colours::black);
-    g.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
-    auto nameArea = bounds.removeFromTop(18);
-    g.drawText(package.name, nameArea, juce::Justification::left);
-
-    // Category and author
-    g.setFont(juce::FontOptions(11.0f));
-    g.setColour(juce::Colours::darkgrey);
-    auto metaArea = bounds.removeFromTop(15);
-    juce::String meta = package.category + " • " + package.author + " • v" + package.version;
-    g.drawText(meta, metaArea, juce::Justification::left);
-
-    // Description
-    g.setFont(juce::FontOptions(11.0f));
-    g.setColour(juce::Colours::darkgrey);
-    auto descArea = bounds.removeFromTop(25);
-    auto description = package.description.substring(0, 100);
-    if (package.description.length() > 100)
-        description += "...";
-    g.drawText(description, descArea, juce::Justification::topLeft, true);
-
-    // Installation status
-    if (repositoryManager.isPackageInstalled(package))
-    {
-        g.setColour(juce::Colours::green);
-        g.setFont(juce::FontOptions(10.0f).withStyle("Bold"));
-        g.drawText("INSTALLED", bounds, juce::Justification::bottomRight);
-    }
-}
-
-void RepositoryWindow::listBoxItemClicked(int row, const juce::MouseEvent&)
-{
-    // If clicking the same item again, deselect it
-    if (selectedPackageIndex == row)
-    {
-        selectedPackageIndex = -1;
-        packageList.deselectAllRows();
-
-        // When nothing selected, always show Install All
-        installButton.setButtonText("Install All");
-        installButton.setEnabled(!allPackages.empty());
-        updateInstallAllButtonText();
-        return;
-    }
-
-    selectedPackageIndex = row;
-
-    if (row >= 0 && row < static_cast<int>(allPackages.size()))
-    {
-        const auto& package = allPackages[row];
-        bool isInstalled = repositoryManager.isPackageInstalled(package);
-
-        // Only show Uninstall All when an installed package is selected
-        installButton.setButtonText(isInstalled ? "Uninstall All" : "Install All");
-        installButton.setEnabled(true);
-    }
-    else
-    {
-        installButton.setEnabled(false);
-    }
-
-    // Update Install All button text based on whether all packages are installed
-    updateInstallAllButtonText();
-}
-
-void RepositoryWindow::listBoxItemDoubleClicked(int row, const juce::MouseEvent&)
-{
-    if (row < 0 || row >= static_cast<int>(allPackages.size()))
-        return;
-
-    selectedPackageIndex = row;
-    const auto& package = allPackages[row];
-
-    // Double-click on installed package = uninstall, otherwise install
-    if (repositoryManager.isPackageInstalled(package))
-    {
-        installButton.setButtonText("Uninstall Selected");
-        uninstallSelectedPackage();
-    }
-    else
-    {
-        installButton.setButtonText("Install Selected");
-        installSelectedPackage();
-    }
-}
+// ListBox-related methods removed; selection is handled via TreeView
 
 void RepositoryWindow::timerCallback()
 {
@@ -237,10 +238,8 @@ void RepositoryWindow::timerCallback()
 
 void RepositoryWindow::refreshRepositoryList()
 {
-    // Deselect any selected item and show Install All
-    selectedPackageIndex = -1;
-    packageList.deselectAllRows();
-    installButton.setButtonText("Install All");
+    // Clear any selection and reset button labels
+    installButton.setButtonText("Install Selected");
     installButton.setEnabled(false); // Will be enabled after packages load
 
     isLoading = true;
@@ -248,9 +247,12 @@ void RepositoryWindow::refreshRepositoryList()
     refreshButton.setEnabled(false);
     startTimer(500);
 
+    // Clear previous tree
+    repoTree.setRootItem(nullptr);
+    rootItem.reset();
+
     repositories.clear();
     allPackages.clear();
-    packageList.updateContent();
 
     auto urls = repositoryManager.getRepositoryUrls();
     if (urls.isEmpty())
@@ -268,6 +270,9 @@ void RepositoryWindow::refreshRepositoryList()
     // Fetch all repositories
     auto remaining = std::make_shared<std::atomic<int>>(urls.size());
 
+    // Reserve space to prevent reallocation invalidating pointers
+    repositories.reserve(urls.size());
+
     for (const auto& url : urls)
     {
         repositoryManager.fetchRepository(
@@ -276,13 +281,104 @@ void RepositoryWindow::refreshRepositoryList()
             {
                 if (error.isEmpty() && repo.isValid)
                 {
+                    // Store the repository first
                     repositories.push_back(repo);
+                    auto& storedRepo = repositories.back();
 
-                    // Add all packages from this repository
-                    for (const auto& package : repo.packages)
-                        allPackages.push_back(package);
+                    // Build tree: index-name -> categories -> packages
+                    if (!rootItem)
+                    {
+                        rootItem = std::make_unique<RepositoryTreeItem>(
+                            "Repositories",
+                            RepositoryTreeItem::ItemType::Index,
+                            nullptr,
+                            this
+                        );
+                        rootItem->setRepositoryManager(&repositoryManager);
+                    }
 
-                    packageList.updateContent();
+                    auto* indexItem =
+                        new RepositoryTreeItem(storedRepo.name, RepositoryTreeItem::ItemType::Index, nullptr, this);
+                    indexItem->setRepositoryManager(&repositoryManager);
+                    rootItem->addSubItem(indexItem);
+
+                    for (size_t pkgIdx = 0; pkgIdx < storedRepo.packages.size(); ++pkgIdx)
+                    {
+                        const auto& pkg = storedRepo.packages[pkgIdx];
+                        // Get stable pointer from the stored repository
+                        const auto* pkgPtr = &storedRepo.packages[pkgIdx];
+
+                        // Store in flat list for some operations
+                        allPackages.push_back(pkg);
+
+                        // find or create category
+                        RepositoryTreeItem* catItem = nullptr;
+                        for (int i = 0; i < indexItem->getNumSubItems(); ++i)
+                        {
+                            if (auto* c = dynamic_cast<RepositoryTreeItem*>(indexItem->getSubItem(i)))
+                            {
+                                if (c->getName() == pkg.category)
+                                {
+                                    catItem = c;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!catItem)
+                        {
+                            catItem = new RepositoryTreeItem(
+                                pkg.category,
+                                RepositoryTreeItem::ItemType::Category,
+                                nullptr, // Categories don't need a package pointer
+                                this
+                            );
+                            catItem->setRepositoryManager(&repositoryManager);
+                            indexItem->addSubItem(catItem);
+                        }
+                        // If category already exists, just use it - each package will add its own entry
+
+                        // Add package name as metadata item
+                        auto* pkgNameItem =
+                            new RepositoryTreeItem(pkg.name, RepositoryTreeItem::ItemType::Package, pkgPtr, this);
+                        pkgNameItem->setRepositoryManager(&repositoryManager);
+                        catItem->addSubItem(pkgNameItem);
+
+                        // Add other metadata sub-items under the package name
+                        if (!pkg.author.isEmpty())
+                        {
+                            auto* authorItem = new RepositoryTreeItem(
+                                "Author: " + pkg.author,
+                                RepositoryTreeItem::ItemType::Metadata,
+                                nullptr,
+                                this
+                            );
+                            catItem->addSubItem(authorItem);
+                        }
+                        if (!pkg.version.isEmpty())
+                        {
+                            auto* versionItem = new RepositoryTreeItem(
+                                "Version: " + pkg.version,
+                                RepositoryTreeItem::ItemType::Metadata,
+                                nullptr,
+                                this
+                            );
+                            catItem->addSubItem(versionItem);
+                        }
+                        if (!pkg.description.isEmpty())
+                        {
+                            auto* descItem = new RepositoryTreeItem(
+                                "Description: " + pkg.description,
+                                RepositoryTreeItem::ItemType::Metadata,
+                                nullptr,
+                                this
+                            );
+                            catItem->addSubItem(descItem);
+                        }
+                    }
+
+                    // set root to tree
+                    repoTree.setRootItem(rootItem.get());
                 }
 
                 int count = --(*remaining);
@@ -300,15 +396,15 @@ void RepositoryWindow::refreshRepositoryList()
                     refreshButton.setEnabled(true);
                     installAllButton.setEnabled(!allPackages.empty());
 
-                    // Enable Install All button when nothing selected
-                    if (selectedPackageIndex < 0 && !allPackages.empty())
+                    // Enable Install Selected button when nothing selected
+                    if (!allPackages.empty())
                     {
-                        installButton.setButtonText("Install All");
+                        installButton.setButtonText("Install Selected");
                         installButton.setEnabled(true);
                     }
 
                     // Force repaint to update installation status badges
-                    packageList.repaint();
+                    repoTree.repaint();
                 }
             }
         );
@@ -317,91 +413,142 @@ void RepositoryWindow::refreshRepositoryList()
 
 void RepositoryWindow::refreshPackageList()
 {
-    packageList.updateContent();
-    packageList.repaint();        // Force repaint to update INSTALLED badges
-    updateInstallAllButtonText(); // Update button text based on installation status
+    repoTree.repaint();          // Force repaint to update INSTALLED badges
+    updateButtonsForSelection(); // Update button text based on installation status
+}
+
+void RepositoryWindow::collectSelectedRepoItems(juce::Array<RepositoryTreeItem*>& items, RepositoryTreeItem* item)
+{
+    if (item == nullptr)
+        return;
+
+    if (item->isSelected())
+        items.add(item);
+
+    for (int i = 0; i < item->getNumSubItems(); ++i)
+        if (auto* sub = dynamic_cast<RepositoryTreeItem*>(item->getSubItem(i)))
+            collectSelectedRepoItems(items, sub);
+}
+
+juce::Array<RepositoryTreeItem*> RepositoryWindow::getSelectedRepoItems()
+{
+    juce::Array<RepositoryTreeItem*> items;
+    if (rootItem)
+        collectSelectedRepoItems(items, rootItem.get());
+    return items;
 }
 
 void RepositoryWindow::installSelectedPackage()
 {
-    // If nothing selected, trigger install/uninstall all
-    if (selectedPackageIndex < 0)
-    {
-        if (installButton.getButtonText() == "Uninstall All")
-            uninstallAllPackages();
-        else
-            installAllPackages();
-        return;
-    }
-
-    if (selectedPackageIndex >= static_cast<int>(allPackages.size()))
-        return;
-
-    const auto& package = allPackages[selectedPackageIndex];
-
-    // Check if package is installed and button says "Uninstall"
-    if (repositoryManager.isPackageInstalled(package) && installButton.getButtonText() == "Uninstall Selected")
+    // Check if button says "Uninstall Selected"
+    if (installButton.getButtonText().startsWith("Uninstall"))
     {
         uninstallSelectedPackage();
         return;
     }
 
-    // Check if already installed
-    if (repositoryManager.isPackageInstalled(package))
+    // If no selection, treat as Install All
+    auto selected = getSelectedRepoItems();
+    if (selected.isEmpty())
     {
-        auto* topLevel = getTopLevelComponent();
-        auto choice = juce::NativeMessageBox::showYesNoBox(
-            juce::MessageBoxIconType::QuestionIcon,
-            "Package Already Installed",
-            package.name + " is already installed. Do you want to reinstall it?",
-            topLevel,
-            nullptr
-        );
-
-        if (choice == 0) // No
-            return;
+        installAllPackages();
+        return;
     }
 
-    statusLabel.setText("Installing " + package.name + "...", juce::dontSendNotification);
-    installButton.setEnabled(false);
-
-    repositoryManager.installPackage(
-        package,
-        [this, package](bool success, juce::String message)
+    // Helper lambda to collect packages recursively from a tree item
+    std::function<void(RepositoryTreeItem*, std::vector<RepositoryManager::JSFXPackage>&)> collectPackages;
+    collectPackages = [&](RepositoryTreeItem* item, std::vector<RepositoryManager::JSFXPackage>& packages)
+    {
+        if (item->getType() == RepositoryTreeItem::ItemType::Package)
         {
-            statusLabel.setText(message, juce::dontSendNotification);
-            installButton.setEnabled(true);
-            packageList.repaintRow(selectedPackageIndex);
-
-            // Update button text after installation
-            if (success)
-            {
-                installButton.setButtonText("Uninstall Selected");
-                updateInstallAllButtonText();
-            }
-
-            if (success)
-            {
-                juce::NativeMessageBox::showMessageBoxAsync(
-                    juce::MessageBoxIconType::InfoIcon,
-                    "Installation Complete",
-                    message + "\n\nYou can now load this JSFX from the file browser.",
-                    this,
-                    nullptr
-                );
-            }
-            else
-            {
-                juce::NativeMessageBox::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon,
-                    "Installation Failed",
-                    message,
-                    this,
-                    nullptr
-                );
-            }
+            if (auto* pkg = item->getPackage())
+                packages.push_back(*pkg);
         }
-    );
+        else if (item->getType() != RepositoryTreeItem::ItemType::Metadata)
+        {
+            // Recurse into children (skip metadata items)
+            for (int i = 0; i < item->getNumSubItems(); ++i)
+                if (auto* sub = dynamic_cast<RepositoryTreeItem*>(item->getSubItem(i)))
+                    collectPackages(sub, packages);
+        }
+    };
+
+    // Build list of packages to install from selection
+    std::vector<RepositoryManager::JSFXPackage> toInstall;
+    for (auto* item : selected)
+        collectPackages(item, toInstall);
+
+    if (toInstall.empty())
+    {
+        juce::NativeMessageBox::showMessageBoxAsync(
+            juce::MessageBoxIconType::InfoIcon,
+            "Install",
+            "No packages found in selection.",
+            this,
+            nullptr
+        );
+        return;
+    }
+
+    // Install packages sequentially (reuse existing proceedWithInstallation pattern)
+    auto packagesToInstall = std::make_shared<std::vector<RepositoryManager::JSFXPackage>>(toInstall);
+    auto totalToInstall = packagesToInstall->size();
+    auto installed = std::make_shared<std::atomic<int>>(0);
+    auto failed = std::make_shared<std::atomic<int>>(0);
+
+    installButton.setEnabled(false);
+    installAllButton.setEnabled(false);
+    refreshButton.setEnabled(false);
+
+    // Reset and show progress bar
+    progressValue = 0.0;
+    progressBar.setVisible(true);
+
+    for (size_t i = 0; i < packagesToInstall->size(); ++i)
+    {
+        const auto& package = (*packagesToInstall)[i];
+        repositoryManager.installPackage(
+            package,
+            [this, package, installed, failed, totalToInstall, i](bool success, juce::String message)
+            {
+                if (success)
+                    (*installed)++;
+                else
+                    (*failed)++;
+                int completed = (*installed) + (*failed);
+
+                // Update progress bar
+                progressValue = static_cast<double>(completed) / static_cast<double>(totalToInstall);
+
+                statusLabel.setText(
+                    "Installing... " + juce::String(completed) + "/" + juce::String(totalToInstall),
+                    juce::dontSendNotification
+                );
+
+                if (completed >= static_cast<int>(totalToInstall))
+                {
+                    // Hide progress bar
+                    progressValue = 0.0;
+                    progressBar.setVisible(false);
+
+                    statusLabel.setText(
+                        "Installation complete: "
+                            + juce::String(*installed)
+                            + " installed, "
+                            + juce::String(*failed)
+                            + " failed",
+                        juce::dontSendNotification
+                    );
+
+                    installButton.setEnabled(true);
+                    installAllButton.setEnabled(true);
+                    refreshButton.setEnabled(true);
+                    repoTree.repaint();
+                    updateButtonsForSelection();
+                }
+            }
+        );
+    }
 }
 
 void RepositoryWindow::installAllPackages()
@@ -475,6 +622,10 @@ void RepositoryWindow::proceedWithInstallation()
     installAllButton.setEnabled(false);
     refreshButton.setEnabled(false);
 
+    // Reset and show progress bar
+    progressValue = 0.0;
+    progressBar.setVisible(true);
+
     statusLabel.setText("Preparing to install " + juce::String(toInstall) + " packages...", juce::dontSendNotification);
 
     auto totalToInstall = packagesToInstall->size();
@@ -526,6 +677,9 @@ void RepositoryWindow::proceedWithInstallation()
                     << *failed
                     << ")");
 
+                // Update progress bar
+                progressValue = static_cast<double>(completed) / static_cast<double>(totalToInstall);
+
                 statusLabel.setText(
                     "Installing... " + juce::String(completed) + "/" + juce::String(totalToInstall),
                     juce::dontSendNotification
@@ -534,6 +688,10 @@ void RepositoryWindow::proceedWithInstallation()
                 if (completed >= static_cast<int>(totalToInstall))
                 {
                     DBG("All installations complete. Installed: " << *installed << ", Failed: " << *failed);
+
+                    // Hide progress bar
+                    progressValue = 0.0;
+                    progressBar.setVisible(false);
 
                     // All done
                     juce::String resultMessage =
@@ -551,9 +709,9 @@ void RepositoryWindow::proceedWithInstallation()
                     installButton.setEnabled(true);
                     installAllButton.setEnabled(true);
                     refreshButton.setEnabled(true);
-                    packageList.updateContent();
-                    packageList.repaint();        // Update INSTALLED badges
-                    updateInstallAllButtonText(); // Update button text
+                    // Update tree and buttons
+                    repoTree.repaint();          // Update INSTALLED badges
+                    updateButtonsForSelection(); // Update button text
 
                     juce::NativeMessageBox::showMessageBoxAsync(
                         *failed > 0 ? juce::MessageBoxIconType::WarningIcon : juce::MessageBoxIconType::InfoIcon,
@@ -572,64 +730,83 @@ void RepositoryWindow::proceedWithInstallation()
 
 void RepositoryWindow::uninstallSelectedPackage()
 {
-    if (selectedPackageIndex < 0 || selectedPackageIndex >= static_cast<int>(allPackages.size()))
+    auto selected = getSelectedRepoItems();
+    if (selected.isEmpty())
+    {
+        juce::NativeMessageBox::showMessageBoxAsync(
+            juce::MessageBoxIconType::InfoIcon,
+            "Uninstall",
+            "Please select packages to uninstall.",
+            this,
+            nullptr
+        );
         return;
+    }
 
-    const auto& package = allPackages[selectedPackageIndex];
-    auto installDir = repositoryManager.getPackageInstallDirectory(package);
-
-    // Confirm uninstallation
-    auto* topLevel = getTopLevelComponent();
+    juce::String message = "Uninstall selected packages?\n\n";
+    for (auto* it : selected)
+        if (it->getType() == RepositoryTreeItem::ItemType::Package)
+            message += it->getName() + "\n";
 
     juce::MessageBoxOptions options = juce::MessageBoxOptions()
                                           .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                                          .withTitle("Uninstall Package")
-                                          .withMessage(
-                                              "Are you sure you want to uninstall "
-                                              + package.name
-                                              + "?\n\nThis will delete:\n"
-                                              + installDir.getFullPathName()
-                                          )
+                                          .withTitle("Uninstall Packages")
+                                          .withMessage(message)
                                           .withButton("OK")
                                           .withButton("Cancel")
-                                          .withAssociatedComponent(topLevel);
+                                          .withAssociatedComponent(getTopLevelComponent());
 
     juce::NativeMessageBox::showAsync(
         options,
-        [this, package, installDir](int result)
+        [this, selected](int result)
         {
-            if (result != 0) // Not OK button (first button = 0)
+            if (result != 0)
                 return;
 
-            // Delete the installation directory
-            if (installDir.exists() && installDir.deleteRecursively())
+            // Helper to collect packages recursively
+            std::function<void(RepositoryTreeItem*, std::vector<const RepositoryManager::JSFXPackage*>&)>
+                collectPackages;
+            collectPackages =
+                [&](RepositoryTreeItem* item, std::vector<const RepositoryManager::JSFXPackage*>& packages)
             {
-                statusLabel.setText("Uninstalled " + package.name, juce::dontSendNotification);
-                packageList.repaintRow(selectedPackageIndex);
+                if (item->getType() == RepositoryTreeItem::ItemType::Package)
+                {
+                    if (auto* pkg = item->getPackage())
+                        packages.push_back(pkg);
+                }
+                else if (item->getType() != RepositoryTreeItem::ItemType::Metadata)
+                {
+                    // Recurse (skip metadata items)
+                    for (int i = 0; i < item->getNumSubItems(); ++i)
+                        if (auto* sub = dynamic_cast<RepositoryTreeItem*>(item->getSubItem(i)))
+                            collectPackages(sub, packages);
+                }
+            };
 
-                // Update button text
-                installButton.setButtonText("Install Selected");
-                updateInstallAllButtonText();
+            std::vector<const RepositoryManager::JSFXPackage*> toUninstall;
+            for (auto* it : selected)
+                collectPackages(it, toUninstall);
 
-                juce::NativeMessageBox::showMessageBoxAsync(
-                    juce::MessageBoxIconType::InfoIcon,
-                    "Uninstallation Complete",
-                    package.name + " has been removed.",
-                    this,
-                    nullptr
-                );
-            }
-            else
+            int uninstalled = 0, failed = 0;
+            for (auto* pkg : toUninstall)
             {
-                statusLabel.setText("Failed to uninstall " + package.name, juce::dontSendNotification);
-                juce::NativeMessageBox::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon,
-                    "Uninstallation Failed",
-                    "Could not delete the installation directory:\n" + installDir.getFullPathName(),
-                    this,
-                    nullptr
-                );
+                auto installDir = repositoryManager.getPackageInstallDirectory(*pkg);
+                if (installDir.exists() && installDir.deleteRecursively())
+                    uninstalled++;
+                else
+                    failed++;
             }
+
+            repoTree.repaint();
+            updateButtonsForSelection();
+
+            juce::NativeMessageBox::showMessageBoxAsync(
+                failed > 0 ? juce::MessageBoxIconType::WarningIcon : juce::MessageBoxIconType::InfoIcon,
+                "Uninstallation Complete",
+                "Uninstalled " + juce::String(uninstalled) + " packages.\nFailed: " + juce::String(failed),
+                this,
+                nullptr
+            );
         }
     );
 }
@@ -689,12 +866,8 @@ void RepositoryWindow::uninstallAllPackages()
                 }
             }
 
-            packageList.repaint();
-            updateInstallAllButtonText();
-
-            // Update selected button if needed
-            if (selectedPackageIndex >= 0)
-                installButton.setButtonText("Install Selected");
+            repoTree.repaint();
+            updateButtonsForSelection();
 
             juce::String message =
                 "Uninstalled " + juce::String(uninstalled) + " package" + (uninstalled == 1 ? "" : "s");
@@ -729,10 +902,68 @@ void RepositoryWindow::updateInstallAllButtonText()
 
     if (installedCount == static_cast<int>(allPackages.size()))
         installAllButton.setButtonText("Uninstall All");
-    else if (installedCount > 0)
-        installAllButton.setButtonText("Install/Update All");
     else
         installAllButton.setButtonText("Install All");
+}
+
+void RepositoryWindow::updateButtonsForSelection()
+{
+    auto selected = getSelectedRepoItems();
+
+    if (selected.isEmpty())
+    {
+        // No selection - default to Install/Uninstall All based on overall state
+        installButton.setButtonText("Install Selected");
+        installButton.setEnabled(false);
+        updateInstallAllButtonText();
+        return;
+    }
+
+    // Check if any selected item (or its children) represents an installed package
+    bool hasInstalledPackage = false;
+
+    std::function<void(RepositoryTreeItem*)> checkInstalled;
+    checkInstalled = [&](RepositoryTreeItem* item)
+    {
+        if (item->getType() == RepositoryTreeItem::ItemType::Category
+            || item->getType() == RepositoryTreeItem::ItemType::Package)
+        {
+            if (auto* pkg = item->getPackage())
+            {
+                if (repositoryManager.isPackageInstalled(*pkg))
+                {
+                    hasInstalledPackage = true;
+                    return;
+                }
+            }
+        }
+
+        // Check children for packages
+        if (!hasInstalledPackage)
+        {
+            for (int i = 0; i < item->getNumSubItems(); ++i)
+                if (auto* sub = dynamic_cast<RepositoryTreeItem*>(item->getSubItem(i)))
+                    checkInstalled(sub);
+        }
+    };
+
+    for (auto* item : selected)
+        if (!hasInstalledPackage)
+            checkInstalled(item);
+
+    // Update buttons based on whether selection contains installed packages
+    if (hasInstalledPackage)
+    {
+        installButton.setButtonText("Uninstall Selected");
+        installAllButton.setButtonText("Uninstall All");
+    }
+    else
+    {
+        installButton.setButtonText("Install Selected");
+        installAllButton.setButtonText("Install All");
+    }
+
+    installButton.setEnabled(true);
 }
 
 void RepositoryWindow::showRepositoryEditor()
@@ -766,13 +997,18 @@ RepositoryEditorDialog::RepositoryEditorDialog(RepositoryManager& repoManager, s
     , closeCallback(onClose)
 {
     addAndMakeVisible(instructionsLabel);
+    instructionsLabel.setMultiLine(true);
+    instructionsLabel.setReadOnly(true);
+    instructionsLabel.setScrollbarsShown(false);
+    instructionsLabel.setCaretVisible(false);
+    instructionsLabel.setPopupMenuEnabled(true);
     instructionsLabel.setText(
         "Enter ReaPack compatible JSFX repository URLs, one per line:\n"
-        "Example: https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml",
-        juce::dontSendNotification
+        "Example: https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml"
     );
-    instructionsLabel.setJustificationType(juce::Justification::topLeft);
     instructionsLabel.setFont(juce::FontOptions(12.0f));
+    instructionsLabel.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    instructionsLabel.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
 
     addAndMakeVisible(repositoryEditor);
     repositoryEditor.setMultiLine(true);
