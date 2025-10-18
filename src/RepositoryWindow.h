@@ -2,9 +2,7 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "RepositoryManager.h"
-
-// Forward declaration
-class RepositoryTreeItem;
+#include "RepositoryTreeView.h"
 
 /**
  * @brief Window for managing JSFX repositories
@@ -17,7 +15,6 @@ class RepositoryTreeItem;
 class RepositoryWindow
     : public juce::Component
     , private juce::Timer
-    , private juce::TextEditor::Listener
 {
 public:
     explicit RepositoryWindow(RepositoryManager& repoManager);
@@ -27,20 +24,11 @@ public:
     void resized() override;
     void visibilityChanged() override;
 
-    // TextEditor::Listener
-    void textEditorTextChanged(juce::TextEditor& editor) override;
-    void textEditorReturnKeyPressed(juce::TextEditor& editor) override;
-    bool keyPressed(const juce::KeyPress& key) override;
-
 private:
-    // (TreeView-based UI; ListBoxModel methods removed)
-
     // Timer for refreshing repository list
     void timerCallback() override;
 
     void refreshRepositoryList();
-    void refreshPackageList();
-    void filterTreeView();
     void checkForVersionMismatches();
     void installSelectedPackage();
     void installAllPackages();
@@ -49,42 +37,21 @@ private:
     void proceedWithInstallation();
     void showRepositoryEditor();
     void updateInstallAllButtonText();
-
-public:
     void updateButtonsForSelection();
-    juce::Array<RepositoryTreeItem*> getSelectedRepoItems();
 
-    // Multi-item operations (all operations work on selections)
-    void installFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
-    void uninstallFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
-    void pinAllFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
-    void unpinAllFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
-    void ignoreAllFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
-    void unignoreAllFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
-
-    // Legacy single-item operations (now wrappers for multi-item operations)
+    // Package operations (delegated to RepositoryTreeView)
     void installPackage(const RepositoryManager::JSFXPackage& package);
     void uninstallPackage(const RepositoryManager::JSFXPackage& package);
-    void installFromTreeItem(RepositoryTreeItem* item);
-    void uninstallFromTreeItem(RepositoryTreeItem* item);
-    void togglePackagePinned(const RepositoryManager::JSFXPackage& package);
-    void togglePackageIgnored(const RepositoryManager::JSFXPackage& package);
-    void pinAllFromTreeItem(RepositoryTreeItem* item);
-    void unpinAllFromTreeItem(RepositoryTreeItem* item);
-    void ignoreAllFromTreeItem(RepositoryTreeItem* item);
-    void unignoreAllFromTreeItem(RepositoryTreeItem* item);
 
 private:
     RepositoryManager& repositoryManager;
 
     // UI Components
-    juce::Label searchLabel;
-    juce::TextEditor searchField;
     juce::TextButton manageReposButton;
     juce::TextButton refreshButton;
 
-    juce::TreeView repoTree;
-    std::unique_ptr<class RepositoryTreeItem> rootItem;
+    RepositoryTreeView repositoryTreeView;
+
     juce::TextButton installButton;
     juce::TextButton installAllButton;
     juce::TextButton cancelButton;
@@ -93,12 +60,8 @@ private:
     // Data
     std::vector<RepositoryManager::Repository> repositories;
     std::vector<RepositoryManager::JSFXPackage> allPackages;
-    juce::String currentSearchTerm;
     bool isLoading = false;
     bool isInstalling = false;
-
-    // Helper to collect selected tree items
-    void collectSelectedRepoItems(juce::Array<RepositoryTreeItem*>& items, RepositoryTreeItem* item);
 
     // Helper methods for refactored operations
     struct PackageCollectionResult
