@@ -1,6 +1,7 @@
 #include "RepositoryManager.h"
 #include "PluginProcessor.h"
 #include "PresetManager.h"
+#include "FileIO.h"
 
 RepositoryManager::RepositoryManager(AudioPluginAudioProcessor& proc)
     : processor(proc)
@@ -20,9 +21,9 @@ void RepositoryManager::loadRepositories()
     // Load from ApplicationProperties stored in PresetRootDirectory
     auto propsFile = getDataDirectory().getParentDirectory().getChildFile("repository_list.xml");
 
-    if (propsFile.existsAsFile())
+    if (FileIO::exists(propsFile) && !FileIO::isDirectory(propsFile))
     {
-        auto xml = juce::parseXML(propsFile);
+        auto xml = FileIO::readXml(propsFile);
         if (xml && xml->hasTagName("RepositoryList"))
         {
             repositoryUrls.clear();
@@ -47,8 +48,7 @@ void RepositoryManager::saveRepositories()
         repoElement->setAttribute("url", url);
     }
 
-    propsFile.getParentDirectory().createDirectory();
-    root.writeTo(propsFile);
+    FileIO::writeXml(propsFile, root);
 }
 
 juce::StringArray RepositoryManager::getRepositoryUrls() const
@@ -188,39 +188,89 @@ void RepositoryManager::installPackage(const JSFXPackage& package, std::function
         [this, package, callback]()
         {
             auto installDir = getPackageInstallDirectory(package);
-
             DBG("  Install directory: " << installDir.getFullPathName());
 
-            // Create installation directory
-            auto result = installDir.createDirectory();
-            if (!result.wasOk())
+            juce::String errorMsg;
+
+            // Check for cancellation
+            if (shouldCancelInstallation.load())
             {
-                juce::String error = "Failed to create directory: " + result.getErrorMessage();
+                juce::MessageManager::callAsync([callback]() { callback(false, "Installation cancelled"); });
+                return;
+            }
+
+            // Create installation directory
+            if (!FileIO::createDirectory(installDir))
+            {
+                juce::String error = "Failed to create directory: " + installDir.getFullPathName();
                 juce::MessageManager::callAsync([callback, error]() { callback(false, error); });
                 return;
             }
 
-            juce::String errorMsg;
-
-            // Download main file
-            auto mainFile = installDir.getChildFile(package.name);
-            if (!downloadFile(package.mainFileUrl, mainFile, errorMsg))
+            // Download and write main file directly (serial operation)
             {
-                juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
-                return;
-            }
-
-            // Download dependencies
-            for (const auto& [relativePath, url] : package.dependencies)
-            {
-                auto depFile = installDir.getChildFile(relativePath);
-                depFile.getParentDirectory().createDirectory();
-
-                if (!downloadFile(url, depFile, errorMsg))
+                if (shouldCancelInstallation.load())
                 {
+                    juce::MessageManager::callAsync([callback]() { callback(false, "Installation cancelled"); });
+                    return;
+                }
+
+                juce::URL mainUrl(package.mainFileUrl);
+                auto mainStream =
+                    mainUrl.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress));
+                if (mainStream == nullptr)
+                {
+                    errorMsg = "Failed to download main file from: " + package.mainFileUrl;
                     juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
                     return;
                 }
+
+                auto content = mainStream->readEntireStreamAsString();
+                auto destination = installDir.getChildFile(package.name);
+
+                if (!FileIO::writeFile(destination, content))
+                {
+                    errorMsg = "Failed to write file: " + destination.getFullPathName();
+                    juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
+                    return;
+                }
+            }
+
+            // Download and write dependencies serially
+            for (const auto& [relativePath, url] : package.dependencies)
+            {
+                if (shouldCancelInstallation.load())
+                {
+                    juce::MessageManager::callAsync([callback]() { callback(false, "Installation cancelled"); });
+                    return;
+                }
+
+                juce::URL depUrl(url);
+                auto depStream =
+                    depUrl.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress));
+                if (depStream == nullptr)
+                {
+                    errorMsg = "Failed to download dependency from: " + url;
+                    juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
+                    return;
+                }
+
+                auto content = depStream->readEntireStreamAsString();
+                auto destination = installDir.getChildFile(relativePath);
+
+                if (!FileIO::writeFile(destination, content))
+                {
+                    errorMsg = "Failed to write file: " + destination.getFullPathName();
+                    juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
+                    return;
+                }
+            }
+
+            // Final cancellation check before updating state
+            if (shouldCancelInstallation.load())
+            {
+                juce::MessageManager::callAsync([callback]() { callback(false, "Installation cancelled"); });
+                return;
             }
 
             // Store version information in package states
@@ -233,6 +283,11 @@ void RepositoryManager::installPackage(const JSFXPackage& package, std::function
             juce::MessageManager::callAsync([callback, successMsg]() { callback(true, successMsg); });
         }
     );
+}
+
+void RepositoryManager::cancelInstallation()
+{
+    shouldCancelInstallation.store(true);
 }
 
 void RepositoryManager::uninstallPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback)
@@ -248,7 +303,7 @@ void RepositoryManager::uninstallPackage(const JSFXPackage& package, std::functi
 
             DBG("  Install directory: " << installDir.getFullPathName());
 
-            if (!installDir.exists())
+            if (!FileIO::exists(installDir))
             {
                 juce::String error = "Package not found: " + package.name;
                 juce::MessageManager::callAsync([callback, error]() { callback(false, error); });
@@ -256,7 +311,7 @@ void RepositoryManager::uninstallPackage(const JSFXPackage& package, std::functi
             }
 
             // Delete the entire installation directory
-            if (!installDir.deleteRecursively())
+            if (!FileIO::deleteDirectory(installDir))
             {
                 juce::String error = "Failed to delete package directory: " + installDir.getFullPathName();
                 juce::MessageManager::callAsync([callback, error]() { callback(false, error); });
@@ -411,9 +466,9 @@ void RepositoryManager::loadPackageStates()
 {
     auto statesFile = getDataDirectory().getParentDirectory().getChildFile("package_states.xml");
 
-    if (statesFile.existsAsFile())
+    if (FileIO::exists(statesFile) && !FileIO::isDirectory(statesFile))
     {
-        auto xml = juce::parseXML(statesFile);
+        auto xml = FileIO::readXml(statesFile);
         if (xml && xml->hasTagName("PackageStates"))
         {
             pinnedPackages.clear();
@@ -485,6 +540,5 @@ void RepositoryManager::savePackageStates()
         pkgElement->setAttribute("version", version);
     }
 
-    statesFile.getParentDirectory().createDirectory();
-    root.writeTo(statesFile);
+    FileIO::writeXml(statesFile, root);
 }

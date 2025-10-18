@@ -379,6 +379,16 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     installAllButton.setEnabled(false);
     installAllButton.onClick = [this]() { installAllPackages(); };
 
+    addAndMakeVisible(cancelButton);
+    cancelButton.setButtonText("Cancel");
+    cancelButton.setEnabled(false);
+    cancelButton.onClick = [this]()
+    {
+        repositoryManager.cancelInstallation();
+        statusLabel.setText("Cancelling...", juce::dontSendNotification);
+        cancelButton.setEnabled(false);
+    };
+
     addAndMakeVisible(statusLabel);
     statusLabel.setText("", juce::dontSendNotification);
     statusLabel.setJustificationType(juce::Justification::centred);
@@ -427,11 +437,13 @@ void RepositoryWindow::resized()
     statusLabel.setBounds(statusBar);
     bounds.removeFromBottom(5);
 
-    // Install button
+    // Install buttons
     auto buttonBar = bounds.removeFromBottom(30);
     installAllButton.setBounds(buttonBar.removeFromRight(100));
     buttonBar.removeFromRight(5);
     installButton.setBounds(buttonBar.removeFromRight(150));
+    buttonBar.removeFromRight(5);
+    cancelButton.setBounds(buttonBar.removeFromRight(80));
     bounds.removeFromBottom(10);
 
     // Tree
@@ -1302,94 +1314,225 @@ void RepositoryWindow::updateButtonsForSelection()
     installButton.setEnabled(true);
 }
 
-void RepositoryWindow::installPackage(const RepositoryManager::JSFXPackage& package)
+// Helper Methods
+
+juce::String RepositoryWindow::PackageCollectionResult::getSkipMessage() const
 {
-    // Show confirmation dialog
+    if (skippedPinned == 0 && skippedIgnored == 0)
+        return {};
+
+    juce::String message = " (skipped ";
+    if (skippedPinned > 0)
+        message += juce::String(skippedPinned) + " pinned";
+    if (skippedPinned > 0 && skippedIgnored > 0)
+        message += ", ";
+    if (skippedIgnored > 0)
+        message += juce::String(skippedIgnored) + " ignored";
+    message += ")";
+    return message;
+}
+
+RepositoryWindow::PackageCollectionResult
+RepositoryWindow::collectPackagesFromTreeItem(RepositoryTreeItem* item, bool installedOnly)
+{
+    PackageCollectionResult result;
+    if (!item)
+        return result;
+
+    std::function<void(RepositoryTreeItem*)> collectPackages;
+    collectPackages = [&](RepositoryTreeItem* treeItem)
+    {
+        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
+        {
+            if (auto* pkg = treeItem->getPackage())
+            {
+                bool isInstalled = repositoryManager.isPackageInstalled(*pkg);
+
+                // Skip based on operation type
+                if (installedOnly ? !isInstalled : isInstalled)
+                    return;
+
+                // Skip pinned packages
+                if (repositoryManager.isPackagePinned(*pkg))
+                {
+                    result.skippedPinned++;
+                    return;
+                }
+
+                // Skip ignored packages
+                if (repositoryManager.isPackageIgnored(*pkg))
+                {
+                    result.skippedIgnored++;
+                    return;
+                }
+
+                result.packages.push_back(*pkg);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
+                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
+                    collectPackages(child);
+        }
+    };
+
+    collectPackages(item);
+    return result;
+}
+
+void RepositoryWindow::setButtonsEnabled(bool enabled)
+{
+    installButton.setEnabled(enabled);
+    installAllButton.setEnabled(enabled);
+    refreshButton.setEnabled(enabled);
+    cancelButton.setEnabled(!enabled); // Cancel is enabled when other buttons are disabled
+}
+
+void RepositoryWindow::showConfirmationDialog(
+    const juce::String& title,
+    const juce::String& message,
+    std::function<void()> onConfirm
+)
+{
     juce::MessageBoxOptions options = juce::MessageBoxOptions()
                                           .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                                          .withTitle("Install Package")
-                                          .withMessage("Install " + package.name + "?")
+                                          .withTitle(title)
+                                          .withMessage(message)
                                           .withButton("OK")
                                           .withButton("Cancel")
                                           .withAssociatedComponent(getTopLevelComponent());
 
     juce::NativeMessageBox::showAsync(
         options,
-        [this, package](int result)
+        [onConfirm](int result)
         {
-            if (result != 0) // Not OK
-                return;
+            if (result == 0) // OK button
+                onConfirm();
+        }
+    );
+}
 
-            statusLabel.setText("Installing " + package.name + "...", juce::dontSendNotification);
-            installButton.setEnabled(false);
-            installAllButton.setEnabled(false);
-            refreshButton.setEnabled(false);
+void RepositoryWindow::executeBatchOperation(
+    const std::vector<RepositoryManager::JSFXPackage>& packages,
+    const juce::String& skipMessage,
+    bool isInstall
+)
+{
+    if (packages.empty())
+        return;
 
-            repositoryManager.installPackage(
-                package,
-                [this, package](bool success, juce::String message)
-                {
-                    if (success)
-                        statusLabel.setText("Successfully installed " + package.name, juce::dontSendNotification);
-                    else
-                        statusLabel.setText(
-                            "Failed to install " + package.name + ": " + message,
-                            juce::dontSendNotification
-                        );
+    // Reset cancellation flag before starting
+    repositoryManager.shouldCancelInstallation.store(false);
 
-                    installButton.setEnabled(true);
-                    installAllButton.setEnabled(true);
-                    refreshButton.setEnabled(true);
-                    repoTree.repaint();
-                    updateButtonsForSelection();
-                }
+    setButtonsEnabled(false);
+
+    const juce::String operationCaps = isInstall ? "Install" : "Uninstall";
+    const juce::String operationPastTense = isInstall ? "installed" : "uninstalled";
+
+    // Create shared state for sequential processing
+    auto packagesPtr = std::make_shared<std::vector<RepositoryManager::JSFXPackage>>(packages);
+    auto currentIndex = std::make_shared<size_t>(0);
+    auto succeeded = std::make_shared<int>(0);
+    auto failed = std::make_shared<int>(0);
+
+    // Create recursive lambda for sequential processing
+    auto processNext = std::make_shared<std::function<void()>>();
+    *processNext = [this,
+                    packagesPtr,
+                    currentIndex,
+                    succeeded,
+                    failed,
+                    skipMessage,
+                    operationCaps,
+                    operationPastTense,
+                    isInstall,
+                    processNext]()
+    {
+        if (*currentIndex >= packagesPtr->size())
+        {
+            // All done
+            statusLabel.setText(
+                operationCaps
+                    + " complete: "
+                    + juce::String(*succeeded)
+                    + " "
+                    + operationPastTense
+                    + ", "
+                    + juce::String(*failed)
+                    + " failed"
+                    + skipMessage,
+                juce::dontSendNotification
             );
+
+            setButtonsEnabled(true);
+            repoTree.repaint();
+            updateButtonsForSelection();
+            return;
+        }
+
+        const auto& package = (*packagesPtr)[*currentIndex];
+        size_t packageNum = *currentIndex + 1;
+
+        statusLabel.setText(
+            operationCaps
+                + "ing "
+                + package.name
+                + " ("
+                + juce::String(packageNum)
+                + "/"
+                + juce::String(packagesPtr->size())
+                + ")...",
+            juce::dontSendNotification
+        );
+
+        auto callback = [this, currentIndex, succeeded, failed, processNext](bool success, juce::String message)
+        {
+            if (success)
+                (*succeeded)++;
+            else
+                (*failed)++;
+
+            (*currentIndex)++;
+            (*processNext)(); // Process next package
+        };
+
+        if (isInstall)
+            repositoryManager.installPackage(package, callback);
+        else
+            repositoryManager.uninstallPackage(package, callback);
+    };
+
+    // Start processing first package
+    (*processNext)();
+}
+
+// Package Operations
+
+void RepositoryWindow::installPackage(const RepositoryManager::JSFXPackage& package)
+{
+    // Single package install is just a batch of 1
+    showConfirmationDialog(
+        "Install Package",
+        "Install " + package.name + "?",
+        [this, package]()
+        {
+            std::vector<RepositoryManager::JSFXPackage> singlePackage = {package};
+            executeBatchOperation(singlePackage, "", true);
         }
     );
 }
 
 void RepositoryWindow::uninstallPackage(const RepositoryManager::JSFXPackage& package)
 {
-    // Show confirmation dialog
-    juce::MessageBoxOptions options = juce::MessageBoxOptions()
-                                          .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                                          .withTitle("Uninstall Package")
-                                          .withMessage("Uninstall " + package.name + "?")
-                                          .withButton("OK")
-                                          .withButton("Cancel")
-                                          .withAssociatedComponent(getTopLevelComponent());
-
-    juce::NativeMessageBox::showAsync(
-        options,
-        [this, package](int result)
+    // Single package uninstall is just a batch of 1
+    showConfirmationDialog(
+        "Uninstall Package",
+        "Uninstall " + package.name + "?",
+        [this, package]()
         {
-            if (result != 0) // Not OK
-                return;
-
-            statusLabel.setText("Uninstalling " + package.name + "...", juce::dontSendNotification);
-            installButton.setEnabled(false);
-            installAllButton.setEnabled(false);
-            refreshButton.setEnabled(false);
-
-            repositoryManager.uninstallPackage(
-                package,
-                [this, package](bool success, juce::String message)
-                {
-                    if (success)
-                        statusLabel.setText("Successfully uninstalled " + package.name, juce::dontSendNotification);
-                    else
-                        statusLabel.setText(
-                            "Failed to uninstall " + package.name + ": " + message,
-                            juce::dontSendNotification
-                        );
-
-                    installButton.setEnabled(true);
-                    installAllButton.setEnabled(true);
-                    refreshButton.setEnabled(true);
-                    repoTree.repaint();
-                    updateButtonsForSelection();
-                }
-            );
+            std::vector<RepositoryManager::JSFXPackage> singlePackage = {package};
+            executeBatchOperation(singlePackage, "", false);
         }
     );
 }
@@ -1399,142 +1542,28 @@ void RepositoryWindow::installFromTreeItem(RepositoryTreeItem* item)
     if (!item)
         return;
 
-    // Collect all packages from this item and its children
-    std::vector<RepositoryManager::JSFXPackage> packagesToInstall;
-    int skippedPinned = 0;
-    int skippedIgnored = 0;
+    auto result = collectPackagesFromTreeItem(item, false);
+    juce::String skipMessage = result.getSkipMessage();
 
-    std::function<void(RepositoryTreeItem*)> collectPackages;
-    collectPackages = [&](RepositoryTreeItem* treeItem)
-    {
-        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
-        {
-            if (auto* pkg = treeItem->getPackage())
-            {
-                // Skip if already installed
-                if (repositoryManager.isPackageInstalled(*pkg))
-                    return;
-
-                // Skip pinned packages (they shouldn't be auto-installed)
-                if (repositoryManager.isPackagePinned(*pkg))
-                {
-                    skippedPinned++;
-                    return;
-                }
-
-                // Skip ignored packages
-                if (repositoryManager.isPackageIgnored(*pkg))
-                {
-                    skippedIgnored++;
-                    return;
-                }
-
-                packagesToInstall.push_back(*pkg);
-            }
-        }
-        else
-        {
-            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
-                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
-                    collectPackages(child);
-        }
-    };
-
-    collectPackages(item);
-
-    juce::String skipMessage;
-    if (skippedPinned > 0 || skippedIgnored > 0)
-    {
-        skipMessage = " (skipped ";
-        if (skippedPinned > 0)
-            skipMessage += juce::String(skippedPinned) + " pinned";
-        if (skippedPinned > 0 && skippedIgnored > 0)
-            skipMessage += ", ";
-        if (skippedIgnored > 0)
-            skipMessage += juce::String(skippedIgnored) + " ignored";
-        skipMessage += ")";
-    }
-
-    if (packagesToInstall.empty())
+    if (result.packages.empty())
     {
         statusLabel.setText("No packages to install" + skipMessage, juce::dontSendNotification);
         return;
     }
 
-    // Show confirmation dialog for batch install
+    // Build confirmation message
     juce::String confirmMessage = "Install all "
-                                + juce::String(packagesToInstall.size())
+                                + juce::String(result.packages.size())
                                 + " package"
-                                + (packagesToInstall.size() == 1 ? "" : "s")
+                                + (result.packages.size() == 1 ? "" : "s")
                                 + "?";
     if (!skipMessage.isEmpty())
         confirmMessage += "\n" + skipMessage;
 
-    juce::MessageBoxOptions options = juce::MessageBoxOptions()
-                                          .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                                          .withTitle("Install All")
-                                          .withMessage(confirmMessage)
-                                          .withButton("OK")
-                                          .withButton("Cancel")
-                                          .withAssociatedComponent(getTopLevelComponent());
-
-    auto packagesPtr = std::make_shared<std::vector<RepositoryManager::JSFXPackage>>(packagesToInstall);
-    auto skipMessageCopy = std::make_shared<juce::String>(skipMessage);
-
-    juce::NativeMessageBox::showAsync(
-        options,
-        [this, packagesPtr, skipMessageCopy](int result)
-        {
-            if (result != 0) // Not OK
-                return;
-
-            auto totalToInstall = packagesPtr->size();
-            auto installed = std::make_shared<std::atomic<int>>(0);
-            auto failed = std::make_shared<std::atomic<int>>(0);
-
-            installButton.setEnabled(false);
-            installAllButton.setEnabled(false);
-            refreshButton.setEnabled(false);
-
-            for (const auto& package : *packagesPtr)
-            {
-                repositoryManager.installPackage(
-                    package,
-                    [this, installed, failed, totalToInstall, skipMessageCopy](bool success, juce::String message)
-                    {
-                        if (success)
-                            (*installed)++;
-                        else
-                            (*failed)++;
-
-                        int completed = (*installed) + (*failed);
-                        statusLabel.setText(
-                            "Installing... " + juce::String(completed) + "/" + juce::String(totalToInstall),
-                            juce::dontSendNotification
-                        );
-
-                        if (completed >= static_cast<int>(totalToInstall))
-                        {
-                            statusLabel.setText(
-                                "Installation complete: "
-                                    + juce::String(*installed)
-                                    + " installed, "
-                                    + juce::String(*failed)
-                                    + " failed"
-                                    + *skipMessageCopy,
-                                juce::dontSendNotification
-                            );
-
-                            installButton.setEnabled(true);
-                            installAllButton.setEnabled(true);
-                            refreshButton.setEnabled(true);
-                            repoTree.repaint();
-                            updateButtonsForSelection();
-                        }
-                    }
-                );
-            }
-        }
+    showConfirmationDialog(
+        "Install All",
+        confirmMessage,
+        [this, packages = result.packages, skipMessage]() { executeBatchOperation(packages, skipMessage, true); }
     );
 }
 
@@ -1543,142 +1572,28 @@ void RepositoryWindow::uninstallFromTreeItem(RepositoryTreeItem* item)
     if (!item)
         return;
 
-    // Collect all installed packages from this item and its children
-    std::vector<RepositoryManager::JSFXPackage> packagesToUninstall;
-    int skippedPinned = 0;
-    int skippedIgnored = 0;
+    auto result = collectPackagesFromTreeItem(item, true);
+    juce::String skipMessage = result.getSkipMessage();
 
-    std::function<void(RepositoryTreeItem*)> collectPackages;
-    collectPackages = [&](RepositoryTreeItem* treeItem)
-    {
-        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
-        {
-            if (auto* pkg = treeItem->getPackage())
-            {
-                // Skip if not installed
-                if (!repositoryManager.isPackageInstalled(*pkg))
-                    return;
-
-                // Skip pinned packages (they shouldn't be auto-uninstalled)
-                if (repositoryManager.isPackagePinned(*pkg))
-                {
-                    skippedPinned++;
-                    return;
-                }
-
-                // Skip ignored packages
-                if (repositoryManager.isPackageIgnored(*pkg))
-                {
-                    skippedIgnored++;
-                    return;
-                }
-
-                packagesToUninstall.push_back(*pkg);
-            }
-        }
-        else
-        {
-            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
-                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
-                    collectPackages(child);
-        }
-    };
-
-    collectPackages(item);
-
-    juce::String skipMessage;
-    if (skippedPinned > 0 || skippedIgnored > 0)
-    {
-        skipMessage = " (skipped ";
-        if (skippedPinned > 0)
-            skipMessage += juce::String(skippedPinned) + " pinned";
-        if (skippedPinned > 0 && skippedIgnored > 0)
-            skipMessage += ", ";
-        if (skippedIgnored > 0)
-            skipMessage += juce::String(skippedIgnored) + " ignored";
-        skipMessage += ")";
-    }
-
-    if (packagesToUninstall.empty())
+    if (result.packages.empty())
     {
         statusLabel.setText("No packages to uninstall" + skipMessage, juce::dontSendNotification);
         return;
     }
 
-    // Show confirmation dialog for batch uninstall
+    // Build confirmation message
     juce::String confirmMessage = "Uninstall all "
-                                + juce::String(packagesToUninstall.size())
+                                + juce::String(result.packages.size())
                                 + " package"
-                                + (packagesToUninstall.size() == 1 ? "" : "s")
+                                + (result.packages.size() == 1 ? "" : "s")
                                 + "?";
     if (!skipMessage.isEmpty())
         confirmMessage += "\n" + skipMessage;
 
-    juce::MessageBoxOptions options = juce::MessageBoxOptions()
-                                          .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                                          .withTitle("Uninstall All")
-                                          .withMessage(confirmMessage)
-                                          .withButton("OK")
-                                          .withButton("Cancel")
-                                          .withAssociatedComponent(getTopLevelComponent());
-
-    auto packagesPtr = std::make_shared<std::vector<RepositoryManager::JSFXPackage>>(packagesToUninstall);
-    auto skipMessageCopy = std::make_shared<juce::String>(skipMessage);
-
-    juce::NativeMessageBox::showAsync(
-        options,
-        [this, packagesPtr, skipMessageCopy](int result)
-        {
-            if (result != 0) // Not OK
-                return;
-
-            auto totalToUninstall = packagesPtr->size();
-            auto uninstalled = std::make_shared<std::atomic<int>>(0);
-            auto failed = std::make_shared<std::atomic<int>>(0);
-
-            installButton.setEnabled(false);
-            installAllButton.setEnabled(false);
-            refreshButton.setEnabled(false);
-
-            for (const auto& package : *packagesPtr)
-            {
-                repositoryManager.uninstallPackage(
-                    package,
-                    [this, uninstalled, failed, totalToUninstall, skipMessageCopy](bool success, juce::String message)
-                    {
-                        if (success)
-                            (*uninstalled)++;
-                        else
-                            (*failed)++;
-
-                        int completed = (*uninstalled) + (*failed);
-                        statusLabel.setText(
-                            "Uninstalling... " + juce::String(completed) + "/" + juce::String(totalToUninstall),
-                            juce::dontSendNotification
-                        );
-
-                        if (completed >= static_cast<int>(totalToUninstall))
-                        {
-                            statusLabel.setText(
-                                "Uninstall complete: "
-                                    + juce::String(*uninstalled)
-                                    + " uninstalled, "
-                                    + juce::String(*failed)
-                                    + " failed"
-                                    + *skipMessageCopy,
-                                juce::dontSendNotification
-                            );
-
-                            installButton.setEnabled(true);
-                            installAllButton.setEnabled(true);
-                            refreshButton.setEnabled(true);
-                            repoTree.repaint();
-                            updateButtonsForSelection();
-                        }
-                    }
-                );
-            }
-        }
+    showConfirmationDialog(
+        "Uninstall All",
+        confirmMessage,
+        [this, packages = result.packages, skipMessage]() { executeBatchOperation(packages, skipMessage, false); }
     );
 }
 

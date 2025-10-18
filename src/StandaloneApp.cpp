@@ -29,6 +29,7 @@
 
 // Include our custom LookAndFeel - separate minimal header to avoid namespace issues
 #include "JuceSonicLookAndFeel.h"
+#include "FileIO.h"
 
 namespace juce
 {
@@ -71,6 +72,8 @@ public:
         options.folderName = "";
 #endif
 
+        // Protect with global file lock to prevent conflicts between multiple instances
+        FileIO::ScopedFileLock lock;
         appProperties.setStorageParameters(options);
     }
 
@@ -158,6 +161,9 @@ public:
     {
         pluginHolder = nullptr;
         mainWindow = nullptr;
+
+        // Protect with global file lock to prevent conflicts between multiple instances
+        FileIO::ScopedFileLock lock;
         appProperties.saveIfNeeded();
     }
 

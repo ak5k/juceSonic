@@ -66,16 +66,38 @@ private:
     std::unique_ptr<class RepositoryTreeItem> rootItem;
     juce::TextButton installButton;
     juce::TextButton installAllButton;
+    juce::TextButton cancelButton;
     juce::Label statusLabel;
 
     // Data
     std::vector<RepositoryManager::Repository> repositories;
     std::vector<RepositoryManager::JSFXPackage> allPackages;
     bool isLoading = false;
+    bool isInstalling = false;
 
     // Helper to collect selected tree items
     void collectSelectedRepoItems(juce::Array<RepositoryTreeItem*>& items, RepositoryTreeItem* item);
     juce::Array<RepositoryTreeItem*> getSelectedRepoItems();
+
+    // Helper methods for refactored operations
+    struct PackageCollectionResult
+    {
+        std::vector<RepositoryManager::JSFXPackage> packages;
+        int skippedPinned = 0;
+        int skippedIgnored = 0;
+
+        juce::String getSkipMessage() const;
+    };
+
+    PackageCollectionResult collectPackagesFromTreeItem(RepositoryTreeItem* item, bool installedOnly);
+    void setButtonsEnabled(bool enabled);
+    void
+    showConfirmationDialog(const juce::String& title, const juce::String& message, std::function<void()> onConfirm);
+    void executeBatchOperation(
+        const std::vector<RepositoryManager::JSFXPackage>& packages,
+        const juce::String& skipMessage,
+        bool isInstall
+    );
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RepositoryWindow)
 };

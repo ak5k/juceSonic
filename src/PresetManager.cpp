@@ -4,6 +4,7 @@
 #include "RepositoryManager.h"
 #include "RepositoryWindow.h"
 #include "PresetBrowser.h"
+#include "FileIO.h"
 
 #include <jsfx.h>
 
@@ -51,8 +52,8 @@ juce::File PresetManager::getJsfxStorageDirectory() const
     auto storageDir = getPresetRootDirectory().getChildFile("data").getChildFile("local").getChildFile(jsfxName);
 
     // Create directory if it doesn't exist
-    if (!storageDir.exists())
-        storageDir.createDirectory();
+    if (!FileIO::exists(storageDir))
+        FileIO::createDirectory(storageDir);
 
     return storageDir;
 }
@@ -135,8 +136,8 @@ bool PresetManager::savePresetToFile(
     content << "  >\n";
     content << ">\n";
 
-    // Write to file
-    if (file.replaceWithText(content))
+    // Write to file with interprocess lock
+    if (FileIO::writeFile(file, content))
     {
         DBG("PresetManager::savePresetToFile - Saved to: " << file.getFullPathName());
         return true;
@@ -429,7 +430,7 @@ void PresetManager::importPreset(juce::Component* parentComponent)
                         {
                             if (result == 1) // Overwrite
                             {
-                                if (selectedFile.copyFileTo(destFile))
+                                if (FileIO::copyFile(selectedFile, destFile))
                                 {
                                     juce::AlertWindow::showMessageBoxAsync(
                                         juce::MessageBoxIconType::InfoIcon,
@@ -457,7 +458,7 @@ void PresetManager::importPreset(juce::Component* parentComponent)
             else
             {
                 // No conflict - copy directly
-                if (selectedFile.copyFileTo(destFile))
+                if (FileIO::copyFile(selectedFile, destFile))
                 {
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::MessageBoxIconType::InfoIcon,
@@ -741,7 +742,7 @@ void PresetManager::exportBankDialog(juce::Component* parentComponent)
                                 if (!selectedFile.hasFileExtension(".rpl"))
                                     selectedFile = selectedFile.withFileExtension(".rpl");
 
-                                if (bankFile.copyFileTo(selectedFile))
+                                if (FileIO::copyFile(bankFile, selectedFile))
                                 {
                                     juce::AlertWindow::showMessageBoxAsync(
                                         juce::MessageBoxIconType::InfoIcon,
@@ -957,7 +958,7 @@ void PresetManager::deletePreset(
                     for (const auto& file : allFiles)
                     {
                         // Read file content
-                        juce::String content = file.loadFileAsString();
+                        juce::String content = FileIO::readFile(file);
                         if (content.isEmpty())
                             continue;
 
@@ -965,7 +966,7 @@ void PresetManager::deletePreset(
                         if (removePresetFromContent(content, bankName, presetName))
                         {
                             // Save the modified content back
-                            if (file.replaceWithText(content))
+                            if (FileIO::writeFile(file, content))
                             {
                                 presetDeleted = true;
                                 deletedFromFile = file.getFullPathName();
@@ -1307,7 +1308,7 @@ bool PresetManager::combinePresetFiles(const juce::Array<juce::File>& files, con
     combinedContent += ">\n";
 
     // Write to output file
-    return outputFile.replaceWithText(combinedContent);
+    return FileIO::writeFile(outputFile, combinedContent);
 }
 
 void PresetManager::showRepositoryManager(juce::Component* parentComponent)

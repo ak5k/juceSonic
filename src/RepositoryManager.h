@@ -87,6 +87,11 @@ public:
     void uninstallPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback);
 
     /**
+     * @brief Cancel any ongoing installation operations
+     */
+    void cancelInstallation();
+
+    /**
      * @brief Get the installation directory for a package
      * @param package Package metadata
      * @return Directory path where package should be installed
@@ -128,6 +133,9 @@ public:
      * @brief Set ignore state for a package
      */
     void setPackageIgnored(const JSFXPackage& package, bool ignored);
+
+    // Cancellation flag (public so UI can reset it)
+    std::atomic<bool> shouldCancelInstallation{false};
 
 private:
     /**

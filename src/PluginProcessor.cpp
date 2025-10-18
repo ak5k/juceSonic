@@ -3,6 +3,7 @@
 #include "JsfxHelper.h"
 #include "ParameterUtils.h"
 #include "PluginEditor.h"
+#include "FileIO.h"
 
 #include <algorithm>
 
@@ -64,10 +65,10 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
 
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
     appDataDir = appDataDir.getChildFile(JucePlugin_Name);
-    if (!appDataDir.exists())
+    if (!FileIO::exists(appDataDir))
     {
-        appDataDir.getChildFile("Data").createDirectory();
-        appDataDir.getChildFile("Effects").createDirectory();
+        FileIO::createDirectory(appDataDir.getChildFile("Data"));
+        FileIO::createDirectory(appDataDir.getChildFile("Effects"));
     }
 
     jsfxRootDir = appDataDir.getFullPathName();
