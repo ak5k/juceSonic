@@ -4,6 +4,7 @@
 #include <juce_core/juce_core.h>
 #include <memory>
 #include <vector>
+#include <set>
 #include <functional>
 
 class AudioPluginAudioProcessor;
@@ -78,6 +79,13 @@ public:
     void installPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback);
 
     /**
+     * @brief Uninstall a JSFX package
+     * @param package Package metadata
+     * @param callback Called with success/failure and message
+     */
+    void uninstallPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback);
+
+    /**
      * @brief Get the installation directory for a package
      * @param package Package metadata
      * @return Directory path where package should be installed
@@ -93,6 +101,26 @@ public:
      * @brief Get the base data directory for JSFX installations
      */
     juce::File getDataDirectory() const;
+
+    /**
+     * @brief Check if a package is pinned (excluded from batch operations)
+     */
+    bool isPackagePinned(const JSFXPackage& package) const;
+
+    /**
+     * @brief Set pin state for a package
+     */
+    void setPackagePinned(const JSFXPackage& package, bool pinned);
+
+    /**
+     * @brief Check if a package is ignored (hidden from view)
+     */
+    bool isPackageIgnored(const JSFXPackage& package) const;
+
+    /**
+     * @brief Set ignore state for a package
+     */
+    void setPackageIgnored(const JSFXPackage& package, bool ignored);
 
 private:
     /**
@@ -110,8 +138,25 @@ private:
      */
     juce::String sanitizeFilename(const juce::String& name) const;
 
+    /**
+     * @brief Generate unique key for a package (for pin/ignore tracking)
+     */
+    juce::String getPackageKey(const JSFXPackage& package) const;
+
+    /**
+     * @brief Load pin/ignore states from persistent storage
+     */
+    void loadPackageStates();
+
+    /**
+     * @brief Save pin/ignore states to persistent storage
+     */
+    void savePackageStates();
+
     AudioPluginAudioProcessor& processor;
     juce::StringArray repositoryUrls;
+    std::set<juce::String> pinnedPackages;
+    std::set<juce::String> ignoredPackages;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RepositoryManager)
 };

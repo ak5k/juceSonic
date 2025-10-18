@@ -42,6 +42,14 @@ private:
 public:
     void updateButtonsForSelection();
 
+    // Context menu operations
+    void installPackage(const RepositoryManager::JSFXPackage& package);
+    void uninstallPackage(const RepositoryManager::JSFXPackage& package);
+    void installFromTreeItem(class RepositoryTreeItem* item);
+    void uninstallFromTreeItem(class RepositoryTreeItem* item);
+    void togglePackagePinned(const RepositoryManager::JSFXPackage& package);
+    void togglePackageIgnored(const RepositoryManager::JSFXPackage& package);
+
 private:
     RepositoryManager& repositoryManager;
 
@@ -54,8 +62,6 @@ private:
     juce::TextButton installButton;
     juce::TextButton installAllButton;
     juce::Label statusLabel;
-    juce::ProgressBar progressBar;
-    double progressValue = 0.0;
 
     // Data
     std::vector<RepositoryManager::Repository> repositories;

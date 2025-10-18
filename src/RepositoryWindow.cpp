@@ -33,8 +33,8 @@ public:
 
     bool canBeSelected() const override
     {
-        // Only Index and Category items can be selected, not Package or Metadata
-        return type == ItemType::Index || type == ItemType::Category;
+        // Index, Category, and Package items can be selected
+        return type == ItemType::Index || type == ItemType::Category || type == ItemType::Package;
     }
 
     void paintItem(juce::Graphics& g, int width, int height) override
@@ -46,33 +46,148 @@ public:
         g.setFont(juce::Font(type == ItemType::Metadata ? 11.0f : 14.0f));
 
         // Main item name
-        g.drawText(itemName, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
+        g.drawText(itemName, 4, 0, width - 100, height, juce::Justification::centredLeft, true);
 
-        // For categories, show [INSTALLED] badge if any package in the category is installed
-        if (type == ItemType::Category && repositoryManager)
+        if (!repositoryManager)
+            return;
+
+        // Show installation status for packages, categories, and indices
+        if (type == ItemType::Package && package)
         {
-            bool anyInstalled = false;
-            // Check all children (Package items) to see if any are installed
+            int badgeX = width - 100;
+            const int badgeWidth = 90;
+
+            // Individual package - show installed/not installed
+            if (repositoryManager->isPackageInstalled(*package))
+            {
+                g.setColour(juce::Colours::green);
+                g.setFont(juce::Font(11.0f, juce::Font::bold));
+                g.drawText("[INSTALLED]", badgeX, 0, badgeWidth, height, juce::Justification::centredRight, true);
+                badgeX -= 75;
+            }
+
+            // Show pin/ignore indicators
+            if (repositoryManager->isPackagePinned(*package))
+            {
+                g.setColour(juce::Colours::yellow);
+                g.setFont(juce::Font(11.0f, juce::Font::bold));
+                g.drawText("[PIN]", badgeX, 0, 50, height, juce::Justification::centredRight, true);
+                badgeX -= 55;
+            }
+
+            if (repositoryManager->isPackageIgnored(*package))
+            {
+                g.setColour(juce::Colours::grey);
+                g.setFont(juce::Font(11.0f, juce::Font::bold));
+                g.drawText("[IGNORE]", badgeX, 0, 70, height, juce::Justification::centredRight, true);
+            }
+        }
+        else if (type == ItemType::Category)
+        {
+            // Category - check if all, some, or none packages are installed
+            int totalPackages = 0;
+            int installedPackages = 0;
+
             for (int i = 0; i < getNumSubItems(); ++i)
             {
                 if (auto* child = dynamic_cast<RepositoryTreeItem*>(getSubItem(i)))
                 {
                     if (child->getType() == ItemType::Package && child->getPackage())
                     {
+                        totalPackages++;
                         if (repositoryManager->isPackageInstalled(*child->getPackage()))
+                            installedPackages++;
+                    }
+                }
+            }
+
+            if (totalPackages > 0)
+            {
+                if (installedPackages == totalPackages)
+                {
+                    // All installed
+                    g.setColour(juce::Colours::green);
+                    g.setFont(juce::Font(11.0f, juce::Font::bold));
+                    g.drawText("[INSTALLED]", width - 100, 0, 90, height, juce::Justification::centredRight, true);
+                }
+                else if (installedPackages > 0)
+                {
+                    // Partially installed
+                    g.setColour(juce::Colours::orange);
+                    g.setFont(juce::Font(11.0f));
+                    g.drawText(
+                        "[" + juce::String(installedPackages) + "/" + juce::String(totalPackages) + "]",
+                        width - 100,
+                        0,
+                        90,
+                        height,
+                        juce::Justification::centredRight,
+                        true
+                    );
+                }
+            }
+        }
+        else if (type == ItemType::Index)
+        {
+            // Index/Repository - check if all, some, or none categories are fully installed
+            int totalCategories = 0;
+            int fullyInstalledCategories = 0;
+            int partiallyInstalledCategories = 0;
+
+            for (int i = 0; i < getNumSubItems(); ++i)
+            {
+                if (auto* categoryItem = dynamic_cast<RepositoryTreeItem*>(getSubItem(i)))
+                {
+                    if (categoryItem->getType() == ItemType::Category)
+                    {
+                        totalCategories++;
+                        int totalPackages = 0;
+                        int installedPackages = 0;
+
+                        for (int j = 0; j < categoryItem->getNumSubItems(); ++j)
                         {
-                            anyInstalled = true;
-                            break;
+                            if (auto* packageItem = dynamic_cast<RepositoryTreeItem*>(categoryItem->getSubItem(j)))
+                            {
+                                if (packageItem->getType() == ItemType::Package && packageItem->getPackage())
+                                {
+                                    totalPackages++;
+                                    if (repositoryManager->isPackageInstalled(*packageItem->getPackage()))
+                                        installedPackages++;
+                                }
+                            }
+                        }
+
+                        if (totalPackages > 0)
+                        {
+                            if (installedPackages == totalPackages)
+                                fullyInstalledCategories++;
+                            else if (installedPackages > 0)
+                                partiallyInstalledCategories++;
                         }
                     }
                 }
             }
 
-            if (anyInstalled)
+            if (totalCategories > 0)
             {
-                g.setColour(juce::Colours::green);
-                g.setFont(juce::Font(11.0f));
-                g.drawText("[INSTALLED]", width - 100, 0, 90, height, juce::Justification::centredRight, true);
+                if (fullyInstalledCategories == totalCategories)
+                {
+                    // All categories fully installed
+                    g.setColour(juce::Colours::green);
+                    g.setFont(juce::Font(11.0f, juce::Font::bold));
+                    g.drawText("[INSTALLED]", width - 100, 0, 90, height, juce::Justification::centredRight, true);
+                }
+                else if (fullyInstalledCategories > 0 || partiallyInstalledCategories > 0)
+                {
+                    // Some categories installed or partially installed
+                    g.setColour(juce::Colours::orange);
+                    g.setFont(juce::Font(11.0f));
+                    juce::String statusText = "[" + juce::String(fullyInstalledCategories);
+                    if (partiallyInstalledCategories > 0)
+                        statusText += "+" + juce::String(partiallyInstalledCategories);
+                    statusText += "/" + juce::String(totalCategories) + "]";
+                    g.drawText(statusText, width - 100, 0, 90, height, juce::Justification::centredRight, true);
+                }
             }
         }
     }
@@ -82,6 +197,91 @@ public:
         TreeViewItem::itemSelectionChanged(isNowSelected);
         if (repositoryWindow)
             repositoryWindow->updateButtonsForSelection();
+    }
+
+    void itemClicked(const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu())
+            showContextMenu();
+    }
+
+    void showContextMenu()
+    {
+        juce::PopupMenu menu;
+
+        // Only show menu for Package, Category, or Index items
+        if (type == ItemType::Metadata)
+            return;
+
+        bool isInstalled = false;
+        bool isPinned = false;
+        bool isIgnored = false;
+
+        if (type == ItemType::Package && package && repositoryManager)
+        {
+            isInstalled = repositoryManager->isPackageInstalled(*package);
+            isPinned = repositoryManager->isPackagePinned(*package);
+            isIgnored = repositoryManager->isPackageIgnored(*package);
+        }
+
+        // Add menu items based on type and state
+        if (type == ItemType::Package)
+        {
+            if (isInstalled)
+                menu.addItem(1, "Uninstall");
+            else
+                menu.addItem(2, "Install");
+
+            menu.addSeparator();
+            menu.addItem(3, isIgnored ? "Unignore" : "Ignore", true, isIgnored);
+            menu.addItem(4, isPinned ? "Unpin" : "Pin", true, isPinned);
+        }
+        else if (type == ItemType::Category || type == ItemType::Index)
+        {
+            menu.addItem(5, "Install All");
+            menu.addItem(6, "Uninstall All");
+        }
+
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) { handleContextMenuResult(result); });
+    }
+
+    void handleContextMenuResult(int result)
+    {
+        if (result == 0 || !repositoryWindow)
+            return;
+
+        switch (result)
+        {
+        case 1: // Uninstall package
+            if (type == ItemType::Package && package)
+                repositoryWindow->uninstallPackage(*package);
+            break;
+
+        case 2: // Install package
+            if (type == ItemType::Package && package)
+                repositoryWindow->installPackage(*package);
+            break;
+
+        case 3: // Toggle Ignore
+            if (type == ItemType::Package && package)
+                repositoryWindow->togglePackageIgnored(*package);
+            break;
+
+        case 4: // Toggle Pin
+            if (type == ItemType::Package && package)
+                repositoryWindow->togglePackagePinned(*package);
+            break;
+
+        case 5: // Install All
+            if (repositoryWindow)
+                repositoryWindow->installFromTreeItem(this);
+            break;
+
+        case 6: // Uninstall All
+            if (repositoryWindow)
+                repositoryWindow->uninstallFromTreeItem(this);
+            break;
+        }
     }
 
     juce::String getName() const
@@ -119,7 +319,6 @@ private:
 
 RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     : repositoryManager(repoManager)
-    , progressBar(progressValue)
 {
     // Setup repository controls
     addAndMakeVisible(manageReposButton);
@@ -148,10 +347,6 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     addAndMakeVisible(statusLabel);
     statusLabel.setText("", juce::dontSendNotification);
     statusLabel.setJustificationType(juce::Justification::centred);
-
-    addAndMakeVisible(progressBar);
-    progressBar.setPercentageDisplay(true);
-    progressBar.setVisible(false); // Initially hidden
 
     setSize(600, 600); // Narrower width to fit controls
 
@@ -195,11 +390,6 @@ void RepositoryWindow::resized()
     // Status at bottom
     auto statusBar = bounds.removeFromBottom(25);
     statusLabel.setBounds(statusBar);
-    bounds.removeFromBottom(5);
-
-    // Progress bar above status
-    auto progressBarBounds = bounds.removeFromBottom(20);
-    progressBar.setBounds(progressBarBounds);
     bounds.removeFromBottom(5);
 
     // Install button
@@ -500,10 +690,6 @@ void RepositoryWindow::installSelectedPackage()
     installAllButton.setEnabled(false);
     refreshButton.setEnabled(false);
 
-    // Reset and show progress bar
-    progressValue = 0.0;
-    progressBar.setVisible(true);
-
     for (size_t i = 0; i < packagesToInstall->size(); ++i)
     {
         const auto& package = (*packagesToInstall)[i];
@@ -517,9 +703,6 @@ void RepositoryWindow::installSelectedPackage()
                     (*failed)++;
                 int completed = (*installed) + (*failed);
 
-                // Update progress bar
-                progressValue = static_cast<double>(completed) / static_cast<double>(totalToInstall);
-
                 statusLabel.setText(
                     "Installing... " + juce::String(completed) + "/" + juce::String(totalToInstall),
                     juce::dontSendNotification
@@ -527,10 +710,6 @@ void RepositoryWindow::installSelectedPackage()
 
                 if (completed >= static_cast<int>(totalToInstall))
                 {
-                    // Hide progress bar
-                    progressValue = 0.0;
-                    progressBar.setVisible(false);
-
                     statusLabel.setText(
                         "Installation complete: "
                             + juce::String(*installed)
@@ -622,10 +801,6 @@ void RepositoryWindow::proceedWithInstallation()
     installAllButton.setEnabled(false);
     refreshButton.setEnabled(false);
 
-    // Reset and show progress bar
-    progressValue = 0.0;
-    progressBar.setVisible(true);
-
     statusLabel.setText("Preparing to install " + juce::String(toInstall) + " packages...", juce::dontSendNotification);
 
     auto totalToInstall = packagesToInstall->size();
@@ -677,9 +852,6 @@ void RepositoryWindow::proceedWithInstallation()
                     << *failed
                     << ")");
 
-                // Update progress bar
-                progressValue = static_cast<double>(completed) / static_cast<double>(totalToInstall);
-
                 statusLabel.setText(
                     "Installing... " + juce::String(completed) + "/" + juce::String(totalToInstall),
                     juce::dontSendNotification
@@ -688,10 +860,6 @@ void RepositoryWindow::proceedWithInstallation()
                 if (completed >= static_cast<int>(totalToInstall))
                 {
                     DBG("All installations complete. Installed: " << *installed << ", Failed: " << *failed);
-
-                    // Hide progress bar
-                    progressValue = 0.0;
-                    progressBar.setVisible(false);
 
                     // All done
                     juce::String resultMessage =
@@ -964,6 +1132,314 @@ void RepositoryWindow::updateButtonsForSelection()
     }
 
     installButton.setEnabled(true);
+}
+
+void RepositoryWindow::installPackage(const RepositoryManager::JSFXPackage& package)
+{
+    statusLabel.setText("Installing " + package.name + "...", juce::dontSendNotification);
+    installButton.setEnabled(false);
+    installAllButton.setEnabled(false);
+    refreshButton.setEnabled(false);
+
+    repositoryManager.installPackage(
+        package,
+        [this, package](bool success, juce::String message)
+        {
+            if (success)
+                statusLabel.setText("Successfully installed " + package.name, juce::dontSendNotification);
+            else
+                statusLabel.setText("Failed to install " + package.name + ": " + message, juce::dontSendNotification);
+
+            installButton.setEnabled(true);
+            installAllButton.setEnabled(true);
+            refreshButton.setEnabled(true);
+            repoTree.repaint();
+            updateButtonsForSelection();
+        }
+    );
+}
+
+void RepositoryWindow::uninstallPackage(const RepositoryManager::JSFXPackage& package)
+{
+    statusLabel.setText("Uninstalling " + package.name + "...", juce::dontSendNotification);
+    installButton.setEnabled(false);
+    installAllButton.setEnabled(false);
+    refreshButton.setEnabled(false);
+
+    repositoryManager.uninstallPackage(
+        package,
+        [this, package](bool success, juce::String message)
+        {
+            if (success)
+                statusLabel.setText("Successfully uninstalled " + package.name, juce::dontSendNotification);
+            else
+                statusLabel.setText("Failed to uninstall " + package.name + ": " + message, juce::dontSendNotification);
+
+            installButton.setEnabled(true);
+            installAllButton.setEnabled(true);
+            refreshButton.setEnabled(true);
+            repoTree.repaint();
+            updateButtonsForSelection();
+        }
+    );
+}
+
+void RepositoryWindow::installFromTreeItem(RepositoryTreeItem* item)
+{
+    if (!item)
+        return;
+
+    // Collect all packages from this item and its children
+    std::vector<RepositoryManager::JSFXPackage> packagesToInstall;
+    int skippedPinned = 0;
+    int skippedIgnored = 0;
+
+    std::function<void(RepositoryTreeItem*)> collectPackages;
+    collectPackages = [&](RepositoryTreeItem* treeItem)
+    {
+        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
+        {
+            if (auto* pkg = treeItem->getPackage())
+            {
+                // Skip if already installed
+                if (repositoryManager.isPackageInstalled(*pkg))
+                    return;
+
+                // Skip pinned packages (they shouldn't be auto-installed)
+                if (repositoryManager.isPackagePinned(*pkg))
+                {
+                    skippedPinned++;
+                    return;
+                }
+
+                // Skip ignored packages
+                if (repositoryManager.isPackageIgnored(*pkg))
+                {
+                    skippedIgnored++;
+                    return;
+                }
+
+                packagesToInstall.push_back(*pkg);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
+                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
+                    collectPackages(child);
+        }
+    };
+
+    collectPackages(item);
+
+    juce::String skipMessage;
+    if (skippedPinned > 0 || skippedIgnored > 0)
+    {
+        skipMessage = " (skipped ";
+        if (skippedPinned > 0)
+            skipMessage += juce::String(skippedPinned) + " pinned";
+        if (skippedPinned > 0 && skippedIgnored > 0)
+            skipMessage += ", ";
+        if (skippedIgnored > 0)
+            skipMessage += juce::String(skippedIgnored) + " ignored";
+        skipMessage += ")";
+    }
+
+    if (packagesToInstall.empty())
+    {
+        statusLabel.setText("No packages to install" + skipMessage, juce::dontSendNotification);
+        return;
+    }
+
+    // Install all collected packages
+    auto packagesPtr = std::make_shared<std::vector<RepositoryManager::JSFXPackage>>(packagesToInstall);
+    auto totalToInstall = packagesPtr->size();
+    auto installed = std::make_shared<std::atomic<int>>(0);
+    auto failed = std::make_shared<std::atomic<int>>(0);
+
+    installButton.setEnabled(false);
+    installAllButton.setEnabled(false);
+    refreshButton.setEnabled(false);
+
+    auto skipMessageCopy = std::make_shared<juce::String>(skipMessage);
+
+    for (const auto& package : *packagesPtr)
+    {
+        repositoryManager.installPackage(
+            package,
+            [this, installed, failed, totalToInstall, skipMessageCopy](bool success, juce::String message)
+            {
+                if (success)
+                    (*installed)++;
+                else
+                    (*failed)++;
+
+                int completed = (*installed) + (*failed);
+                statusLabel.setText(
+                    "Installing... " + juce::String(completed) + "/" + juce::String(totalToInstall),
+                    juce::dontSendNotification
+                );
+
+                if (completed >= static_cast<int>(totalToInstall))
+                {
+                    statusLabel.setText(
+                        "Installation complete: "
+                            + juce::String(*installed)
+                            + " installed, "
+                            + juce::String(*failed)
+                            + " failed"
+                            + *skipMessageCopy,
+                        juce::dontSendNotification
+                    );
+
+                    installButton.setEnabled(true);
+                    installAllButton.setEnabled(true);
+                    refreshButton.setEnabled(true);
+                    repoTree.repaint();
+                    updateButtonsForSelection();
+                }
+            }
+        );
+    }
+}
+
+void RepositoryWindow::uninstallFromTreeItem(RepositoryTreeItem* item)
+{
+    if (!item)
+        return;
+
+    // Collect all installed packages from this item and its children
+    std::vector<RepositoryManager::JSFXPackage> packagesToUninstall;
+    int skippedPinned = 0;
+    int skippedIgnored = 0;
+
+    std::function<void(RepositoryTreeItem*)> collectPackages;
+    collectPackages = [&](RepositoryTreeItem* treeItem)
+    {
+        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
+        {
+            if (auto* pkg = treeItem->getPackage())
+            {
+                // Skip if not installed
+                if (!repositoryManager.isPackageInstalled(*pkg))
+                    return;
+
+                // Skip pinned packages (they shouldn't be auto-uninstalled)
+                if (repositoryManager.isPackagePinned(*pkg))
+                {
+                    skippedPinned++;
+                    return;
+                }
+
+                // Skip ignored packages
+                if (repositoryManager.isPackageIgnored(*pkg))
+                {
+                    skippedIgnored++;
+                    return;
+                }
+
+                packagesToUninstall.push_back(*pkg);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
+                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
+                    collectPackages(child);
+        }
+    };
+
+    collectPackages(item);
+
+    juce::String skipMessage;
+    if (skippedPinned > 0 || skippedIgnored > 0)
+    {
+        skipMessage = " (skipped ";
+        if (skippedPinned > 0)
+            skipMessage += juce::String(skippedPinned) + " pinned";
+        if (skippedPinned > 0 && skippedIgnored > 0)
+            skipMessage += ", ";
+        if (skippedIgnored > 0)
+            skipMessage += juce::String(skippedIgnored) + " ignored";
+        skipMessage += ")";
+    }
+
+    if (packagesToUninstall.empty())
+    {
+        statusLabel.setText("No packages to uninstall" + skipMessage, juce::dontSendNotification);
+        return;
+    }
+
+    // Uninstall all collected packages
+    auto packagesPtr = std::make_shared<std::vector<RepositoryManager::JSFXPackage>>(packagesToUninstall);
+    auto totalToUninstall = packagesPtr->size();
+    auto uninstalled = std::make_shared<std::atomic<int>>(0);
+    auto failed = std::make_shared<std::atomic<int>>(0);
+
+    installButton.setEnabled(false);
+    installAllButton.setEnabled(false);
+    refreshButton.setEnabled(false);
+
+    auto skipMessageCopy = std::make_shared<juce::String>(skipMessage);
+
+    for (const auto& package : *packagesPtr)
+    {
+        repositoryManager.uninstallPackage(
+            package,
+            [this, uninstalled, failed, totalToUninstall, skipMessageCopy](bool success, juce::String message)
+            {
+                if (success)
+                    (*uninstalled)++;
+                else
+                    (*failed)++;
+
+                int completed = (*uninstalled) + (*failed);
+                statusLabel.setText(
+                    "Uninstalling... " + juce::String(completed) + "/" + juce::String(totalToUninstall),
+                    juce::dontSendNotification
+                );
+
+                if (completed >= static_cast<int>(totalToUninstall))
+                {
+                    statusLabel.setText(
+                        "Uninstall complete: "
+                            + juce::String(*uninstalled)
+                            + " uninstalled, "
+                            + juce::String(*failed)
+                            + " failed"
+                            + *skipMessageCopy,
+                        juce::dontSendNotification
+                    );
+
+                    installButton.setEnabled(true);
+                    installAllButton.setEnabled(true);
+                    refreshButton.setEnabled(true);
+                    repoTree.repaint();
+                    updateButtonsForSelection();
+                }
+            }
+        );
+    }
+}
+
+void RepositoryWindow::togglePackagePinned(const RepositoryManager::JSFXPackage& package)
+{
+    bool currentlyPinned = repositoryManager.isPackagePinned(package);
+    repositoryManager.setPackagePinned(package, !currentlyPinned);
+
+    statusLabel.setText(package.name + (currentlyPinned ? " unpinned" : " pinned"), juce::dontSendNotification);
+
+    repoTree.repaint();
+}
+
+void RepositoryWindow::togglePackageIgnored(const RepositoryManager::JSFXPackage& package)
+{
+    bool currentlyIgnored = repositoryManager.isPackageIgnored(package);
+    repositoryManager.setPackageIgnored(package, !currentlyIgnored);
+
+    statusLabel.setText(package.name + (currentlyIgnored ? " unignored" : " ignored"), juce::dontSendNotification);
+
+    repoTree.repaint();
 }
 
 void RepositoryWindow::showRepositoryEditor()

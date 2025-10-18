@@ -6,11 +6,13 @@ RepositoryManager::RepositoryManager(AudioPluginAudioProcessor& proc)
     : processor(proc)
 {
     loadRepositories();
+    loadPackageStates();
 }
 
 RepositoryManager::~RepositoryManager()
 {
     saveRepositories();
+    savePackageStates();
 }
 
 void RepositoryManager::loadRepositories()
@@ -114,6 +116,14 @@ RepositoryManager::parseRepositoryXml(const juce::String& xmlContent, const juce
         for (auto* reapack : category->getChildWithTagNameIterator("reapack"))
         {
             juce::String packageName = reapack->getStringAttribute("name");
+
+            // Only support packages ending with .jsfx
+            if (!packageName.endsWithIgnoreCase(".jsfx"))
+            {
+                DBG("Skipping non-JSFX package: " << packageName);
+                continue;
+            }
+
             juce::String packageType = reapack->getStringAttribute("type");
             juce::String description = reapack->getStringAttribute("desc");
 
@@ -144,17 +154,17 @@ RepositoryManager::parseRepositoryXml(const juce::String& xmlContent, const juce
                 for (auto* source : latestVersion->getChildWithTagNameIterator("source"))
                 {
                     juce::String fileAttr = source->getStringAttribute("file");
-                    juce::String sourceUrl = source->getAllSubText().trim();
+                    juce::String sourceFileUrl = source->getAllSubText().trim();
 
                     if (fileAttr.isEmpty())
                     {
                         // Main file
-                        package.mainFileUrl = sourceUrl;
+                        package.mainFileUrl = sourceFileUrl;
                     }
                     else
                     {
                         // Dependency file
-                        package.dependencies.push_back({fileAttr, sourceUrl});
+                        package.dependencies.push_back({fileAttr, sourceFileUrl});
                     }
                 }
 
@@ -215,6 +225,41 @@ void RepositoryManager::installPackage(const JSFXPackage& package, std::function
 
             // Success
             juce::String successMsg = "Successfully installed " + package.name + " v" + package.version;
+            juce::MessageManager::callAsync([callback, successMsg]() { callback(true, successMsg); });
+        }
+    );
+}
+
+void RepositoryManager::uninstallPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback)
+{
+    DBG("Uninstalling package: " << package.name);
+    DBG("  Repository: " << package.repositoryName);
+
+    // Uninstall in background thread
+    juce::Thread::launch(
+        [this, package, callback]()
+        {
+            auto installDir = getPackageInstallDirectory(package);
+
+            DBG("  Install directory: " << installDir.getFullPathName());
+
+            if (!installDir.exists())
+            {
+                juce::String error = "Package not found: " + package.name;
+                juce::MessageManager::callAsync([callback, error]() { callback(false, error); });
+                return;
+            }
+
+            // Delete the entire installation directory
+            if (!installDir.deleteRecursively())
+            {
+                juce::String error = "Failed to delete package directory: " + installDir.getFullPathName();
+                juce::MessageManager::callAsync([callback, error]() { callback(false, error); });
+                return;
+            }
+
+            // Success
+            juce::String successMsg = "Successfully uninstalled " + package.name;
             juce::MessageManager::callAsync([callback, successMsg]() { callback(true, successMsg); });
         }
     );
@@ -301,4 +346,103 @@ juce::String RepositoryManager::sanitizeFilename(const juce::String& name) const
         sanitized = "Unknown";
 
     return sanitized;
+}
+
+juce::String RepositoryManager::getPackageKey(const JSFXPackage& package) const
+{
+    // Create unique key from repository name and package name
+    return package.repositoryName + "::" + package.name;
+}
+
+bool RepositoryManager::isPackagePinned(const JSFXPackage& package) const
+{
+    return pinnedPackages.find(getPackageKey(package)) != pinnedPackages.end();
+}
+
+void RepositoryManager::setPackagePinned(const JSFXPackage& package, bool pinned)
+{
+    auto key = getPackageKey(package);
+    if (pinned)
+        pinnedPackages.insert(key);
+    else
+        pinnedPackages.erase(key);
+
+    savePackageStates();
+}
+
+bool RepositoryManager::isPackageIgnored(const JSFXPackage& package) const
+{
+    return ignoredPackages.find(getPackageKey(package)) != ignoredPackages.end();
+}
+
+void RepositoryManager::setPackageIgnored(const JSFXPackage& package, bool ignored)
+{
+    auto key = getPackageKey(package);
+    if (ignored)
+        ignoredPackages.insert(key);
+    else
+        ignoredPackages.erase(key);
+
+    savePackageStates();
+}
+
+void RepositoryManager::loadPackageStates()
+{
+    auto statesFile = getDataDirectory().getParentDirectory().getChildFile("package_states.xml");
+
+    if (statesFile.existsAsFile())
+    {
+        auto xml = juce::parseXML(statesFile);
+        if (xml && xml->hasTagName("PackageStates"))
+        {
+            pinnedPackages.clear();
+            ignoredPackages.clear();
+
+            if (auto* pinnedNode = xml->getChildByName("Pinned"))
+            {
+                for (auto* pkg : pinnedNode->getChildWithTagNameIterator("Package"))
+                {
+                    auto key = pkg->getStringAttribute("key");
+                    if (key.isNotEmpty())
+                        pinnedPackages.insert(key);
+                }
+            }
+
+            if (auto* ignoredNode = xml->getChildByName("Ignored"))
+            {
+                for (auto* pkg : ignoredNode->getChildWithTagNameIterator("Package"))
+                {
+                    auto key = pkg->getStringAttribute("key");
+                    if (key.isNotEmpty())
+                        ignoredPackages.insert(key);
+                }
+            }
+        }
+    }
+}
+
+void RepositoryManager::savePackageStates()
+{
+    auto statesFile = getDataDirectory().getParentDirectory().getChildFile("package_states.xml");
+
+    juce::XmlElement root("PackageStates");
+
+    // Save pinned packages
+    auto* pinnedNode = root.createNewChildElement("Pinned");
+    for (const auto& key : pinnedPackages)
+    {
+        auto* pkgElement = pinnedNode->createNewChildElement("Package");
+        pkgElement->setAttribute("key", key);
+    }
+
+    // Save ignored packages
+    auto* ignoredNode = root.createNewChildElement("Ignored");
+    for (const auto& key : ignoredPackages)
+    {
+        auto* pkgElement = ignoredNode->createNewChildElement("Package");
+        pkgElement->setAttribute("key", key);
+    }
+
+    statesFile.getParentDirectory().createDirectory();
+    root.writeTo(statesFile);
 }

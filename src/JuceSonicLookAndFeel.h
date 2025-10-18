@@ -54,7 +54,7 @@ public:
         setColour(juce::AlertWindow::outlineColourId, lightest);
 
         // Title bar button colors
-        titleBarBackground = baseBackground.darker(0.2f);
+        myCustomColour = baseBackground.darker(0.2f);
         setColour(juce::DocumentWindow::textColourId, textColor);
 
         // Set this as the default LookAndFeel
@@ -78,10 +78,8 @@ public:
         bool drawTitleTextOnLeft
     ) override
     {
-        // Fill title bar background with darker variant of base color
-        g.fillAll(titleBarBackground);
+        g.fillAll(myCustomColour);
 
-        // Draw title text using FontOptions
         juce::String title = window.getName();
         g.setColour(findColour(juce::DocumentWindow::textColourId));
         g.setFont(juce::FontOptions(h * 0.65f, juce::Font::bold));
@@ -89,7 +87,6 @@ public:
         if (drawTitleTextOnLeft)
             g.drawText(title, titleSpaceX + 4, 0, titleSpaceW - 8, h, juce::Justification::centredLeft, true);
         else
-            // Center the title in the full width of the title bar, not just the titleSpace
             g.drawText(title, 0, 0, w, h, juce::Justification::centred, true);
     }
 
@@ -116,7 +113,7 @@ public:
 
             if (auto* rw = findParentComponentOfClass<juce::ResizableWindow>())
                 if (auto lf = dynamic_cast<LookAndFeel_V4*>(&rw->getLookAndFeel()))
-                    background = lf->findColour(juce::ResizableWindow::backgroundColourId);
+                    background = lf->findColour(juce::ResizableWindow::backgroundColourId); // == myCustomColour;
 
             g.fillAll(background);
 
@@ -191,7 +188,7 @@ public:
         return nullptr;
     }
 
-    juce::Colour titleBarBackground;
+    juce::Colour myCustomColour;
 };
 
 // Shared LookAndFeel wrapper for use with SharedResourcePointer
