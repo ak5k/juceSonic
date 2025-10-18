@@ -17,6 +17,7 @@ class RepositoryTreeItem;
 class RepositoryWindow
     : public juce::Component
     , private juce::Timer
+    , private juce::TextEditor::Listener
 {
 public:
     explicit RepositoryWindow(RepositoryManager& repoManager);
@@ -26,6 +27,11 @@ public:
     void resized() override;
     void visibilityChanged() override;
 
+    // TextEditor::Listener
+    void textEditorTextChanged(juce::TextEditor& editor) override;
+    void textEditorReturnKeyPressed(juce::TextEditor& editor) override;
+    bool keyPressed(const juce::KeyPress& key) override;
+
 private:
     // (TreeView-based UI; ListBoxModel methods removed)
 
@@ -34,6 +40,7 @@ private:
 
     void refreshRepositoryList();
     void refreshPackageList();
+    void filterTreeView();
     void checkForVersionMismatches();
     void installSelectedPackage();
     void installAllPackages();
@@ -71,6 +78,8 @@ private:
     RepositoryManager& repositoryManager;
 
     // UI Components
+    juce::Label searchLabel;
+    juce::TextEditor searchField;
     juce::TextButton manageReposButton;
     juce::TextButton refreshButton;
 
@@ -84,6 +93,7 @@ private:
     // Data
     std::vector<RepositoryManager::Repository> repositories;
     std::vector<RepositoryManager::JSFXPackage> allPackages;
+    juce::String currentSearchTerm;
     bool isLoading = false;
     bool isInstalling = false;
 

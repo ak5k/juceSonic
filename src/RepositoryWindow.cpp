@@ -380,6 +380,16 @@ private:
 RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     : repositoryManager(repoManager)
 {
+    // Setup search field
+    addAndMakeVisible(searchLabel);
+    searchLabel.setText("Search:", juce::dontSendNotification);
+    searchLabel.setJustificationType(juce::Justification::centredRight);
+
+    addAndMakeVisible(searchField);
+    searchField.setTextToShowWhenEmpty("Type to search packages...", juce::Colours::grey);
+    searchField.addListener(this);
+    searchField.setWantsKeyboardFocus(true);
+
     // Setup repository controls
     addAndMakeVisible(manageReposButton);
     manageReposButton.setButtonText("Manage Repositories...");
@@ -419,6 +429,7 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     statusLabel.setJustificationType(juce::Justification::centred);
 
     setSize(600, 600); // Narrower width to fit controls
+    setWantsKeyboardFocus(true);
 
     // Start loading repositories
     refreshRepositoryList();
@@ -448,6 +459,13 @@ void RepositoryWindow::paint(juce::Graphics& g)
 void RepositoryWindow::resized()
 {
     auto bounds = getLocalBounds().reduced(10);
+
+    // Search field at top
+    auto searchBar = bounds.removeFromTop(30);
+    searchLabel.setBounds(searchBar.removeFromLeft(60));
+    searchBar.removeFromLeft(5);
+    searchField.setBounds(searchBar);
+    bounds.removeFromTop(5);
 
     // Top controls
     auto topBar = bounds.removeFromTop(30);
@@ -686,6 +704,201 @@ void RepositoryWindow::refreshPackageList()
 {
     repoTree.repaint();          // Force repaint to update INSTALLED badges
     updateButtonsForSelection(); // Update button text based on installation status
+}
+
+void RepositoryWindow::textEditorTextChanged(juce::TextEditor& editor)
+{
+    if (&editor == &searchField)
+    {
+        currentSearchTerm = searchField.getText().trim();
+        filterTreeView();
+    }
+}
+
+void RepositoryWindow::textEditorReturnKeyPressed(juce::TextEditor& editor)
+{
+    if (&editor == &searchField && currentSearchTerm.length() >= 3)
+    {
+        // Get all selected items
+        auto selectedItems = getSelectedRepoItems();
+
+        // Only proceed if exactly one package is selected
+        if (selectedItems.size() == 1)
+        {
+            auto* item = selectedItems[0];
+            if (item->getType() == RepositoryTreeItem::ItemType::Package)
+            {
+                if (auto* pkg = item->getPackage())
+                {
+                    // Check if package is pinned
+                    if (repositoryManager.isPackagePinned(*pkg))
+                    {
+                        statusLabel.setText("Package is pinned - cannot install/uninstall", juce::dontSendNotification);
+                        return;
+                    }
+
+                    // Toggle install/uninstall
+                    if (repositoryManager.isPackageInstalled(*pkg))
+                        uninstallPackage(*pkg);
+                    else
+                        installPackage(*pkg);
+                }
+            }
+        }
+    }
+}
+
+bool RepositoryWindow::keyPressed(const juce::KeyPress& key)
+{
+    // Handle up/down arrow keys to move focus between search field and tree
+    if (key == juce::KeyPress::upKey)
+    {
+        if (searchField.hasKeyboardFocus(false))
+        {
+            // Move focus from search field to tree
+            repoTree.grabKeyboardFocus();
+            return true;
+        }
+    }
+    else if (key == juce::KeyPress::downKey)
+    {
+        if (!searchField.hasKeyboardFocus(false))
+        {
+            // Move focus from tree to search field
+            searchField.grabKeyboardFocus();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void RepositoryWindow::filterTreeView()
+{
+    if (!rootItem)
+        return;
+
+    // If search term is less than 3 characters, clear selection and show all items collapsed
+    if (currentSearchTerm.length() < 3)
+    {
+        // Clear all selections
+        for (int i = 0; i < rootItem->getNumSubItems(); ++i)
+        {
+            if (auto* repoItem = dynamic_cast<RepositoryTreeItem*>(rootItem->getSubItem(i)))
+            {
+                repoItem->setSelected(false, false);
+                repoItem->setOpen(false); // Collapse repos when clearing search
+
+                for (int j = 0; j < repoItem->getNumSubItems(); ++j)
+                {
+                    if (auto* categoryItem = dynamic_cast<RepositoryTreeItem*>(repoItem->getSubItem(j)))
+                    {
+                        categoryItem->setSelected(false, false);
+                        categoryItem->setOpen(false); // Collapse categories too
+
+                        for (int k = 0; k < categoryItem->getNumSubItems(); ++k)
+                            if (auto* packageItem = dynamic_cast<RepositoryTreeItem*>(categoryItem->getSubItem(k)))
+                                packageItem->setSelected(false, false);
+                    }
+                }
+            }
+        }
+        repoTree.repaint();
+        updateButtonsForSelection();
+        return;
+    }
+
+    // Clear all selections first
+    repoTree.clearSelectedItems();
+
+    // Search through all items using JUCE's String search
+    // Only select the deepest matching items (packages over categories over repos)
+    bool anyMatches = false;
+
+    for (int i = 0; i < rootItem->getNumSubItems(); ++i)
+    {
+        auto* repoItem = dynamic_cast<RepositoryTreeItem*>(rootItem->getSubItem(i));
+        if (!repoItem)
+            continue;
+
+        bool repoHasMatch = false;
+        bool repoHasDeeperMatch = false; // Track if there are category/package matches
+        juce::String repoName = repoItem->getName();
+
+        // Check if repo name matches
+        bool repoNameMatches = repoName.containsIgnoreCase(currentSearchTerm);
+        if (repoNameMatches)
+        {
+            repoHasMatch = true;
+            repoItem->setOpen(true);
+            anyMatches = true;
+        }
+
+        // Check categories and packages
+        for (int j = 0; j < repoItem->getNumSubItems(); ++j)
+        {
+            auto* categoryItem = dynamic_cast<RepositoryTreeItem*>(repoItem->getSubItem(j));
+            if (!categoryItem)
+                continue;
+
+            bool categoryHasMatch = false;
+            bool categoryHasDeeperMatch = false; // Track if there are package matches
+            juce::String categoryName = categoryItem->getName();
+
+            // Check if category name matches
+            bool categoryNameMatches = categoryName.containsIgnoreCase(currentSearchTerm);
+            if (categoryNameMatches)
+            {
+                categoryHasMatch = true;
+                repoHasMatch = true;
+                repoHasDeeperMatch = true; // Category is deeper than repo
+                categoryItem->setOpen(true);
+                anyMatches = true;
+            }
+
+            // Check packages
+            for (int k = 0; k < categoryItem->getNumSubItems(); ++k)
+            {
+                auto* packageItem = dynamic_cast<RepositoryTreeItem*>(categoryItem->getSubItem(k));
+                if (!packageItem || packageItem->getType() != RepositoryTreeItem::ItemType::Package)
+                    continue;
+
+                juce::String packageName = packageItem->getName();
+
+                // Check if package name matches
+                if (packageName.containsIgnoreCase(currentSearchTerm))
+                {
+                    categoryHasMatch = true;
+                    categoryHasDeeperMatch = true; // Package is deeper than category
+                    repoHasMatch = true;
+                    repoHasDeeperMatch = true; // Package is deeper than repo
+                    categoryItem->setOpen(true);
+                    repoItem->setOpen(true);
+                    packageItem->setSelected(true, false); // Select matching package (deepest level)
+                    anyMatches = true;
+                }
+            }
+
+            // Only select category if it matches and has no deeper matches
+            if (categoryNameMatches && !categoryHasDeeperMatch)
+                categoryItem->setSelected(true, false);
+
+            // If category or its packages match, keep category open
+            if (!categoryHasMatch)
+                categoryItem->setOpen(false);
+        }
+
+        // Only select repo if it matches and has no deeper matches
+        if (repoNameMatches && !repoHasDeeperMatch)
+            repoItem->setSelected(true, false);
+
+        // If repo or any of its content matches, keep repo open
+        if (!repoHasMatch)
+            repoItem->setOpen(false);
+    }
+
+    repoTree.repaint();
+    updateButtonsForSelection(); // Update buttons based on new selection
 }
 
 void RepositoryWindow::checkForVersionMismatches()
