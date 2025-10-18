@@ -264,6 +264,7 @@ private:
     void toggleLiceFullscreen();
     void setupPresetManagementMenu();
     void handlePresetManagementSelection(int selectedId);
+    void showAboutWindow();
 
     // JSFX lifecycle management (internal constructor/destructor pattern)
     void saveJsfxState();    // Internal "destructor" - save state before unloading JSFX

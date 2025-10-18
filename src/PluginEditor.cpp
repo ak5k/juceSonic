@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 
+#include "AboutWindow.h"
 #include "IOMatrixComponent.h"
 #include "PersistentFileChooser.h"
 #include "PluginConstants.h"
@@ -1094,6 +1095,8 @@ void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
     presetManagementMenu.addItem("Repositories...", 5);
     presetManagementMenu.addSeparator();
     presetManagementMenu.addItem("Delete...", 6);
+    presetManagementMenu.addSeparator();
+    presetManagementMenu.addItem("About...", 7);
 
     // Handle selection
     presetManagementMenu.onChange = [this]()
@@ -1166,9 +1169,20 @@ void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int select
         break;
     }
 
+    case 7: // About...
+        showAboutWindow();
+        break;
+
     default:
         break;
     }
+}
+
+void AudioPluginAudioProcessorEditor::showAboutWindow()
+{
+    // Create About window as a top-level window
+    // It will delete itself when closed
+    new AboutWindow();
 }
 
 //==============================================================================

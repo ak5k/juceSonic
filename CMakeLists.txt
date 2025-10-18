@@ -174,6 +174,79 @@ target_compile_definitions(${PROJECT_NAME}
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
 
+# ==============================================================================
+# Collect and Combine License Files
+# ==============================================================================
+
+# Search for license files recursively with common patterns
+file(GLOB_RECURSE LICENSE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/COPYING*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*/LICENSE*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*/COPYING*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*/*/LICENSE*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*/*/COPYING*"
+)
+
+# Sort licenses: root LICENSE first, then others alphabetically
+set(ROOT_LICENSE "")
+set(OTHER_LICENSES "")
+
+foreach(LICENSE_FILE ${LICENSE_FILES})
+    file(RELATIVE_PATH REL_PATH "${CMAKE_CURRENT_SOURCE_DIR}" "${LICENSE_FILE}")
+    
+    # Check if this is the root LICENSE
+    if(REL_PATH MATCHES "^LICENSE")
+        set(ROOT_LICENSE "${LICENSE_FILE}")
+    else()
+        list(APPEND OTHER_LICENSES "${LICENSE_FILE}")
+    endif()
+endforeach()
+
+# Sort other licenses alphabetically
+list(SORT OTHER_LICENSES)
+
+# Combine all licenses into one text file
+set(COMBINED_LICENSES_FILE "${CMAKE_CURRENT_BINARY_DIR}/LicensesBinaryData.txt")
+file(WRITE "${COMBINED_LICENSES_FILE}" "")
+
+# Function to append license with header
+function(append_license LICENSE_PATH)
+    file(RELATIVE_PATH REL_DIR "${CMAKE_CURRENT_SOURCE_DIR}" "${LICENSE_PATH}")
+    get_filename_component(LICENSE_DIR "${REL_DIR}" DIRECTORY)
+    
+    # If license is in root, use "juceSonic" as title
+    if(LICENSE_DIR STREQUAL "")
+        set(LICENSE_DIR "juceSonic")
+    endif()
+    
+    file(APPEND "${COMBINED_LICENSES_FILE}" 
+        "================================================================================\n")
+    file(APPEND "${COMBINED_LICENSES_FILE}" 
+        "${LICENSE_DIR}\n")
+    file(APPEND "${COMBINED_LICENSES_FILE}" 
+        "================================================================================\n\n")
+    
+    file(READ "${LICENSE_PATH}" LICENSE_CONTENT)
+    file(APPEND "${COMBINED_LICENSES_FILE}" "${LICENSE_CONTENT}\n\n")
+endfunction()
+
+# Append root license first
+if(ROOT_LICENSE)
+    message(STATUS "Adding root license: ${ROOT_LICENSE}")
+    append_license("${ROOT_LICENSE}")
+endif()
+
+# Append other licenses
+foreach(LICENSE_FILE ${OTHER_LICENSES})
+    message(STATUS "Adding license: ${LICENSE_FILE}")
+    append_license("${LICENSE_FILE}")
+endforeach()
+
+# Create binary data from the combined licenses
+juce_add_binary_data(LicensesBinaryData
+    SOURCES "${COMBINED_LICENSES_FILE}")
+
 # If your target needs extra binary assets, you can add them here. The first argument is the name of
 # a new static library target that will include all the binary resources. There is an optional
 # `NAMESPACE` argument that can specify the namespace of the generated binary data class. Finally,
@@ -193,6 +266,7 @@ target_link_libraries(${PROJECT_NAME}
         juce::juce_dsp
         juce::juce_gui_extra
     PUBLIC
+        LicensesBinaryData  # PUBLIC so format-specific targets inherit it
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
