@@ -250,6 +250,11 @@ public:
         {
             menu.addItem(5, "Install All");
             menu.addItem(6, "Uninstall All");
+            menu.addSeparator();
+            menu.addItem(7, "Pin All");
+            menu.addItem(8, "Unpin All");
+            menu.addItem(9, "Ignore All");
+            menu.addItem(10, "Unignore All");
         }
 
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) { handleContextMenuResult(result); });
@@ -290,6 +295,26 @@ public:
         case 6: // Uninstall All
             if (repositoryWindow)
                 repositoryWindow->uninstallFromTreeItem(this);
+            break;
+
+        case 7: // Pin All
+            if (repositoryWindow)
+                repositoryWindow->pinAllFromTreeItem(this);
+            break;
+
+        case 8: // Unpin All
+            if (repositoryWindow)
+                repositoryWindow->unpinAllFromTreeItem(this);
+            break;
+
+        case 9: // Ignore All
+            if (repositoryWindow)
+                repositoryWindow->ignoreAllFromTreeItem(this);
+            break;
+
+        case 10: // Unignore All
+            if (repositoryWindow)
+                repositoryWindow->unignoreAllFromTreeItem(this);
             break;
         }
     }
@@ -1576,6 +1601,158 @@ void RepositoryWindow::togglePackageIgnored(const RepositoryManager::JSFXPackage
 
     statusLabel.setText(package.name + (currentlyIgnored ? " unignored" : " ignored"), juce::dontSendNotification);
 
+    repoTree.repaint();
+}
+
+void RepositoryWindow::pinAllFromTreeItem(RepositoryTreeItem* item)
+{
+    if (!item)
+        return;
+
+    int pinned = 0;
+
+    std::function<void(RepositoryTreeItem*)> pinPackages;
+    pinPackages = [&](RepositoryTreeItem* treeItem)
+    {
+        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
+        {
+            if (auto* pkg = treeItem->getPackage())
+            {
+                if (!repositoryManager.isPackagePinned(*pkg))
+                {
+                    repositoryManager.setPackagePinned(*pkg, true);
+                    pinned++;
+                }
+            }
+        }
+        else
+        {
+            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
+                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
+                    pinPackages(child);
+        }
+    };
+
+    pinPackages(item);
+
+    statusLabel.setText(
+        juce::String(pinned) + " package" + (pinned == 1 ? "" : "s") + " pinned",
+        juce::dontSendNotification
+    );
+    repoTree.repaint();
+}
+
+void RepositoryWindow::unpinAllFromTreeItem(RepositoryTreeItem* item)
+{
+    if (!item)
+        return;
+
+    int unpinned = 0;
+
+    std::function<void(RepositoryTreeItem*)> unpinPackages;
+    unpinPackages = [&](RepositoryTreeItem* treeItem)
+    {
+        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
+        {
+            if (auto* pkg = treeItem->getPackage())
+            {
+                if (repositoryManager.isPackagePinned(*pkg))
+                {
+                    repositoryManager.setPackagePinned(*pkg, false);
+                    unpinned++;
+                }
+            }
+        }
+        else
+        {
+            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
+                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
+                    unpinPackages(child);
+        }
+    };
+
+    unpinPackages(item);
+
+    statusLabel.setText(
+        juce::String(unpinned) + " package" + (unpinned == 1 ? "" : "s") + " unpinned",
+        juce::dontSendNotification
+    );
+    repoTree.repaint();
+}
+
+void RepositoryWindow::ignoreAllFromTreeItem(RepositoryTreeItem* item)
+{
+    if (!item)
+        return;
+
+    int ignored = 0;
+
+    std::function<void(RepositoryTreeItem*)> ignorePackages;
+    ignorePackages = [&](RepositoryTreeItem* treeItem)
+    {
+        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
+        {
+            if (auto* pkg = treeItem->getPackage())
+            {
+                if (!repositoryManager.isPackageIgnored(*pkg))
+                {
+                    repositoryManager.setPackageIgnored(*pkg, true);
+                    ignored++;
+                }
+            }
+        }
+        else
+        {
+            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
+                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
+                    ignorePackages(child);
+        }
+    };
+
+    ignorePackages(item);
+
+    statusLabel.setText(
+        juce::String(ignored) + " package" + (ignored == 1 ? "" : "s") + " ignored",
+        juce::dontSendNotification
+    );
+    repoTree.repaint();
+}
+
+void RepositoryWindow::unignoreAllFromTreeItem(RepositoryTreeItem* item)
+{
+    if (!item)
+        return;
+
+    int unignored = 0;
+
+    std::function<void(RepositoryTreeItem*)> unignorePackages;
+    unignorePackages = [&](RepositoryTreeItem* treeItem)
+    {
+        if (treeItem->getType() == RepositoryTreeItem::ItemType::Package)
+        {
+            if (auto* pkg = treeItem->getPackage())
+            {
+                if (repositoryManager.isPackageIgnored(*pkg))
+                {
+                    repositoryManager.setPackageIgnored(*pkg, false);
+                    unignored++;
+                }
+            }
+        }
+        else
+        {
+            for (int i = 0; i < treeItem->getNumSubItems(); ++i)
+                if (auto* child = dynamic_cast<RepositoryTreeItem*>(treeItem->getSubItem(i)))
+                    unignorePackages(child);
+        }
+    };
+
+    unignorePackages(item);
+
+    statusLabel.setText(
+        juce::String(unignored) + " package" + (unignored == 1 ? "" : "s") + " unignored",
+        juce::dontSendNotification
+    );
     repoTree.repaint();
 }
 

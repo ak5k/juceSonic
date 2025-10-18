@@ -50,6 +50,10 @@ public:
     void uninstallFromTreeItem(class RepositoryTreeItem* item);
     void togglePackagePinned(const RepositoryManager::JSFXPackage& package);
     void togglePackageIgnored(const RepositoryManager::JSFXPackage& package);
+    void pinAllFromTreeItem(class RepositoryTreeItem* item);
+    void unpinAllFromTreeItem(class RepositoryTreeItem* item);
+    void ignoreAllFromTreeItem(class RepositoryTreeItem* item);
+    void unignoreAllFromTreeItem(class RepositoryTreeItem* item);
 
 private:
     RepositoryManager& repositoryManager;

@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <set>
+#include <map>
 #include <functional>
 
 class AudioPluginAudioProcessor;
@@ -163,6 +164,7 @@ private:
     juce::StringArray repositoryUrls;
     std::set<juce::String> pinnedPackages;
     std::set<juce::String> ignoredPackages;
+    std::map<juce::String, juce::String> installedVersions; // packageKey -> version
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RepositoryManager)
 };

@@ -223,9 +223,10 @@ void RepositoryManager::installPackage(const JSFXPackage& package, std::function
                 }
             }
 
-            // Save version information
-            auto versionFile = installDir.getChildFile(".version");
-            versionFile.replaceWithText(package.version);
+            // Store version information in package states
+            auto packageKey = getPackageKey(package);
+            installedVersions[packageKey] = package.version;
+            savePackageStates();
 
             // Success
             juce::String successMsg = "Successfully installed " + package.name + " v" + package.version;
@@ -261,6 +262,11 @@ void RepositoryManager::uninstallPackage(const JSFXPackage& package, std::functi
                 juce::MessageManager::callAsync([callback, error]() { callback(false, error); });
                 return;
             }
+
+            // Remove version information from package states
+            auto packageKey = getPackageKey(package);
+            installedVersions.erase(packageKey);
+            savePackageStates();
 
             // Success
             juce::String successMsg = "Successfully uninstalled " + package.name;
@@ -333,11 +339,11 @@ bool RepositoryManager::isPackageInstalled(const JSFXPackage& package) const
 
 juce::String RepositoryManager::getInstalledVersion(const JSFXPackage& package) const
 {
-    auto installDir = getPackageInstallDirectory(package);
-    auto versionFile = installDir.getChildFile(".version");
+    auto packageKey = getPackageKey(package);
+    auto it = installedVersions.find(packageKey);
 
-    if (versionFile.existsAsFile())
-        return versionFile.loadFileAsString().trim();
+    if (it != installedVersions.end())
+        return it->second;
 
     return juce::String();
 }
@@ -412,6 +418,7 @@ void RepositoryManager::loadPackageStates()
         {
             pinnedPackages.clear();
             ignoredPackages.clear();
+            installedVersions.clear();
 
             if (auto* pinnedNode = xml->getChildByName("Pinned"))
             {
@@ -430,6 +437,17 @@ void RepositoryManager::loadPackageStates()
                     auto key = pkg->getStringAttribute("key");
                     if (key.isNotEmpty())
                         ignoredPackages.insert(key);
+                }
+            }
+
+            if (auto* versionsNode = xml->getChildByName("InstalledVersions"))
+            {
+                for (auto* pkg : versionsNode->getChildWithTagNameIterator("Package"))
+                {
+                    auto key = pkg->getStringAttribute("key");
+                    auto version = pkg->getStringAttribute("version");
+                    if (key.isNotEmpty() && version.isNotEmpty())
+                        installedVersions[key] = version;
                 }
             }
         }
@@ -456,6 +474,15 @@ void RepositoryManager::savePackageStates()
     {
         auto* pkgElement = ignoredNode->createNewChildElement("Package");
         pkgElement->setAttribute("key", key);
+    }
+
+    // Save installed versions
+    auto* versionsNode = root.createNewChildElement("InstalledVersions");
+    for (const auto& [key, version] : installedVersions)
+    {
+        auto* pkgElement = versionsNode->createNewChildElement("Package");
+        pkgElement->setAttribute("key", key);
+        pkgElement->setAttribute("version", version);
     }
 
     statesFile.getParentDirectory().createDirectory();
