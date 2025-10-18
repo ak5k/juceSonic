@@ -217,12 +217,23 @@ void PresetTreeView::loadPresetsFromValueTree(const juce::ValueTree& presetsNode
         return;
     }
 
-    // Create a single directory entry to hold all files from APVTS
-    DirectoryEntry dirEntry;
-    dirEntry.directory = juce::File(); // No physical directory
-    dirEntry.isDefaultRoot = false;
-    dirEntry.isRemoteRoot = false;
-    dirEntry.isExternalRoot = false;
+    // Determine directory paths for categorization
+    auto defaultInstallRoot = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                  .getChildFile("juceSonic")
+                                  .getChildFile("data")
+                                  .getChildFile("local");
+
+    auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                       .getChildFile("juceSonic")
+                       .getChildFile("data");
+
+    auto remoteDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                         .getChildFile("juceSonic")
+                         .getChildFile("data")
+                         .getChildFile("remote");
+
+    // Group files by their scan root directory
+    std::map<juce::File, std::vector<FileEntry>> filesByScanRoot;
 
     // Convert ValueTree structure to our internal format
     for (int fileIdx = 0; fileIdx < presetsNode.getNumChildren(); ++fileIdx)
@@ -235,10 +246,10 @@ void PresetTreeView::loadPresetsFromValueTree(const juce::ValueTree& presetsNode
 
         // Get file path from ValueTree
         auto filePath = fileNode.getProperty("file", "").toString();
-        if (filePath.isNotEmpty())
-            fileEntry.file = juce::File(filePath);
-        else
-            fileEntry.file = juce::File(); // Empty file
+        if (filePath.isEmpty())
+            continue; // Skip files without paths
+
+        fileEntry.file = juce::File(filePath);
 
         // Convert banks
         for (int bankIdx = 0; bankIdx < fileNode.getNumChildren(); ++bankIdx)
@@ -271,11 +282,47 @@ void PresetTreeView::loadPresetsFromValueTree(const juce::ValueTree& presetsNode
         }
 
         if (!fileEntry.banks.empty())
-            dirEntry.files.push_back(fileEntry);
+        {
+            // Determine which scan root this file belongs to
+            juce::File scanRoot;
+
+            if (fileEntry.file.isAChildOf(defaultInstallRoot))
+            {
+                scanRoot = defaultInstallRoot;
+            }
+            else if (fileEntry.file.isAChildOf(remoteDir))
+            {
+                scanRoot = remoteDir;
+            }
+            else
+            {
+                // External directory - use the immediate parent of the file as the scan root
+                scanRoot = fileEntry.file.getParentDirectory();
+            }
+
+            filesByScanRoot[scanRoot].push_back(fileEntry);
+        }
     }
 
-    if (!dirEntry.files.empty())
+    // Create directory entries for each scan root
+    for (const auto& pair : filesByScanRoot)
+    {
+        DirectoryEntry dirEntry;
+        dirEntry.directory = pair.first;
+        dirEntry.files = pair.second;
+
+        // Determine directory type
+        auto dirPath = pair.first.getFullPathName();
+        auto defaultRootPath = defaultInstallRoot.getFullPathName();
+        auto remoteDirPath = remoteDir.getFullPathName();
+        auto dataDirPath = dataDir.getFullPathName();
+
+        dirEntry.isDefaultRoot = (dirPath == defaultRootPath);
+        dirEntry.isRemoteRoot = dirPath.startsWith(remoteDirPath);
+        dirEntry.isExternalRoot = !dirEntry.isDefaultRoot && !dirEntry.isRemoteRoot && !dirPath.startsWith(dataDirPath);
+
         presetDirectories.push_back(dirEntry);
+    }
 
     refreshTree();
 }
@@ -455,18 +502,53 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
 {
     auto root = std::make_unique<PresetTreeItem>("Root", PresetTreeItem::ItemType::Directory);
 
+    DBG("PresetTreeView::createRootItem - presetDirectories.size(): " << presetDirectories.size());
+
     for (const auto& dirEntry : presetDirectories)
     {
         // Determine display name based on directory type
         juce::String displayName;
         if (dirEntry.isDefaultRoot)
-            displayName = "local";
+        {
+            // Show relative path from local parent, including "local"
+            auto localParent = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                   .getChildFile("juceSonic")
+                                   .getChildFile("data")
+                                   .getChildFile("local");
+            displayName = "local/" + dirEntry.directory.getRelativePathFrom(localParent);
+        }
         else if (dirEntry.isRemoteRoot)
-            displayName = dirEntry.directory.getFileName() + " (remote)";
+        {
+            // Show relative path from remote parent, including "remote"
+            auto remoteParent = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                    .getChildFile("juceSonic")
+                                    .getChildFile("data")
+                                    .getChildFile("remote");
+            displayName = "remote/" + dirEntry.directory.getRelativePathFrom(remoteParent);
+        }
         else if (dirEntry.isExternalRoot)
-            displayName = dirEntry.directory.getFileName() + " (external)";
+        {
+            // Show full absolute path for external
+            displayName = dirEntry.directory.getFullPathName();
+        }
+        else if (dirEntry.directory == juce::File())
+        {
+            displayName = "local"; // ValueTree-loaded presets with no physical directory
+        }
         else
-            displayName = dirEntry.directory.getFileName();
+        {
+            displayName = dirEntry.directory.getFullPathName();
+        }
+
+        DBG("PresetTreeView: Creating directory item");
+        DBG("  displayName: " + displayName);
+        DBG("  path: " + dirEntry.directory.getFullPathName());
+        DBG("  isDefault: "
+            + juce::String(dirEntry.isDefaultRoot ? "true" : "false")
+            + ", isRemote: "
+            + juce::String(dirEntry.isRemoteRoot ? "true" : "false")
+            + ", isExternal: "
+            + juce::String(dirEntry.isExternalRoot ? "true" : "false"));
 
         auto dirItem = std::make_unique<PresetTreeItem>(
             displayName,
@@ -524,6 +606,18 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
         }
 
         root->addSubItem(dirItem.release());
+    }
+
+    DBG("PresetTreeView::createRootItem - returning root with " << root->getNumSubItems() << " sub-items");
+
+    // Set root directory items to be open by default AFTER they're added to the tree
+    // This ensures the openness state is properly applied
+    // BUT: If we're in auto-hide mode, keep them collapsed for a cleaner initial appearance
+    if (!isAutoHideEnabled())
+    {
+        for (int i = 0; i < root->getNumSubItems(); ++i)
+            if (auto* item = root->getSubItem(i))
+                item->setOpen(true);
     }
 
     return root;

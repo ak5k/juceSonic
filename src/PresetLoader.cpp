@@ -236,6 +236,9 @@ void PresetLoader::updatePresetsInState(juce::ValueTree newPresetsTree)
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
     DBG("PresetLoader: Updating APVTS state on message thread");
+    DBG("PresetLoader:   New presets tree has " << newPresetsTree.getNumChildren() << " children");
+    DBG("PresetLoader:   New presets tree type: " << newPresetsTree.getType().toString());
+    DBG("PresetLoader:   New presets tree valid: " << (newPresetsTree.isValid() ? "true" : "false"));
 
     // Remove old presets node if it exists
     auto oldPresetsNode = apvts.state.getChildWithName("presets");
@@ -246,7 +249,15 @@ void PresetLoader::updatePresetsInState(juce::ValueTree newPresetsTree)
     }
 
     // Add new presets node
-    apvts.state.appendChild(newPresetsTree, nullptr);
+    if (newPresetsTree.isValid() && newPresetsTree.getNumChildren() > 0)
+    {
+        apvts.state.appendChild(newPresetsTree, nullptr);
+        DBG("PresetLoader:   Successfully added new presets node");
+    }
+    else
+    {
+        DBG("PresetLoader:   NOT adding new presets node - invalid or empty tree");
+    }
 
     DBG("PresetLoader:   Added new presets node with " << newPresetsTree.getNumChildren() << " files");
 

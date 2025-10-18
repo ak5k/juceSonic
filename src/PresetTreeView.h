@@ -139,6 +139,14 @@ public:
 
     bool shouldIncludeInSearch(juce::TreeViewItem* item) override;
 
+    bool shouldCountItem(juce::TreeViewItem* item) override
+    {
+        // Only count actual preset items, not directories, files, or banks
+        if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
+            return presetItem->getType() == PresetTreeItem::ItemType::Preset;
+        return false;
+    }
+
     // Get processor reference
     AudioPluginAudioProcessor& getProcessor()
     {

@@ -170,9 +170,12 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     // Preset browser (embedded, minimal UI)
     addAndMakeVisible(presetBrowser);
-    presetBrowser.setShowManagementButtons(false);                   // Hide import/export/etc buttons
-    presetBrowser.getTreeView().setShowMetadataLabel(false);         // Hide metadata label
-    presetBrowser.getTreeView().setAutoHideTreeWithoutResults(true); // Only show tree when search has results
+    presetBrowser.setShowManagementButtons(false);           // Hide import/export/etc buttons
+    presetBrowser.getTreeView().setShowMetadataLabel(false); // Hide metadata label
+    presetBrowser.getTreeView().setAutoHideTreeWithoutResults(
+        true
+    );                            // Show hint line when no search, expand to show results
+    presetBrowser.toFront(false); // Ensure it's on top of LICE component
 
     // Handle preset selection
     presetBrowser.getTreeView().onCommand = [this](const juce::Array<juce::TreeViewItem*>& selectedItems)
@@ -180,6 +183,13 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
         if (!selectedItems.isEmpty())
             if (auto* firstItem = selectedItems[0])
                 onPresetTreeItemSelected(firstItem);
+    };
+
+    // Handle tree expansion for adaptive sizing
+    presetBrowser.getTreeView().onTreeExpansionChanged = [this](bool isExpanded)
+    {
+        // Trigger layout update when tree height changes
+        resized();
     };
 
     // Wet amount slider
@@ -524,8 +534,20 @@ void AudioPluginAudioProcessorEditor::resized()
     auto bounds = getLocalBounds();
     auto originalBounds = bounds; // Keep original bounds for tree overlay calculation
 
-    auto buttonArea = bounds.removeFromTop(40);
-    buttonArea.reduce(5, 5);
+    // Reserve space for JSFX title at the very top
+    auto titleArea = bounds.removeFromTop(30);
+    titleArea.reduce(5, 2);
+
+    // Button area to fit search field (25px) + spacing (5px) + tree line (24px) + extra spacing = 64px total
+    auto buttonArea = bounds.removeFromTop(64);
+
+    // Apply vertical margin
+    buttonArea.removeFromTop(5);
+    buttonArea.removeFromBottom(5);
+
+    // Apply left margin (more distance from left edge) and right margin
+    buttonArea.removeFromLeft(10); // Increased from 5 to 10 for more distance from left edge
+    buttonArea.removeFromRight(5);
 
     int totalWidth = buttonArea.getWidth();
     int spacing = 5;
@@ -579,12 +601,14 @@ void AudioPluginAudioProcessorEditor::resized()
 
     buttonArea.removeFromLeft(spacing * 2);
 
-    // Calculate preset browser bounds - search field in button bar, tree extends down
+    // Calculate preset browser bounds - search field and tree (title is separate now)
     auto presetBrowserArea = buttonArea.removeFromLeft(libraryWidth);
-    // Extend tree downward from button bar to bottom of window (for dropdown effect)
-    // Search field stays in button bar, tree drops below it
-    int treeDropHeight = originalBounds.getHeight() - 45; // Leave 5px from bottom
-    presetBrowserArea.setHeight(treeDropHeight);
+
+    // Always use adaptive height - tree resizes based on content/search
+    auto& treeView = presetBrowser.getTreeView();
+    int neededHeight = treeView.getNeededHeight();
+    presetBrowserArea.setHeight(neededHeight);
+
     presetBrowser.setBounds(presetBrowserArea);
 
     buttonArea.removeFromLeft(spacing * 2);
@@ -594,7 +618,8 @@ void AudioPluginAudioProcessorEditor::resized()
     // Give remaining space to wet slider (should match wetSliderWidth calculated above)
     wetSlider.setBounds(buttonArea);
 
-    statusLabel.setBounds(bounds.removeFromTop(30));
+    // Position JSFX title label in the reserved title area
+    statusLabel.setBounds(titleArea);
 
     // Give remaining space to components - visibility controls which shows
     viewport.setBounds(bounds);
@@ -619,6 +644,9 @@ void AudioPluginAudioProcessorEditor::resized()
 
     if (jsfxLiceRenderer)
         jsfxLiceRenderer->setBounds(bounds);
+
+    // Ensure preset browser is always on top (after all other layout is done)
+    presetBrowser.toFront(false);
 
     // Save current size to appropriate property based on which view is showing
     // This ensures sizes are persisted when host calls getStateInformation() (per-JSFX via PersistentState)
@@ -767,7 +795,7 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
                 rebuildParameterSliders();
 
                 // Clear preset browser (PresetLoader will handle clearing APVTS)
-                presetBrowser.getTreeView().refreshTree();
+                presetBrowser.refreshPresetList();
 
                 // Reset UI state - show parameters, update buttons
                 viewport.setVisible(true);
@@ -960,8 +988,8 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
     else
         DBG("updatePresetList: " << presetsNode.getNumChildren() << " preset files available");
 
-    // Trigger tree refresh - PresetTreeView will load from APVTS
-    presetBrowser.getTreeView().refreshTree();
+    // Trigger preset refresh - PresetWindow will load from APVTS and refresh tree
+    presetBrowser.refreshPresetList();
 }
 
 void AudioPluginAudioProcessorEditor::onPresetSelected(

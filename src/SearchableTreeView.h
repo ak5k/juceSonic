@@ -64,6 +64,9 @@ public:
         return false;
     }
 
+    // Override to notify tree view when item is opened/closed
+    void itemOpennessChanged(bool isNowOpen) override;
+
 protected:
     bool isMatched = false;
     bool isFocused = false;
@@ -113,6 +116,10 @@ public:
     }
 
     bool keyPressed(const juce::KeyPress& key) override;
+
+    void mouseDown(const juce::MouseEvent& e) override;
+
+    bool hitTest(int x, int y) override;
 
     // Set focus highlight on an item (for Ctrl navigation)
     void setFocusedItem(juce::TreeViewItem* item);
@@ -265,6 +272,19 @@ public:
     }
 
     /**
+     * @brief Check if an item should be counted for the total count display
+     * Override to customize counting logic (e.g., count only presets, not directories/banks)
+     *
+     * @param item The item to check
+     * @return true if the item should be counted
+     */
+    virtual bool shouldCountItem(juce::TreeViewItem* item)
+    {
+        // By default, count leaf items only
+        return item && item->getNumSubItems() == 0;
+    }
+
+    /**
      * @brief Refresh/rebuild the entire tree
      */
     void refreshTree();
@@ -296,6 +316,11 @@ public:
     void setShowMetadataLabel(bool show);
 
     /**
+     * @brief Called when tree item openness changes (for dynamic height adjustment)
+     */
+    void onTreeItemOpennessChanged();
+
+    /**
      * @brief Control tree visibility directly
      */
     void setTreeVisible(bool visible);
@@ -305,6 +330,54 @@ public:
      * When true, tree is only visible when search produces matches
      */
     void setAutoHideTreeWithoutResults(bool autoHide);
+
+    /**
+     * @brief Check if auto-hide mode is enabled
+     */
+    bool isAutoHideEnabled() const
+    {
+        return autoHideTreeWithoutResults;
+    }
+
+    /**
+     * @brief Get the needed height for the component based on current state
+     */
+    int getNeededHeight() const;
+
+    /**
+     * @brief Get ideal tree height based on visible items
+     */
+    int getIdealTreeHeight() const;
+
+    /**
+     * @brief Check if component is in collapsed preview mode
+     */
+    bool isInCollapsedMode() const;
+
+    /**
+     * @brief Toggle manual expansion state (for use by FilteredTreeView)
+     */
+    void toggleManualExpansion();
+
+    /**
+     * @brief Mouse event handling for click-to-expand in collapsed mode and click-away detection
+     */
+    void mouseDown(const juce::MouseEvent& e) override;
+
+    /**
+     * @brief Handle parent hierarchy changes to set up global mouse listener
+     */
+    void parentHierarchyChanged() override;
+
+    /**
+     * @brief Custom hit testing for collapsed mode
+     */
+    bool hitTest(int x, int y) override;
+
+    /**
+     * @brief Callback when tree expansion state changes (for parent layout updates)
+     */
+    std::function<void(bool isExpanded)> onTreeExpansionChanged;
 
     /**
      * @brief Get current visibility state of search field
@@ -342,6 +415,7 @@ private:
     bool showSearchField = true;
     bool showMetadataLabel = true;
     bool autoHideTreeWithoutResults = false;
+    bool isTreeManuallyExpanded = false; // User clicked to expand/collapse
     int matchCount = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SearchableTreeView)

@@ -41,8 +41,12 @@ public:
         return presetTreeView;
     }
 
-private:
+    /**
+     * @brief Refresh preset list from APVTS data
+     */
     void refreshPresetList();
+
+private:
     void importPresetFile();
     void exportSelectedPresets();
     void deleteSelectedPresets();
