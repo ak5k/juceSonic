@@ -207,6 +207,79 @@ void PresetTreeView::loadPresets(const juce::StringArray& directoryPaths)
     refreshTree();
 }
 
+void PresetTreeView::loadPresetsFromValueTree(const juce::ValueTree& presetsNode)
+{
+    presetDirectories.clear();
+
+    if (!presetsNode.isValid())
+    {
+        refreshTree();
+        return;
+    }
+
+    // Create a single directory entry to hold all files from APVTS
+    DirectoryEntry dirEntry;
+    dirEntry.directory = juce::File(); // No physical directory
+    dirEntry.isDefaultRoot = false;
+    dirEntry.isRemoteRoot = false;
+    dirEntry.isExternalRoot = false;
+
+    // Convert ValueTree structure to our internal format
+    for (int fileIdx = 0; fileIdx < presetsNode.getNumChildren(); ++fileIdx)
+    {
+        auto fileNode = presetsNode.getChild(fileIdx);
+        if (!fileNode.isValid())
+            continue;
+
+        FileEntry fileEntry;
+
+        // Get file path from ValueTree
+        auto filePath = fileNode.getProperty("file", "").toString();
+        if (filePath.isNotEmpty())
+            fileEntry.file = juce::File(filePath);
+        else
+            fileEntry.file = juce::File(); // Empty file
+
+        // Convert banks
+        for (int bankIdx = 0; bankIdx < fileNode.getNumChildren(); ++bankIdx)
+        {
+            auto bankNode = fileNode.getChild(bankIdx);
+            if (!bankNode.isValid())
+                continue;
+
+            BankEntry bankEntry;
+            bankEntry.bankName = bankNode.getProperty("name", "Unknown Bank").toString();
+
+            // Convert presets
+            for (int presetIdx = 0; presetIdx < bankNode.getNumChildren(); ++presetIdx)
+            {
+                auto presetNode = bankNode.getChild(presetIdx);
+                if (!presetNode.isValid())
+                    continue;
+
+                PresetEntry presetEntry;
+                presetEntry.file = fileEntry.file;
+                presetEntry.bank = bankEntry.bankName;
+                presetEntry.preset = presetNode.getProperty("name", "Unknown Preset").toString();
+                presetEntry.data = presetNode.getProperty("data", "").toString();
+
+                bankEntry.presets.push_back(presetEntry);
+            }
+
+            if (!bankEntry.presets.empty())
+                fileEntry.banks.push_back(bankEntry);
+        }
+
+        if (!fileEntry.banks.empty())
+            dirEntry.files.push_back(fileEntry);
+    }
+
+    if (!dirEntry.files.empty())
+        presetDirectories.push_back(dirEntry);
+
+    refreshTree();
+}
+
 void PresetTreeView::parsePresetFile(const juce::File& file, FileEntry& fileEntry)
 {
     auto content = file.loadFileAsString();

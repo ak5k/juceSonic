@@ -230,6 +230,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     rebuildParameterSliders();
 
+    // Listen to APVTS state for preset updates
+    processorRef.getAPVTS().state.addListener(this);
+
     // If JSFX is already loaded at startup, enable the Edit button and load presets
     if (processorRef.getSXInstancePtr() != nullptr)
     {
@@ -271,6 +274,9 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
         setStateProperty("juceControlsWidth", getWidth());
         setStateProperty("juceControlsHeight", getHeight());
     }
+
+    // Stop listening to APVTS state
+    processorRef.getAPVTS().state.removeListener(this);
 
     // Stop timer first to prevent callbacks during destruction
     stopTimer();
@@ -936,103 +942,27 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
     // Clear existing presets first
     libraryBrowser.clearLibrary();
 
-    // Get current JSFX filename (without extension) for filtering
-    auto currentJsfxPath = processorRef.getCurrentJSFXPath();
-    if (currentJsfxPath.isEmpty())
+    // Read presets from APVTS state (populated by PresetLoader in background)
+    auto& state = processorRef.getAPVTS().state;
+    auto presetsNode = state.getChildWithName("presets");
+
+    if (!presetsNode.isValid() || presetsNode.getNumChildren() == 0)
     {
-        DBG("updatePresetList: No JSFX loaded, clearing preset list");
+        DBG("updatePresetList: No presets in APVTS state");
         libraryBrowser.updateItemList();
         return;
     }
 
-    juce::File currentJsfxFile(currentJsfxPath);
-    juce::String currentJsfxName = currentJsfxFile.getFileNameWithoutExtension();
-    DBG("updatePresetList: Current JSFX: " << currentJsfxName.toRawUTF8());
+    DBG("updatePresetList: Loading " << presetsNode.getNumChildren() << " preset files from APVTS state");
 
-    // Create a converter for processing preset files
-    auto converter = std::make_unique<ReaperPresetConverter>();
-    juce::Array<juce::File> matchingPresetFiles;
-
-    // 1. Check same directory as loaded JSFX file (any .rpl files)
-    juce::File jsfxDirectory = currentJsfxFile.getParentDirectory();
-    DBG("updatePresetList: Checking JSFX directory: " << jsfxDirectory.getFullPathName().toRawUTF8());
-
-    if (jsfxDirectory.exists())
+    // Copy preset files from APVTS state to library browser
+    for (int i = 0; i < presetsNode.getNumChildren(); ++i)
     {
-        auto localRplFiles = jsfxDirectory.findChildFiles(juce::File::findFiles, false, "*.rpl");
-        DBG("updatePresetList: Found " << localRplFiles.size() << " .rpl files in JSFX directory");
-
-        for (const auto& file : localRplFiles)
+        auto fileNode = presetsNode.getChild(i);
+        if (fileNode.isValid())
         {
-            matchingPresetFiles.add(file);
-            DBG("  Adding local preset: " << file.getFileName().toRawUTF8());
-        }
-    }
-
-    // 2. Add presets from persistent storage directories
-    auto& state = processorRef.getAPVTS().state;
-    auto dirString = state.getProperty("presetDirectories", "").toString();
-
-    if (dirString.isNotEmpty())
-    {
-        juce::StringArray directories;
-        directories.addLines(dirString);
-
-        for (const auto& dirPath : directories)
-        {
-            juce::File dir(dirPath);
-            if (dir.exists() && dir.isDirectory())
-            {
-                auto storedPresets = dir.findChildFiles(juce::File::findFiles, false, "*.rpl");
-                DBG("updatePresetList: Found " << storedPresets.size() << " presets in " << dirPath);
-
-                for (const auto& file : storedPresets)
-                {
-                    matchingPresetFiles.add(file);
-                    DBG("  Adding preset: " << file.getFileName().toRawUTF8());
-                }
-            }
-        }
-    }
-
-    // 3. Check REAPER Effects directory (recursive, filtered by JSFX name)
-    auto reaperEffectsPath = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                 .getChildFile("REAPER")
-                                 .getChildFile("Effects");
-
-    DBG("updatePresetList: Checking REAPER Effects path: " << reaperEffectsPath.getFullPathName().toRawUTF8());
-
-    if (reaperEffectsPath.exists())
-    {
-        auto rplFiles = reaperEffectsPath.findChildFiles(juce::File::findFiles, true, "*.rpl");
-        DBG("updatePresetList: Found " << rplFiles.size() << " .rpl files in REAPER Effects (recursive)");
-
-        // Filter to only include files matching current JSFX name
-        for (const auto& file : rplFiles)
-        {
-            juce::String filename = file.getFileNameWithoutExtension();
-            // Match if filename equals JSFX name (case-insensitive)
-            if (filename.equalsIgnoreCase(currentJsfxName))
-            {
-                matchingPresetFiles.add(file);
-                DBG("  Matched REAPER preset file: " << file.getFileName().toRawUTF8());
-            }
-        }
-    }
-
-    DBG("updatePresetList: Total matching preset files: " << matchingPresetFiles.size());
-
-    // Load the matching preset files by converting them and adding to the library tree
-    if (!matchingPresetFiles.isEmpty())
-    {
-        for (const auto& file : matchingPresetFiles)
-        {
-            auto fileNode = converter->convertFileToTree(file);
-            if (fileNode.isValid())
-            {
-                // Access the mutable tree (cast away const)
-                const_cast<juce::ValueTree&>(libraryBrowser.getLibraryTree()).appendChild(fileNode, nullptr);
-            }
+            // Access the mutable tree (cast away const) and append a copy
+            const_cast<juce::ValueTree&>(libraryBrowser.getLibraryTree()).appendChild(fileNode.createCopy(), nullptr);
         }
     }
 
@@ -1227,6 +1157,30 @@ void AudioPluginAudioProcessorEditor::showRepositoryBrowser()
     auto* window = options.launchAsync();
     if (window != nullptr)
         window->centreWithSize(800, 600);
+}
+
+//==============================================================================
+// ValueTree::Listener implementation
+
+void AudioPluginAudioProcessorEditor::valueTreeChildAdded(juce::ValueTree& parent, juce::ValueTree& child)
+{
+    // Check if the "presets" node was added or modified
+    if (parent == processorRef.getAPVTS().state && child.getType() == juce::Identifier("presets"))
+    {
+        DBG("Editor: Presets node updated, refreshing UI");
+        // Update UI on message thread (we're already on it since this is a ValueTree listener)
+        updatePresetList();
+    }
+}
+
+void AudioPluginAudioProcessorEditor::valueTreeChildRemoved(juce::ValueTree& parent, juce::ValueTree& child, int)
+{
+    // Check if the "presets" node was removed
+    if (parent == processorRef.getAPVTS().state && child.getType() == juce::Identifier("presets"))
+    {
+        DBG("Editor: Presets node removed, clearing UI");
+        updatePresetList();
+    }
 }
 
 //==============================================================================

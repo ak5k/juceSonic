@@ -84,68 +84,29 @@ void PresetWindow::visibilityChanged()
 
 void PresetWindow::refreshPresetList()
 {
-    auto directories = getPresetDirectories();
+    // Read presets from APVTS state (populated by PresetLoader in background)
+    auto& state = processor.getAPVTS().state;
+    auto presetsNode = state.getChildWithName("presets");
 
-    // Always include the default install root directory (but don't add it to the saved list)
-    auto defaultInstallRoot = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                  .getChildFile("juceSonic")
-                                  .getChildFile("data")
-                                  .getChildFile("local");
-
-    juce::StringArray dirsToScan = directories;
-    if (defaultInstallRoot.exists())
+    if (!presetsNode.isValid() || presetsNode.getNumChildren() == 0)
     {
-        // Add the default install root to scan, but only temporarily for this scan
-        dirsToScan.add(defaultInstallRoot.getFullPathName());
+        presetTreeView.loadPresetsFromValueTree(juce::ValueTree());
+        statusLabel.setText("No presets loaded", juce::dontSendNotification);
+        updateButtonsForSelection();
+        return;
     }
 
-    // Check if current JSFX is loaded
-    juce::String jsfxPath = processor.getCurrentJSFXPath();
-    if (jsfxPath.isNotEmpty())
-    {
-        juce::File jsfxFile(jsfxPath);
-        juce::String jsfxFilename = jsfxFile.getFileNameWithoutExtension();
-        juce::File jsfxDir = jsfxFile.getParentDirectory();
-        juce::String jsfxDirPath = jsfxDir.getFullPathName();
+    // Load presets from APVTS ValueTree
+    presetTreeView.loadPresetsFromValueTree(presetsNode);
 
-        auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                           .getChildFile("juceSonic")
-                           .getChildFile("data");
+    // Count files and banks
+    int fileCount = presetsNode.getNumChildren();
+    int bankCount = 0;
+    for (int i = 0; i < fileCount; ++i)
+        bankCount += presetsNode.getChild(i).getNumChildren();
 
-        bool isInDataDir = jsfxDirPath.startsWith(dataDir.getFullPathName());
-
-        // If it's an external JSFX, add its directory to scan
-        if (!isInDataDir && jsfxDir.exists() && !dirsToScan.contains(jsfxDirPath))
-            dirsToScan.add(jsfxDirPath);
-
-        // Look for matching JSFX files in remote/ directory structure
-        auto remoteRoot = dataDir.getChildFile("remote");
-        if (remoteRoot.exists())
-        {
-            // Search recursively for JSFX files with the same name
-            auto matchingJsfxFiles = remoteRoot.findChildFiles(
-                juce::File::findFiles,
-                true, // recursive
-                jsfxFilename + ".jsfx"
-            );
-
-            // Add the parent directory of each matching JSFX file
-            for (const auto& matchingJsfx : matchingJsfxFiles)
-            {
-                auto matchingDir = matchingJsfx.getParentDirectory();
-                auto matchingDirPath = matchingDir.getFullPathName();
-
-                if (matchingDir.exists() && !dirsToScan.contains(matchingDirPath))
-                    dirsToScan.add(matchingDirPath);
-            }
-        }
-    }
-
-    presetTreeView.loadPresets(dirsToScan);
-
-    // Count presets (could traverse tree, but for simplicity just show directories)
     statusLabel.setText(
-        "Loaded presets from " + juce::String(directories.size()) + " directories",
+        "Loaded " + juce::String(fileCount) + " preset files (" + juce::String(bankCount) + " banks)",
         juce::dontSendNotification
     );
 

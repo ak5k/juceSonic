@@ -82,6 +82,9 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         parameterCache[i] = apvts.getParameter(paramID);
     }
 
+    // Initialize preset loader
+    presetLoader = std::make_unique<PresetLoader>(apvts);
+
     // Start timer for latency updates and parameter sync (30 Hz = ~33ms)
     startTimer(33);
 
@@ -698,6 +701,18 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                         INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
                         bool isInstrument = (flags & 1) != 0;
                         DBG("JSFX flags: " << flags << ", isInstrument=" << (isInstrument ? "YES" : "NO"));
+                        
+                        // Trigger preset loading for restored JSFX
+                        DBG("State restoration: Triggering preset loader for: " << jsfxFile.getFullPathName());
+                        if (presetLoader)
+                        {
+                            presetLoader->requestRefresh(jsfxFile.getFullPathName());
+                            DBG("State restoration: Preset loader triggered successfully");
+                        }
+                        else
+                        {
+                            DBG("State restoration: ERROR - presetLoader is null!");
+                        }
                     }
 
                     // Step 6: Restore routing configuration
@@ -865,6 +880,10 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     currentJSFXAuthor = JsfxHelper::parseJSFXAuthor(jsfxFile);
     DBG("JSFX author: " << currentJSFXAuthor);
 
+    // Trigger preset loading for this JSFX
+    if (presetLoader)
+        presetLoader->requestRefresh(jsfxFile.getFullPathName());
+
     return true;
 }
 
@@ -889,6 +908,10 @@ void AudioPluginAudioProcessor::unloadJSFX()
     currentJSFXName.clear();
     currentJSFXAuthor.clear();
     numActiveParams = 0;
+
+    // Clear presets when JSFX is unloaded
+    if (presetLoader)
+        presetLoader->requestRefresh("");
 }
 
 juce::String AudioPluginAudioProcessor::getCurrentJSFXPath() const

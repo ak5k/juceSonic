@@ -109,8 +109,11 @@ public:
     // Callbacks
     std::function<void()> onSelectionChangedCallback;
 
-    // Load presets from directory paths
+    // Load presets from directory paths (legacy method, kept for compatibility)
     void loadPresets(const juce::StringArray& directoryPaths);
+
+    // Load presets from APVTS ValueTree (preferred method)
+    void loadPresetsFromValueTree(const juce::ValueTree& presetsNode);
 
     // Get selected items for operations
     juce::Array<PresetTreeItem*> getSelectedPresetItems();

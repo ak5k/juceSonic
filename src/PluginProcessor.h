@@ -6,6 +6,7 @@
 #include "JsfxHelper.h"
 #include "ParameterSyncManager.h"
 #include "PluginConstants.h"
+#include "PresetLoader.h"
 
 #include <atomic>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -198,6 +199,9 @@ private:
 
     // Two-way parameter synchronization between APVTS and JSFX
     ParameterSyncManager parameterSync;
+
+    // Async preset loader
+    std::unique_ptr<PresetLoader> presetLoader;
 
     // Lock-free routing configuration (triple buffer pattern)
     RoutingConfig routingConfigs[3]; // Triple buffer for lock-free updates
