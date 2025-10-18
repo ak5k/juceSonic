@@ -98,6 +98,12 @@ public:
     bool isPackageInstalled(const JSFXPackage& package) const;
 
     /**
+     * @brief Get the installed version of a package
+     * @return Version string, or empty if not installed
+     */
+    juce::String getInstalledVersion(const JSFXPackage& package) const;
+
+    /**
      * @brief Get the base data directory for JSFX installations
      */
     juce::File getDataDirectory() const;

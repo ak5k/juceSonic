@@ -223,6 +223,10 @@ void RepositoryManager::installPackage(const JSFXPackage& package, std::function
                 }
             }
 
+            // Save version information
+            auto versionFile = installDir.getChildFile(".version");
+            versionFile.replaceWithText(package.version);
+
             // Success
             juce::String successMsg = "Successfully installed " + package.name + " v" + package.version;
             juce::MessageManager::callAsync([callback, successMsg]() { callback(true, successMsg); });
@@ -325,6 +329,17 @@ bool RepositoryManager::isPackageInstalled(const JSFXPackage& package) const
     auto installDir = getPackageInstallDirectory(package);
     auto mainFile = installDir.getChildFile(package.name);
     return mainFile.existsAsFile();
+}
+
+juce::String RepositoryManager::getInstalledVersion(const JSFXPackage& package) const
+{
+    auto installDir = getPackageInstallDirectory(package);
+    auto versionFile = installDir.getChildFile(".version");
+
+    if (versionFile.existsAsFile())
+        return versionFile.loadFileAsString().trim();
+
+    return juce::String();
 }
 
 juce::File RepositoryManager::getDataDirectory() const

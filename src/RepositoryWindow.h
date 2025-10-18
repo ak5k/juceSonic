@@ -31,6 +31,7 @@ private:
 
     void refreshRepositoryList();
     void refreshPackageList();
+    void checkForVersionMismatches();
     void installSelectedPackage();
     void installAllPackages();
     void uninstallSelectedPackage();

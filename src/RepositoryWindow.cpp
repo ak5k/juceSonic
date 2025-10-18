@@ -605,6 +605,9 @@ void RepositoryWindow::refreshRepositoryList()
 
                     // Force repaint to update installation status badges
                     repoTree.repaint();
+
+                    // Check for version mismatches after loading
+                    checkForVersionMismatches();
                 }
             }
         );
@@ -615,6 +618,130 @@ void RepositoryWindow::refreshPackageList()
 {
     repoTree.repaint();          // Force repaint to update INSTALLED badges
     updateButtonsForSelection(); // Update button text based on installation status
+}
+
+void RepositoryWindow::checkForVersionMismatches()
+{
+    struct VersionMismatch
+    {
+        juce::String packageName;
+        juce::String installedVersion;
+        juce::String availableVersion;
+        const RepositoryManager::JSFXPackage* package;
+    };
+
+    std::vector<VersionMismatch> mismatches;
+
+    // Check all packages for version mismatches
+    for (const auto& pkg : allPackages)
+    {
+        // Only check installed packages (including pinned ones)
+        if (!repositoryManager.isPackageInstalled(pkg))
+            continue;
+
+        // Skip ignored packages
+        if (repositoryManager.isPackageIgnored(pkg))
+            continue;
+
+        juce::String installedVersion = repositoryManager.getInstalledVersion(pkg);
+        juce::String availableVersion = pkg.version;
+
+        // Simple string comparison - any difference is a mismatch
+        if (installedVersion != availableVersion && installedVersion.isNotEmpty())
+        {
+            VersionMismatch mismatch;
+            mismatch.packageName = pkg.name;
+            mismatch.installedVersion = installedVersion;
+            mismatch.availableVersion = availableVersion;
+            mismatch.package = &pkg;
+            mismatches.push_back(mismatch);
+        }
+    }
+
+    if (mismatches.empty())
+        return;
+
+    // Build message
+    juce::String message = "New version(s) available:\n\n";
+    for (const auto& m : mismatches)
+        message += m.packageName + ": " + m.installedVersion + " → " + m.availableVersion + "\n";
+
+    // Show dialog with Update All option
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions()
+            .withIconType(juce::AlertWindow::InfoIcon)
+            .withTitle("Version Mismatches")
+            .withMessage(message)
+            .withButton("Update All")
+            .withButton("Cancel"),
+        [this, mismatches](int result)
+        {
+            if (result == 1) // Update All button
+            {
+                // Install all packages with mismatches (except pinned ones)
+                int totalToUpdate = 0;
+                for (const auto& m : mismatches)
+                    if (!repositoryManager.isPackagePinned(*m.package))
+                        totalToUpdate++;
+
+                if (totalToUpdate == 0)
+                {
+                    statusLabel.setText("All mismatched packages are pinned", juce::dontSendNotification);
+                    return;
+                }
+
+                auto packagesToUpdate = std::make_shared<std::vector<RepositoryManager::JSFXPackage>>();
+                for (const auto& m : mismatches)
+                    if (!repositoryManager.isPackagePinned(*m.package))
+                        packagesToUpdate->push_back(*m.package);
+
+                auto updated = std::make_shared<std::atomic<int>>(0);
+                auto failed = std::make_shared<std::atomic<int>>(0);
+
+                installButton.setEnabled(false);
+                installAllButton.setEnabled(false);
+                refreshButton.setEnabled(false);
+
+                for (const auto& package : *packagesToUpdate)
+                {
+                    repositoryManager.installPackage(
+                        package,
+                        [this, updated, failed, totalToUpdate](bool success, juce::String message)
+                        {
+                            if (success)
+                                (*updated)++;
+                            else
+                                (*failed)++;
+
+                            int completed = (*updated) + (*failed);
+                            statusLabel.setText(
+                                "Updating... " + juce::String(completed) + "/" + juce::String(totalToUpdate),
+                                juce::dontSendNotification
+                            );
+
+                            if (completed >= totalToUpdate)
+                            {
+                                statusLabel.setText(
+                                    "Update complete: "
+                                        + juce::String(*updated)
+                                        + " updated, "
+                                        + juce::String(*failed)
+                                        + " failed",
+                                    juce::dontSendNotification
+                                );
+
+                                installButton.setEnabled(true);
+                                installAllButton.setEnabled(true);
+                                refreshButton.setEnabled(true);
+                                repoTree.repaint();
+                                updateButtonsForSelection();
+                            }
+                        }
+                    );
+                }
+            }
+        }
+    );
 }
 
 void RepositoryWindow::collectSelectedRepoItems(juce::Array<RepositoryTreeItem*>& items, RepositoryTreeItem* item)
@@ -771,7 +898,7 @@ void RepositoryWindow::installAllPackages()
         .withTitle("Install All Packages")
         .withMessage("Install/update all " + juce::String(toInstall) + " package" + (toInstall == 1 ? "" : "s") + "?\n\n"
                     "This will install new packages and update existing ones.")
-        .withButton("Install")
+        .withButton("OK")
         .withButton("Cancel")
         .withAssociatedComponent(topLevel);
 
@@ -779,9 +906,9 @@ void RepositoryWindow::installAllPackages()
         options,
         [this, toInstall](int result)
         {
-            DBG("Dialog result: " << result << " (0=Install, 1=Cancel)");
+            DBG("Dialog result: " << result << " (0=OK, 1=Cancel)");
 
-            if (result != 0) // Not the Install button (first button = 0)
+            if (result != 0) // Not the OK button (first button = 0)
             {
                 DBG("User cancelled install all");
                 return;
