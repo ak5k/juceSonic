@@ -136,10 +136,42 @@ void FilteredTreeView::setFocusedItem(juce::TreeViewItem* item)
 
 bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
 {
-    // Check if Ctrl is held at the start of any key press
-    // But only for navigation keys (up/down), not for left/right expand/collapse
     auto keyCode = key.getKeyCode();
-    bool isNavKey =
+
+    // Helper lambda to collect items based on filter state
+    auto collectItems = [this](juce::Array<juce::TreeViewItem*>& items)
+    {
+        auto* root = getRootItem();
+        if (!root)
+            return;
+
+        if (isFiltered && searchView)
+        {
+            for (int i = 0; i < root->getNumSubItems(); ++i)
+                if (auto* item = root->getSubItem(i))
+                    collectMatchedItems(items, item);
+        }
+        else
+        {
+            for (int i = 0; i < root->getNumSubItems(); ++i)
+                collectVisibleSelectableItems(items, root->getSubItem(i));
+        }
+    };
+
+    // Helper lambda to find first selected item
+    auto findFirstSelected = [this]() -> juce::TreeViewItem*
+    {
+        for (int i = 0; i < getNumSelectedItems(); ++i)
+        {
+            auto* item = getSelectedItem(i);
+            if (item && item->canBeSelected())
+                return item;
+        }
+        return nullptr;
+    };
+
+    // Check if this is a navigation key (up/down/j/k)
+    bool isNavigationKey =
         (keyCode == juce::KeyPress::upKey
          || keyCode == juce::KeyPress::downKey
          || keyCode == 'j'
@@ -147,45 +179,17 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
          || keyCode == 'k'
          || keyCode == 'K');
 
+    // Show immediate focus indicator when Ctrl+navigation key pressed (without Shift)
     auto modifiers = juce::ModifierKeys::currentModifiers;
-    if (isNavKey && modifiers.isCtrlDown() && !modifiers.isShiftDown())
+    if (isNavigationKey && modifiers.isCtrlDown() && !modifiers.isShiftDown() && !focusedItem)
     {
-        // Show focus indicator on first selected item when Ctrl is pressed
-        // This provides immediate visual feedback
-        if (getNumSelectedItems() > 0 && !focusedItem)
+        if (auto* firstSelected = findFirstSelected())
         {
-            // Get appropriate item list
             juce::Array<juce::TreeViewItem*> items;
-            if (isFiltered && searchView)
-            {
-                if (auto* root = getRootItem())
-                {
-                    for (int i = 0; i < root->getNumSubItems(); ++i)
-                        if (auto* item = root->getSubItem(i))
-                            collectMatchedItems(items, item);
-                }
-            }
-            else
-            {
-                if (auto* root = getRootItem())
-                    for (int i = 0; i < root->getNumSubItems(); ++i)
-                        collectVisibleSelectableItems(items, root->getSubItem(i));
-            }
-
-            // Find first selected item in the list
-            for (int i = 0; i < getNumSelectedItems(); ++i)
-            {
-                auto* selected = getSelectedItem(i);
-                if (selected && selected->canBeSelected())
-                {
-                    int idx = items.indexOf(selected);
-                    if (idx >= 0)
-                    {
-                        setFocusedItem(items[idx]);
-                        break;
-                    }
-                }
-            }
+            collectItems(items);
+            int idx = items.indexOf(firstSelected);
+            if (idx >= 0)
+                setFocusedItem(items[idx]);
         }
     }
 
@@ -225,25 +229,10 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
         if (modifiers.isCtrlDown())
         {
             // Toggle the focused item if it exists, otherwise use first selected item
-            juce::TreeViewItem* currentItem = focusedItem;
-
-            if (!currentItem && getNumSelectedItems() > 0)
-            {
-                // No focus set, use first selected item
-                for (int i = 0; i < getNumSelectedItems(); ++i)
-                {
-                    auto* item = getSelectedItem(i);
-                    if (item && item->canBeSelected())
-                    {
-                        currentItem = item;
-                        break;
-                    }
-                }
-            }
+            juce::TreeViewItem* currentItem = focusedItem ? focusedItem : findFirstSelected();
 
             if (currentItem && currentItem->canBeSelected())
             {
-                // Toggle selection of focused item
                 currentItem->setSelected(!currentItem->isSelected(), false);
                 return true;
             }
@@ -251,41 +240,16 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
     }
 
     // Handle up/down navigation (arrow keys or vim keys: j/k)
-    // keyCode already declared above
-    bool isNavigationKey =
-        (keyCode == juce::KeyPress::upKey
-         || keyCode == juce::KeyPress::downKey
-         || keyCode == 'j'
-         || keyCode == 'J'
-         || keyCode == 'k'
-         || keyCode == 'K');
-
     if (isNavigationKey)
     {
-        // Get current modifier state (refresh to get latest state)
+        // Get current modifier state
         bool shiftHeld = juce::ModifierKeys::currentModifiers.isShiftDown();
         bool ctrlHeld = juce::ModifierKeys::currentModifiers.isCtrlDown();
         bool isDown = (keyCode == juce::KeyPress::downKey || keyCode == 'j' || keyCode == 'J');
 
-        // Get appropriate item list based on filter state
+        // Collect appropriate item list
         juce::Array<juce::TreeViewItem*> items;
-        if (isFiltered && searchView)
-        {
-            // Filtered: collect matched items
-            if (auto* root = getRootItem())
-            {
-                for (int i = 0; i < root->getNumSubItems(); ++i)
-                    if (auto* item = root->getSubItem(i))
-                        collectMatchedItems(items, item);
-            }
-        }
-        else
-        {
-            // Unfiltered: collect all visible selectable items
-            if (auto* root = getRootItem())
-                for (int i = 0; i < root->getNumSubItems(); ++i)
-                    collectVisibleSelectableItems(items, root->getSubItem(i));
-        }
+        collectItems(items);
 
         if (items.isEmpty())
             return juce::TreeView::keyPressed(key);
@@ -295,26 +259,11 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
 
         if (ctrlHeld)
         {
-            // For Ctrl navigation (with or without Shift), use the last navigation item if it exists
-            // This allows free movement independent of selection
+            // Ctrl navigation: use lastNavigationItem if exists, otherwise first selected
             if (lastNavigationItem)
-            {
                 currentIndex = items.indexOf(lastNavigationItem);
-            }
-            else
-            {
-                // No previous navigation, start from first selected item
-                for (int i = 0; i < getNumSelectedItems(); ++i)
-                {
-                    auto* selected = getSelectedItem(i);
-                    if (selected && selected->canBeSelected())
-                    {
-                        currentIndex = items.indexOf(selected);
-                        if (currentIndex >= 0)
-                            break;
-                    }
-                }
-            }
+            else if (auto* firstSelected = findFirstSelected())
+                currentIndex = items.indexOf(firstSelected);
         }
         else if (shiftHeld && !ctrlHeld)
         {
@@ -427,25 +376,12 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
         }
         else
         {
-            // For normal navigation, use last navigation item if it exists
-            // Otherwise use first selected item as reference
+            // Normal navigation: use lastNavigationItem if exists, otherwise first selected
             if (lastNavigationItem)
                 currentIndex = items.indexOf(lastNavigationItem);
-
             if (currentIndex < 0)
-            {
-                // No previous navigation, use first selected item
-                for (int i = 0; i < getNumSelectedItems(); ++i)
-                {
-                    auto* selected = getSelectedItem(i);
-                    if (selected && selected->canBeSelected())
-                    {
-                        currentIndex = items.indexOf(selected);
-                        if (currentIndex >= 0)
-                            break;
-                    }
-                }
-            }
+                if (auto* firstSelected = findFirstSelected())
+                    currentIndex = items.indexOf(firstSelected);
         } // If Ctrl is held and we have a current item, show focus immediately
         if (ctrlHeld && !shiftHeld && currentIndex >= 0 && currentIndex < items.size())
             setFocusedItem(items[currentIndex]);
@@ -534,7 +470,6 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
     }
 
     // Handle left/right navigation (arrow keys or vim keys: h/l) for expanding/collapsing
-    keyCode = key.getKeyCode();
     bool isLeftRight =
         (keyCode == juce::KeyPress::leftKey
          || keyCode == juce::KeyPress::rightKey
@@ -547,45 +482,17 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
     {
         bool isRight = (keyCode == juce::KeyPress::rightKey || keyCode == 'l' || keyCode == 'L');
 
-        // Get the item to expand/collapse - prioritize lastNavigationItem (Ctrl/Shift focus position)
-        juce::TreeViewItem* targetItem = nullptr;
-
-        if (lastNavigationItem)
-        {
-            // Use lastNavigationItem if it exists, regardless of canBeSelected()
-            // (canBeSelected() is for selection logic, not for expand/collapse)
-            targetItem = lastNavigationItem;
-        }
-        else
-        {
-            // Fall back to first selectable selected item
-            for (int i = 0; i < getNumSelectedItems(); ++i)
-            {
-                auto* item = getSelectedItem(i);
-                if (item && item->canBeSelected())
-                {
-                    targetItem = item;
-                    break;
-                }
-            }
-        }
+        // Prioritize lastNavigationItem, fall back to first selected item
+        juce::TreeViewItem* targetItem = lastNavigationItem ? lastNavigationItem : findFirstSelected();
 
         if (targetItem)
         {
-            if (isRight)
-            {
-                // Right/L: Expand if collapsed
-                if (targetItem->mightContainSubItems() && !targetItem->isOpen())
-                    targetItem->setOpen(true);
-            }
-            else
-            {
-                // Left/H: Collapse if expanded
-                if (targetItem->isOpen())
-                    targetItem->setOpen(false);
-            }
-            // Always return true to prevent default JUCE behavior that might reset focus
-            return true;
+            if (isRight && targetItem->mightContainSubItems() && !targetItem->isOpen())
+                targetItem->setOpen(true);
+            else if (!isRight && targetItem->isOpen())
+                targetItem->setOpen(false);
+
+            return true; // Prevent default JUCE behavior
         }
     }
 

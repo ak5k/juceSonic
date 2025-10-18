@@ -44,6 +44,13 @@ AboutWindow::ContentComponent::ContentComponent()
     titleLabel.setFont(juce::Font(24.0f, juce::Font::bold));
     titleLabel.setJustificationType(juce::Justification::centred);
 
+    // Version label
+    addAndMakeVisible(versionLabel);
+    juce::String versionText = juce::String("Version ") + juce::String(juce::CharPointer_UTF8(JucePlugin_VersionString));
+    versionLabel.setText(versionText, juce::dontSendNotification);
+    versionLabel.setFont(juce::Font(14.0f, juce::Font::plain));
+    versionLabel.setJustificationType(juce::Justification::centred);
+
     // Copyright label
     addAndMakeVisible(copyrightLabel);
     juce::String copyrightText =
@@ -90,6 +97,7 @@ void AboutWindow::ContentComponent::resized()
     auto area = getLocalBounds().reduced(20);
 
     titleLabel.setBounds(area.removeFromTop(40));
+    versionLabel.setBounds(area.removeFromTop(25));
     copyrightLabel.setBounds(area.removeFromTop(30));
 
     area.removeFromTop(10); // Spacing
@@ -99,5 +107,13 @@ void AboutWindow::ContentComponent::resized()
 
     area.removeFromBottom(10); // Spacing
 
-    licenseTextEditor.setBounds(area);
+    // Calculate width for 82 characters in monospace font (80 visible + scrollbar space)
+    auto font = juce::Font(juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
+    int charWidth = font.getStringWidth("M"); // Use 'M' as reference for monospace width
+    int textWidth = charWidth * 82;
+    
+    // Center the text editor with 82-char width
+    auto textArea = area.withTrimmedLeft((area.getWidth() - textWidth) / 2)
+                        .withWidth(textWidth);
+    licenseTextEditor.setBounds(textArea);
 }

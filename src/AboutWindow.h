@@ -34,6 +34,7 @@ public:
 
 private:
     juce::Label titleLabel;
+    juce::Label versionLabel;
     juce::Label copyrightLabel;
     juce::TextEditor licenseTextEditor;
     juce::TextButton closeButton;
