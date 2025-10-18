@@ -3,6 +3,9 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "RepositoryManager.h"
 
+// Forward declaration
+class RepositoryTreeItem;
+
 /**
  * @brief Window for managing JSFX repositories
  *
@@ -42,18 +45,27 @@ private:
 
 public:
     void updateButtonsForSelection();
+    juce::Array<RepositoryTreeItem*> getSelectedRepoItems();
 
-    // Context menu operations
+    // Multi-item operations (all operations work on selections)
+    void installFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
+    void uninstallFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
+    void pinAllFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
+    void unpinAllFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
+    void ignoreAllFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
+    void unignoreAllFromTreeItems(const juce::Array<RepositoryTreeItem*>& items);
+
+    // Legacy single-item operations (now wrappers for multi-item operations)
     void installPackage(const RepositoryManager::JSFXPackage& package);
     void uninstallPackage(const RepositoryManager::JSFXPackage& package);
-    void installFromTreeItem(class RepositoryTreeItem* item);
-    void uninstallFromTreeItem(class RepositoryTreeItem* item);
+    void installFromTreeItem(RepositoryTreeItem* item);
+    void uninstallFromTreeItem(RepositoryTreeItem* item);
     void togglePackagePinned(const RepositoryManager::JSFXPackage& package);
     void togglePackageIgnored(const RepositoryManager::JSFXPackage& package);
-    void pinAllFromTreeItem(class RepositoryTreeItem* item);
-    void unpinAllFromTreeItem(class RepositoryTreeItem* item);
-    void ignoreAllFromTreeItem(class RepositoryTreeItem* item);
-    void unignoreAllFromTreeItem(class RepositoryTreeItem* item);
+    void pinAllFromTreeItem(RepositoryTreeItem* item);
+    void unpinAllFromTreeItem(RepositoryTreeItem* item);
+    void ignoreAllFromTreeItem(RepositoryTreeItem* item);
+    void unignoreAllFromTreeItem(RepositoryTreeItem* item);
 
 private:
     RepositoryManager& repositoryManager;
@@ -77,7 +89,6 @@ private:
 
     // Helper to collect selected tree items
     void collectSelectedRepoItems(juce::Array<RepositoryTreeItem*>& items, RepositoryTreeItem* item);
-    juce::Array<RepositoryTreeItem*> getSelectedRepoItems();
 
     // Helper methods for refactored operations
     struct PackageCollectionResult
