@@ -5,7 +5,9 @@
 #include "PersistentFileChooser.h"
 #include "PluginConstants.h"
 #include "PluginProcessor.h"
-#include "PresetManager.h"
+#include "PresetWindow.h"
+#include "RepositoryWindow.h"
+#include "RepositoryManager.h"
 #include "ReaperPresetConverter.h"
 
 #include <jsfx.h>
@@ -165,12 +167,6 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(presetManagementMenu);
     setupPresetManagementMenu();
 
-    // Create preset manager
-    presetManager = std::make_unique<PresetManager>(processorRef);
-
-    // Set callback to refresh preset list when presets are saved/imported/deleted
-    presetManager->setOnPresetsChangedCallback([this]() { updatePresetList(); });
-
     // Preset library browser
     addAndMakeVisible(libraryBrowser);
     libraryBrowser.attachToValueTree(processorRef.getAPVTS().state, "PresetLibrary");
@@ -240,11 +236,6 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
         editButton.setEnabled(true);
         // Load preset list for the currently loaded JSFX
         updatePresetList();
-
-        // Apply default preset if one exists for this JSFX
-        // This happens during state restoration, but saved state will overwrite these values
-        if (presetManager && presetManager->applyDefaultPresetIfExists())
-            DBG("Applied default preset for JSFX on startup (may be overwritten by saved state)");
     }
 
     // If we should be showing JSFX UI and there's a JSFX loaded, show it
@@ -704,14 +695,6 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
 
                     DBG("JSFX loaded successfully");
 
-                    // Apply default preset if one exists for this JSFX
-                    if (presetManager && presetManager->applyDefaultPresetIfExists())
-                    {
-                        DBG("Applied default preset for JSFX");
-                        // Rebuild sliders to reflect the default preset values
-                        rebuildParameterSliders();
-                    }
-
                     // Restore JSFX state after loading (internal "constructor")
                     restoreJsfxState();
                 }
@@ -986,33 +969,30 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
         }
     }
 
-    // 2. Add presets from persistent storage for this JSFX (imported presets)
-    if (presetManager)
+    // 2. Add presets from persistent storage directories
+    auto& state = processorRef.getAPVTS().state;
+    auto dirString = state.getProperty("presetDirectories", "").toString();
+
+    if (dirString.isNotEmpty())
     {
-        juce::File storageDir = presetManager->getJsfxStorageDirectory();
-        DBG("updatePresetList: AppData storage directory: " << storageDir.getFullPathName().toRawUTF8());
-        DBG("updatePresetList: Storage directory exists: " << (storageDir.exists() ? "true" : "false"));
-        DBG("updatePresetList: Storage directory is directory: " << (storageDir.isDirectory() ? "true" : "false"));
+        juce::StringArray directories;
+        directories.addLines(dirString);
 
-        if (storageDir.exists() && storageDir.isDirectory())
+        for (const auto& dirPath : directories)
         {
-            auto storedPresets = storageDir.findChildFiles(juce::File::findFiles, false, "*.rpl");
-            DBG("updatePresetList: Found " << storedPresets.size() << " imported presets in AppData");
-
-            for (const auto& file : storedPresets)
+            juce::File dir(dirPath);
+            if (dir.exists() && dir.isDirectory())
             {
-                matchingPresetFiles.add(file);
-                DBG("  Adding imported preset: " << file.getFileName().toRawUTF8());
+                auto storedPresets = dir.findChildFiles(juce::File::findFiles, false, "*.rpl");
+                DBG("updatePresetList: Found " << storedPresets.size() << " presets in " << dirPath);
+
+                for (const auto& file : storedPresets)
+                {
+                    matchingPresetFiles.add(file);
+                    DBG("  Adding preset: " << file.getFileName().toRawUTF8());
+                }
             }
         }
-        else
-        {
-            DBG("updatePresetList: WARNING - Storage directory not accessible!");
-        }
-    }
-    else
-    {
-        DBG("updatePresetList: WARNING - No presetManager available!");
     }
 
     // 3. Check REAPER Effects directory (recursive, filtered by JSFX name)
@@ -1090,16 +1070,10 @@ void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
     presetManagementMenu.setTextWhenNoChoicesAvailable("");
 
     // Add menu items
-    presetManagementMenu.addItem("Reset", 1);
-    presetManagementMenu.addItem("Save As...", 2);
-    presetManagementMenu.addItem("Set as Default", 3);
+    presetManagementMenu.addItem("Preset Manager...", 1);
+    presetManagementMenu.addItem("Repositories...", 2);
     presetManagementMenu.addSeparator();
-    presetManagementMenu.addItem("Presets...", 4);
-    presetManagementMenu.addItem("Repositories...", 5);
-    presetManagementMenu.addSeparator();
-    presetManagementMenu.addItem("Delete...", 6);
-    presetManagementMenu.addSeparator();
-    presetManagementMenu.addItem("About...", 7);
+    presetManagementMenu.addItem("About...", 3);
 
     // Handle selection
     presetManagementMenu.onChange = [this]()
@@ -1116,63 +1090,17 @@ void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
 
 void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int selectedId)
 {
-    if (!presetManager)
-        return;
-
     switch (selectedId)
     {
-    case 1: // Reset
-        presetManager->resetToDefault(this);
+    case 1: // Preset Manager...
+        showPresetBrowser();
         break;
 
-    case 2: // Save As...
-        presetManager->saveAs(this);
-        // After saving, update preset list to show new preset
-        juce::MessageManager::callAsync([this]() { updatePresetList(); });
+    case 2: // Repositories...
+        showRepositoryBrowser();
         break;
 
-    case 3: // Set as Default
-        presetManager->setAsDefault(this);
-        break;
-
-    case 4: // Presets...
-        presetManager->showPresetManager(this);
-        // After closing preset manager, update preset list
-        juce::MessageManager::callAsync([this]() { updatePresetList(); });
-        break;
-
-    case 5: // Repositories...
-        presetManager->showRepositoryManager(this);
-        break;
-
-    case 6: // Delete...
-    {
-        // Use the currently selected preset from library browser
-        if (currentPresetName.isEmpty())
-        {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::WarningIcon,
-                "No Preset Selected",
-                "Please select a preset from the library browser first."
-            );
-            return;
-        }
-
-        presetManager->deletePreset(this, currentPresetBankName, currentPresetName);
-        // After deleting, update preset list
-        juce::MessageManager::callAsync(
-            [this]()
-            {
-                updatePresetList();
-                // Clear current selection since the preset was deleted
-                currentPresetName = "";
-                currentPresetBankName = "";
-            }
-        );
-        break;
-    }
-
-    case 7: // About...
+    case 3: // About...
         showAboutWindow();
         break;
 
@@ -1265,6 +1193,40 @@ void AudioPluginAudioProcessorEditor::showUpdateNotification(
                 setGlobalProperty("shouldCheckForUpdates", false);
         }
     );
+}
+
+void AudioPluginAudioProcessorEditor::showPresetBrowser()
+{
+    auto* presetWindow = new PresetWindow(processorRef);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(presetWindow);
+    options.dialogTitle = "Preset Manager";
+    options.resizable = true;
+    options.useNativeTitleBar = true;
+
+    auto* window = options.launchAsync();
+    if (window != nullptr)
+        window->centreWithSize(700, 600);
+}
+
+void AudioPluginAudioProcessorEditor::showRepositoryBrowser()
+{
+    // Create repository manager if it doesn't exist
+    if (!repositoryManager)
+        repositoryManager = std::make_unique<RepositoryManager>(processorRef);
+
+    auto* repoWindow = new RepositoryWindow(*repositoryManager);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(repoWindow);
+    options.dialogTitle = "Repository Browser";
+    options.resizable = true;
+    options.useNativeTitleBar = true;
+
+    auto* window = options.launchAsync();
+    if (window != nullptr)
+        window->centreWithSize(800, 600);
 }
 
 //==============================================================================

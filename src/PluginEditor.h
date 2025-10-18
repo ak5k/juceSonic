@@ -12,7 +12,7 @@
 #include "VersionChecker.h"
 
 class PersistentFileChooser;
-class PresetManager;
+class RepositoryManager;
 
 //==============================================================================
 // Custom DocumentWindow that handles close button properly
@@ -251,8 +251,8 @@ private:
     std::unique_ptr<JsfxEditorWindow> jsfxEditorWindow;
     std::unique_ptr<JsfxLiceFullscreenWindow> jsfxLiceFullscreenWindow;
 
-    // Preset manager
-    std::unique_ptr<PresetManager> presetManager;
+    // Repository manager (shared across plugin)
+    std::unique_ptr<RepositoryManager> repositoryManager;
 
     // Track currently selected preset for delete operations
     juce::String currentPresetBankName;
@@ -271,6 +271,8 @@ private:
     void showAboutWindow();
     void checkForUpdatesIfNeeded();
     void showUpdateNotification(const juce::String& latestVersion, const juce::String& downloadUrl);
+    void showPresetBrowser();
+    void showRepositoryBrowser();
 
     // JSFX lifecycle management (internal constructor/destructor pattern)
     void saveJsfxState();    // Internal "destructor" - save state before unloading JSFX
