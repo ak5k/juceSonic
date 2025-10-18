@@ -55,7 +55,7 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
       )
     , apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
-    DBG("AudioProcessor constructor started");
+
 
     // JsfxHelper constructor automatically initializes per-instance JSFX system
 
@@ -88,12 +88,12 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     // Start timer for latency updates and parameter sync (30 Hz = ~33ms)
     startTimer(33);
 
-    DBG("AudioProcessor constructor completed");
+
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
 {
-    DBG("AudioProcessor destructor started");
+
 
     // Stop timer first to prevent any callbacks during destruction
     stopTimer();
@@ -103,7 +103,7 @@ AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
 
     // Arrays don't need explicit clearing - they're automatically cleaned up
 
-    DBG("AudioProcessor destructor completed");
+
 }
 
 //==============================================================================
@@ -135,14 +135,14 @@ bool AudioPluginAudioProcessor::loadPresetFromBase64(const juce::String& base64D
 {
     if (base64Data.isEmpty())
     {
-        DBG("loadPresetFromBase64: Empty preset data");
+
         return false;
     }
 
     auto* instance = getSXInstancePtr();
     if (!instance)
     {
-        DBG("loadPresetFromBase64: No JSFX instance loaded");
+
         return false;
     }
 
@@ -153,7 +153,7 @@ bool AudioPluginAudioProcessor::loadPresetFromBase64(const juce::String& base64D
     // Check if we got any data (ignore return value - JUCE can return false even on successful decode)
     if (decodedStream.getDataSize() == 0)
     {
-        DBG("loadPresetFromBase64: Failed to decode preset data - no output data");
+
         return false;
     }
 
@@ -162,7 +162,7 @@ bool AudioPluginAudioProcessor::loadPresetFromBase64(const juce::String& base64D
 
     if (stateText.isEmpty())
     {
-        DBG("loadPresetFromBase64: Decoded preset text is empty");
+
         return false;
     }
 
@@ -304,8 +304,8 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
         auto bus = getBusesLayout();
         int juceOutputs = bus.getMainOutputChannels();
 
-        DBG("=== ROUTING INITIALIZATION IN PREPARE ===");
-        DBG("JUCE bus layout: " << bus.getMainInputChannels() << " inputs, " << juceOutputs << " outputs");
+
+
 
         // Initialize all routing configs with diagonal routing
         for (int i = 0; i < 3; ++i)
@@ -649,7 +649,7 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
 
                         // Parse author from JSFX file
                         currentJSFXAuthor = JsfxHelper::parseJSFXAuthor(jsfxFile);
-                        DBG("JSFX author: " << currentJSFXAuthor);
+
 
                         // Set sample rate
                         JesusonicAPI
@@ -661,7 +661,7 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
 
                         // Step 4: Manually restore parameter values from APVTS to JSFX
                         // This is necessary because we're restoring a saved state, not loading fresh defaults
-                        DBG("=== RESTORING PARAMETERS FROM STATE ===");
+
                         for (int i = 0; i < numActiveParams; ++i)
                         {
                             if (auto* param = parameterCache[i])
@@ -675,13 +675,13 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
 
                                 // Get restored normalized value from APVTS
                                 float normalizedValue = param->getValue();
-                                DBG("Param " << i << ": normalizedValue=" << normalizedValue);
+
 
                                 // Convert to actual JSFX value and set it
                                 double actualValue =
                                     ParameterUtils::normalizedToActualValue(sxInstance, i, normalizedValue);
                                 JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
-                                DBG("  -> Set JSFX actual value: " << actualValue);
+
                             }
                         }
 
@@ -695,23 +695,23 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
 
                         // Register MIDI callback
                         sx_set_midi_ctx(sxInstance, &midiSendRecvCallback, this);
-                        DBG("MIDI context registered with JSFX instance: " << currentJSFXName);
+
 
                         // Check instrument flag
                         INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
                         bool isInstrument = (flags & 1) != 0;
-                        DBG("JSFX flags: " << flags << ", isInstrument=" << (isInstrument ? "YES" : "NO"));
+
 
                         // Trigger preset loading for restored JSFX
-                        DBG("State restoration: Triggering preset loader for: " << jsfxFile.getFullPathName());
+
                         if (presetLoader)
                         {
                             presetLoader->requestRefresh(jsfxFile.getFullPathName());
-                            DBG("State restoration: Preset loader triggered successfully");
+
                         }
                         else
                         {
-                            DBG("State restoration: ERROR - presetLoader is null!");
+
                         }
                     }
 
@@ -852,7 +852,7 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     // Check if this JSFX is marked as an instrument (receives MIDI)
     INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
     bool isInstrument = (flags & 1) != 0;
-    DBG("JSFX flags: " << flags << ", isInstrument=" << (isInstrument ? "YES" : "NO"));
+
 
     // Note: Preset management now handled by LibraryBrowser in editor
     // Note: Directory remembering now handled by PersistentFileChooser in editor
@@ -860,25 +860,25 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     // Set the effect name from JSFX after successful load
     // Try to get description (from desc: tag) first, fall back to effect name (filename)
     const char* description = sxInstance->m_description.Get();
-    DBG("JSFX m_description: " << (description ? juce::String::fromUTF8(description) : "(null)"));
+
 
     if (description && description[0] != '\0')
         currentJSFXName = juce::String::fromUTF8(description);
     else
     {
         const char* effectName = JesusonicAPI.sx_getEffectName(sxInstance);
-        DBG("JSFX effect name (filename): " << (effectName ? juce::String::fromUTF8(effectName) : "(null)"));
+
         if (effectName && effectName[0] != '\0')
             currentJSFXName = juce::String::fromUTF8(effectName);
         else
             currentJSFXName = jsfxFile.getFileNameWithoutExtension();
     }
 
-    DBG("JSFX loaded successfully: " << currentJSFXName);
+
 
     // Parse author from JSFX file
     currentJSFXAuthor = JsfxHelper::parseJSFXAuthor(jsfxFile);
-    DBG("JSFX author: " << currentJSFXAuthor);
+
 
     // Trigger preset loading for this JSFX
     if (presetLoader)

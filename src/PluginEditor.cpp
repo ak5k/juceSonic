@@ -99,7 +99,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
                 juceHeight = juce::jlimit(170, 800, juceHeight);
             }
 
-            DBG("Switching to JUCE view: " << juceWidth << "x" << juceHeight);
+
             setSize(juceWidth, juceHeight);
             resized();
             return;
@@ -156,7 +156,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
         // Step 5: Set LICE resize limits and apply size
         setResizeLimits(400, 300, 1920, 1080);
-        DBG("Switching to LICE view: " << liceWidth << "x" << liceHeight);
+
         setSize(liceWidth, liceHeight);
         resized();
     };
@@ -311,7 +311,7 @@ void AudioPluginAudioProcessorEditor::destroyJsfxUI()
 
     if (jsfxLiceRenderer)
     {
-        DBG("PluginEditor: Destroying JSFX LICE renderer");
+
         jsfxLiceRenderer->setVisible(false);
         jsfxLiceRenderer.reset();
     }
@@ -333,13 +333,13 @@ void AudioPluginAudioProcessorEditor::saveJsfxState()
         {
             setStateProperty("liceUIWidth", getWidth());
             setStateProperty("liceUIHeight", getHeight());
-            DBG("Saved LICE UI state: " << getWidth() << "x" << getHeight());
+
         }
         else
         {
             setStateProperty("juceControlsWidth", getWidth());
             setStateProperty("juceControlsHeight", getHeight());
-            DBG("Saved JUCE controls state: " << getWidth() << "x" << getHeight());
+
         }
     }
     else if (viewport.isVisible())
@@ -348,7 +348,7 @@ void AudioPluginAudioProcessorEditor::saveJsfxState()
         setStateProperty("editorShowingJsfxUI", false);
         setStateProperty("juceControlsWidth", getWidth());
         setStateProperty("juceControlsHeight", getHeight());
-        DBG("Saved JUCE controls state (no LICE): " << getWidth() << "x" << getHeight());
+
     }
 }
 
@@ -393,7 +393,7 @@ void AudioPluginAudioProcessorEditor::restoreJsfxState()
             // Was showing LICE UI - restore saved LICE size
             restoredWidth = getStateProperty("liceUIWidth", defaultWidth);
             restoredHeight = getStateProperty("liceUIHeight", defaultHeight);
-            DBG("Restoring LICE UI size: " << restoredWidth << "x" << restoredHeight);
+
         }
         else if (hasSavedState && !showingJsfxUI)
         {
@@ -412,14 +412,14 @@ void AudioPluginAudioProcessorEditor::restoreJsfxState()
             uiButton.setButtonText("UI");
             setResizeLimits(700, 170, 700, 1080);
 
-            DBG("Restoring JUCE controls view: " << restoredWidth << "x" << restoredHeight);
+
         }
         else
         {
             // No saved state - use defaults (show LICE UI)
             restoredWidth = defaultWidth;
             restoredHeight = defaultHeight;
-            DBG("No saved state - using LICE defaults: " << restoredWidth << "x" << restoredHeight);
+
         }
 
         // Defer resize to next timer tick for DAW compatibility
@@ -447,13 +447,13 @@ void AudioPluginAudioProcessorEditor::restoreJsfxState()
         {
             restoredWidth = getStateProperty("juceControlsWidth", 700);
             restoredHeight = getStateProperty("juceControlsHeight", defaultHeight);
-            DBG("Restoring JUCE controls (no GFX): " << restoredWidth << "x" << restoredHeight);
+
         }
         else
         {
             restoredWidth = 700;
             restoredHeight = defaultHeight;
-            DBG("No saved state - using JUCE defaults: " << restoredWidth << "x" << restoredHeight);
+
         }
 
         // Defer resize to next timer tick for DAW compatibility
@@ -716,7 +716,7 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
         {
             if (file != juce::File{})
             {
-                DBG("User selected JSFX file: " << file.getFullPathName());
+
 
                 // Save current JSFX state before unloading (internal "destructor")
                 saveJsfxState();
@@ -739,14 +739,14 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                     // Update preset list after JSFX loads
                     updatePresetList();
 
-                    DBG("JSFX loaded successfully");
+
 
                     // Restore JSFX state after loading (internal "constructor")
                     restoreJsfxState();
                 }
                 else
                 {
-                    DBG("Failed to load JSFX file: " << file.getFullPathName());
+
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon,
                         "Error",
@@ -978,16 +978,6 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
 
 void AudioPluginAudioProcessorEditor::updatePresetList()
 {
-    // PresetWindow automatically reads from APVTS when refreshed
-    // Just trigger a refresh to update the tree view
-    auto& state = processorRef.getAPVTS().state;
-    auto presetsNode = state.getChildWithName("presets");
-
-    if (!presetsNode.isValid() || presetsNode.getNumChildren() == 0)
-        DBG("updatePresetList: No presets in APVTS state");
-    else
-        DBG("updatePresetList: " << presetsNode.getNumChildren() << " preset files available");
-
     // Trigger preset refresh - PresetWindow will load from APVTS and refresh tree
     presetBrowser.refreshPresetList();
 }
@@ -1002,7 +992,7 @@ void AudioPluginAudioProcessorEditor::onPresetSelected(
     currentPresetBankName = category;
     currentPresetName = label;
 
-    DBG("Preset selected: " + category + " / " + label);
+
 
     // Delegate to processor for preset loading
     // This ensures presets can be loaded from anywhere (MIDI, automation, editor, etc.)
@@ -1028,7 +1018,7 @@ void AudioPluginAudioProcessorEditor::onPresetTreeItemSelected(juce::TreeViewIte
             currentPresetBankName = bankName;
             currentPresetName = presetName;
 
-            DBG("Preset selected from tree: " + bankName + " / " + presetName);
+
 
             // Load the preset
             processorRef.loadPresetFromBase64(presetData);
@@ -1127,12 +1117,12 @@ void AudioPluginAudioProcessorEditor::checkForUpdatesIfNeeded()
     {
         if (updateAvailable)
         {
-            DBG("Update available: " << latestVersion);
+
             showUpdateNotification(latestVersion, downloadUrl);
         }
         else
         {
-            DBG("No update available");
+
         }
     };
 
@@ -1212,7 +1202,7 @@ void AudioPluginAudioProcessorEditor::valueTreeChildAdded(juce::ValueTree& paren
     // Check if the "presets" node was added or modified
     if (parent == processorRef.getAPVTS().state && child.getType() == juce::Identifier("presets"))
     {
-        DBG("Editor: Presets node updated, refreshing UI");
+
         // Update UI on message thread (we're already on it since this is a ValueTree listener)
         updatePresetList();
     }
@@ -1223,7 +1213,7 @@ void AudioPluginAudioProcessorEditor::valueTreeChildRemoved(juce::ValueTree& par
     // Check if the "presets" node was removed
     if (parent == processorRef.getAPVTS().state && child.getType() == juce::Identifier("presets"))
     {
-        DBG("Editor: Presets node removed, clearing UI");
+
         updatePresetList();
     }
 }

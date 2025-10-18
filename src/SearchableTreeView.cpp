@@ -514,19 +514,19 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
 
 void FilteredTreeView::mouseDown(const juce::MouseEvent& e)
 {
-    DBG("FilteredTreeView::mouseDown at (" << e.x << ", " << e.y << ")");
+
 
     // Check if we're in collapsed hint line mode
     if (searchView && searchView->isAutoHideEnabled() && searchView->isInCollapsedMode())
     {
-        DBG("FilteredTreeView: In collapsed mode, toggling expansion");
+
         // In collapsed mode, any click on the tree view should expand it
         // Trigger expansion by toggling manual expansion state
         searchView->toggleManualExpansion();
         return; // Don't pass to base class - we handled it
     }
 
-    DBG("FilteredTreeView: Normal mode, passing to TreeView");
+
     // Normal mode - let TreeView handle the click
     juce::TreeView::mouseDown(e);
 }
@@ -536,13 +536,13 @@ bool FilteredTreeView::hitTest(int x, int y)
     // In collapsed hint line mode, accept all hits so we can handle the click
     if (searchView && searchView->isAutoHideEnabled() && searchView->isInCollapsedMode())
     {
-        DBG("FilteredTreeView::hitTest(" << x << ", " << y << ") - collapsed mode, returning true");
+
         return true; // Accept all mouse events in collapsed mode
     }
 
     // Normal mode - use default TreeView hit testing
     bool result = juce::TreeView::hitTest(x, y);
-    DBG("FilteredTreeView::hitTest(" << x << ", " << y << ") - normal mode, returning " << (result ? "true" : "false"));
+
     return result;
 }
 
@@ -888,7 +888,7 @@ void SearchableTreeView::onTreeItemOpennessChanged()
     // Tree structure changed - update size to match tree content
     if (autoHideTreeWithoutResults && isTreeManuallyExpanded)
     {
-        DBG("SearchableTreeView: Tree item openness changed, triggering resize");
+
 
         // Directly trigger parent resize to match our needed height
         if (onTreeExpansionChanged)
@@ -912,7 +912,7 @@ void SearchableTreeView::setAutoHideTreeWithoutResults(bool autoHide)
 
     autoHideTreeWithoutResults = autoHide;
 
-    DBG("SearchableTreeView: setAutoHideTreeWithoutResults(" << (autoHide ? "true" : "false") << ")");
+
 
     // Let resized() handle visibility based on auto-hide logic
     resized();
@@ -1015,13 +1015,13 @@ void SearchableTreeView::toggleManualExpansion()
         if (isTreeManuallyExpanded)
         {
             // Expanding - open all root level items and give keyboard focus
-            DBG("SearchableTreeView: Expanding - opening all root level items and taking focus");
-            DBG("Root has " << rootItem->getNumSubItems() << " sub-items");
+
+
             for (int i = 0; i < rootItem->getNumSubItems(); ++i)
             {
                 if (auto* item = rootItem->getSubItem(i))
                 {
-                    DBG("  Opening item " << i << ": " << item->getUniqueName());
+
                     item->setOpen(true);
                 }
             }
@@ -1032,7 +1032,7 @@ void SearchableTreeView::toggleManualExpansion()
         else
         {
             // Collapsing - close all root level items, deselect all, and remove focus
-            DBG("SearchableTreeView: Collapsing - closing all root level items, deselecting, and removing focus");
+
             for (int i = 0; i < rootItem->getNumSubItems(); ++i)
                 if (auto* item = rootItem->getSubItem(i))
                     item->setOpen(false);
@@ -1086,7 +1086,7 @@ void SearchableTreeView::mouseDown(const juce::MouseEvent& e)
             // If click is outside our bounds, collapse the tree
             if (!getLocalBounds().contains(localEvent.getPosition()))
             {
-                DBG("SearchableTreeView: Click away detected, collapsing");
+
 
                 // Collapse root level items
                 if (rootItem)
@@ -1128,7 +1128,7 @@ void SearchableTreeView::mouseDown(const juce::MouseEvent& e)
                 // In collapsed mode - expand when clicking anywhere on the visible first line
                 if (isInCollapsedMode())
                 {
-                    DBG("SearchableTreeView: Click on collapsed tree line, expanding");
+
                     toggleManualExpansion();
                     return;
                 }
@@ -1138,7 +1138,7 @@ void SearchableTreeView::mouseDown(const juce::MouseEvent& e)
                 {
                     if (localPos.y < 24) // Top 24px is the first tree line
                     {
-                        DBG("SearchableTreeView: Click on top line when expanded, collapsing");
+
                         toggleManualExpansion();
                         return;
                     }
@@ -1169,7 +1169,7 @@ bool SearchableTreeView::hitTest(int x, int y)
     // In auto-hide mode when collapsed, accept hits in search field AND tree preview area
     if (autoHideTreeWithoutResults && isInCollapsedMode())
     {
-        DBG("SearchableTreeView::hitTest(" << x << ", " << y << ") - collapsed mode, returning true");
+
         // Accept hits in search field (0-38) and tree area (38+)
         return true; // Accept all hits when collapsed to allow search field interaction
     }

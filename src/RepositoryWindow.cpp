@@ -92,7 +92,7 @@ void RepositoryWindow::visibilityChanged()
     // Refresh installation status when window becomes visible
     if (isVisible() && !allPackages.empty())
     {
-        DBG("RepositoryWindow became visible - refreshing installation status");
+
         repositoryTreeView.getTreeView().repaint();
     }
 }
@@ -467,7 +467,7 @@ void RepositoryWindow::installAllPackages()
 {
     if (allPackages.empty())
     {
-        DBG("Install All: No packages available");
+
         return;
     }
 
@@ -480,13 +480,13 @@ void RepositoryWindow::installAllPackages()
 
     int toInstall = static_cast<int>(allPackages.size());
 
-    DBG("Install All: Will install/update " << toInstall << " packages");
+
 
     // Confirm installation - using async version to avoid blocking
     // Get the top-level window to ensure dialog appears in front
     auto* topLevel = getTopLevelComponent();
 
-    DBG("Showing install confirmation dialog for " << toInstall << " packages");
+
 
     // Use async message box with proper modal callback
     juce::MessageBoxOptions options = juce::MessageBoxOptions()
@@ -502,15 +502,15 @@ void RepositoryWindow::installAllPackages()
         options,
         [this, toInstall](int result)
         {
-            DBG("Dialog result: " << result << " (0=OK, 1=Cancel)");
+
 
             if (result != 0) // Not the OK button (first button = 0)
             {
-                DBG("User cancelled install all");
+
                 return;
             }
 
-            DBG("User confirmed install all for " << toInstall << " packages");
+
 
             // Proceed with installation
             proceedWithInstallation();
@@ -527,7 +527,7 @@ void RepositoryWindow::proceedWithInstallation()
 
     int toInstall = static_cast<int>(packagesToInstall->size());
 
-    DBG("proceedWithInstallation: Installing/updating " << toInstall << " packages");
+
 
     // Disable buttons during installation
     installButton.setEnabled(false);
@@ -540,11 +540,11 @@ void RepositoryWindow::proceedWithInstallation()
     auto installed = std::make_shared<std::atomic<int>>(0);
     auto failed = std::make_shared<std::atomic<int>>(0);
 
-    DBG("Starting installation loop for " << totalToInstall << " packages");
+
 
     if (totalToInstall == 0)
     {
-        DBG("ERROR: totalToInstall is 0!");
+
         installButton.setEnabled(true);
         installAllButton.setEnabled(true);
         refreshButton.setEnabled(true);
@@ -554,23 +554,23 @@ void RepositoryWindow::proceedWithInstallation()
     for (size_t i = 0; i < packagesToInstall->size(); ++i)
     {
         const auto& package = (*packagesToInstall)[i];
-        DBG("Queueing installation " << (i + 1) << "/" << totalToInstall << ": " << package.name);
+
 
         repositoryManager.installPackage(
             package,
             [this, package, installed, failed, totalToInstall, i](bool success, juce::String message)
             {
-                DBG("Callback received for " << package.name << " (item " << (i + 1) << "/" << totalToInstall << ")");
+
 
                 if (success)
                 {
                     (*installed)++;
-                    DBG("Successfully installed: " << package.name);
+
                 }
                 else
                 {
                     (*failed)++;
-                    DBG("Failed to install: " << package.name << " - " << message);
+
                 }
 
                 int completed = (*installed) + (*failed);
@@ -592,7 +592,7 @@ void RepositoryWindow::proceedWithInstallation()
 
                 if (completed >= static_cast<int>(totalToInstall))
                 {
-                    DBG("All installations complete. Installed: " << *installed << ", Failed: " << *failed);
+
 
                     // All done
                     juce::String resultMessage =
@@ -626,7 +626,7 @@ void RepositoryWindow::proceedWithInstallation()
         );
     }
 
-    DBG("All " << totalToInstall << " installation requests queued");
+
 }
 
 void RepositoryWindow::uninstallSelectedPackage()

@@ -502,7 +502,7 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
 {
     auto root = std::make_unique<PresetTreeItem>("Root", PresetTreeItem::ItemType::Directory);
 
-    DBG("PresetTreeView::createRootItem - presetDirectories.size(): " << presetDirectories.size());
+
 
     for (const auto& dirEntry : presetDirectories)
     {
@@ -540,9 +540,9 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
             displayName = dirEntry.directory.getFullPathName();
         }
 
-        DBG("PresetTreeView: Creating directory item");
-        DBG("  displayName: " + displayName);
-        DBG("  path: " + dirEntry.directory.getFullPathName());
+
+
+
         DBG("  isDefault: "
             + juce::String(dirEntry.isDefaultRoot ? "true" : "false")
             + ", isRemote: "
@@ -608,7 +608,7 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
         root->addSubItem(dirItem.release());
     }
 
-    DBG("PresetTreeView::createRootItem - returning root with " << root->getNumSubItems() << " sub-items");
+
 
     // Set root directory items to be open by default AFTER they're added to the tree
     // This ensures the openness state is properly applied

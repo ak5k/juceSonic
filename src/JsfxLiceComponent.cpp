@@ -22,7 +22,7 @@ JsfxLiceComponent::JsfxLiceComponent(SX_Instance* instance, JsfxHelper& helper)
 
     startTimer(33); // 30fps polling
 
-    DBG("JsfxLiceComponent: Created with mouse event tracking enabled");
+
 }
 
 JsfxLiceComponent::~JsfxLiceComponent()
@@ -161,7 +161,7 @@ void JsfxLiceComponent::resized()
             r.right = newWidth;
             r.bottom = newHeight;
 
-            DBG("Resizing JSFX framebuffer to: " << newWidth << "x" << newHeight);
+
 
             // This will resize the framebuffer
             liceState->setup_frame(nullptr, r);
@@ -313,7 +313,7 @@ void JsfxLiceComponent::timerCallback()
 
 void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
 {
-    DBG("JsfxLiceComponent::mouseDown at (" << event.x << ", " << event.y << ")");
+
 
     if (!instance)
         return;
@@ -325,7 +325,7 @@ void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
 {
-    DBG("JsfxLiceComponent::mouseUp at (" << event.x << ", " << event.y << ")");
+
 
     if (!instance)
         return;
@@ -353,7 +353,7 @@ void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
     if (liceState->m_mouse_cap)
         *liceState->m_mouse_cap = static_cast<EEL_F>(mouseCap);
 
-    DBG("Mouse button released, cap = " << mouseCap);
+
 }
 
 void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)

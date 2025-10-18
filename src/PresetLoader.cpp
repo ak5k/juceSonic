@@ -19,7 +19,7 @@ PresetLoader::~PresetLoader()
 
 void PresetLoader::requestRefresh(const juce::String& jsfxPath)
 {
-    DBG("PresetLoader::requestRefresh called with path: " << (jsfxPath.isEmpty() ? "<empty>" : jsfxPath));
+
 
     // Update pending path atomically
     {
@@ -82,7 +82,7 @@ void PresetLoader::loadPresetsInBackground()
         currentJsfxPath = pendingJsfxPath;
     }
 
-    DBG("PresetLoader: Starting background load for: " << currentJsfxPath);
+
 
     // Create new preset tree
     juce::ValueTree newPresetsTree("presets");
@@ -90,7 +90,7 @@ void PresetLoader::loadPresetsInBackground()
     // If no JSFX loaded, just clear presets
     if (currentJsfxPath.isEmpty())
     {
-        DBG("PresetLoader: No JSFX loaded, clearing presets");
+
         juce::MessageManager::callAsync([this, newPresetsTree]() mutable
                                         { updatePresetsInState(std::move(newPresetsTree)); });
         isCurrentlyLoading.store(false);
@@ -100,12 +100,12 @@ void PresetLoader::loadPresetsInBackground()
     juce::File jsfxFile(currentJsfxPath);
     juce::String jsfxName = jsfxFile.getFileNameWithoutExtension();
 
-    DBG("PresetLoader: Searching for presets for JSFX: " << jsfxName);
+
 
     // Phase 1: Collect all file paths (without holding any locks)
     auto presetFiles = findPresetFiles(jsfxFile, jsfxName);
 
-    DBG("PresetLoader: Found " << presetFiles.size() << " preset files to load");
+
 
     // Check if we should exit before starting I/O
     if (threadShouldExit())
@@ -128,22 +128,22 @@ void PresetLoader::loadPresetsInBackground()
         // Check if a new refresh was requested (cancel current operation)
         if (refreshRequested.load())
         {
-            DBG("PresetLoader: New refresh requested, cancelling current load");
+
             isCurrentlyLoading.store(false);
             return;
         }
 
-        DBG("PresetLoader: Loading preset file: " << file.getFileName());
+
 
         auto fileNode = converter->convertFileToTree(file);
         if (fileNode.isValid())
         {
-            DBG("PresetLoader:   File has " << fileNode.getNumChildren() << " banks");
+
             newPresetsTree.appendChild(fileNode, nullptr);
         }
         else
         {
-            DBG("PresetLoader:   Failed to load file");
+
         }
     }
 
@@ -164,17 +164,17 @@ juce::Array<juce::File> PresetLoader::findPresetFiles(const juce::File& jsfxFile
 
     // 1. Check same directory as loaded JSFX file (any .rpl files)
     juce::File jsfxDirectory = jsfxFile.getParentDirectory();
-    DBG("PresetLoader:   Checking JSFX directory: " << jsfxDirectory.getFullPathName());
+
 
     if (jsfxDirectory.exists())
     {
         auto localRplFiles = jsfxDirectory.findChildFiles(juce::File::findFiles, false, "*.rpl");
-        DBG("PresetLoader:   Found " << localRplFiles.size() << " .rpl files in JSFX directory");
+
 
         for (const auto& file : localRplFiles)
         {
             presetFiles.add(file);
-            DBG("PresetLoader:     Adding: " << file.getFileName());
+
         }
     }
 
@@ -186,7 +186,7 @@ juce::Array<juce::File> PresetLoader::findPresetFiles(const juce::File& jsfxFile
         juce::StringArray directories;
         directories.addLines(dirString);
 
-        DBG("PresetLoader:   Checking " << directories.size() << " configured directories");
+
 
         for (const auto& dirPath : directories)
         {
@@ -194,7 +194,7 @@ juce::Array<juce::File> PresetLoader::findPresetFiles(const juce::File& jsfxFile
             if (dir.exists() && dir.isDirectory())
             {
                 auto storedPresets = dir.findChildFiles(juce::File::findFiles, false, "*.rpl");
-                DBG("PresetLoader:     Found " << storedPresets.size() << " presets in " << dirPath);
+
 
                 for (const auto& file : storedPresets)
                     presetFiles.add(file);
@@ -207,12 +207,12 @@ juce::Array<juce::File> PresetLoader::findPresetFiles(const juce::File& jsfxFile
                                  .getChildFile("REAPER")
                                  .getChildFile("Effects");
 
-    DBG("PresetLoader:   Checking REAPER Effects path: " << reaperEffectsPath.getFullPathName());
+
 
     if (reaperEffectsPath.exists())
     {
         auto rplFiles = reaperEffectsPath.findChildFiles(juce::File::findFiles, true, "*.rpl");
-        DBG("PresetLoader:   Found " << rplFiles.size() << " .rpl files in REAPER Effects (recursive)");
+
 
         // Filter to only include files matching current JSFX name
         for (const auto& file : rplFiles)
@@ -222,7 +222,7 @@ juce::Array<juce::File> PresetLoader::findPresetFiles(const juce::File& jsfxFile
             if (filename.equalsIgnoreCase(jsfxName))
             {
                 presetFiles.add(file);
-                DBG("PresetLoader:     Matched: " << file.getFileName());
+
             }
         }
     }
@@ -235,37 +235,37 @@ void PresetLoader::updatePresetsInState(juce::ValueTree newPresetsTree)
     // This runs on the message thread - safe to modify APVTS
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-    DBG("PresetLoader: Updating APVTS state on message thread");
-    DBG("PresetLoader:   New presets tree has " << newPresetsTree.getNumChildren() << " children");
-    DBG("PresetLoader:   New presets tree type: " << newPresetsTree.getType().toString());
-    DBG("PresetLoader:   New presets tree valid: " << (newPresetsTree.isValid() ? "true" : "false"));
+
+
+
+
 
     // Remove old presets node if it exists
     auto oldPresetsNode = apvts.state.getChildWithName("presets");
     if (oldPresetsNode.isValid())
     {
         apvts.state.removeChild(oldPresetsNode, nullptr);
-        DBG("PresetLoader:   Removed old presets node");
+
     }
 
     // Add new presets node
     if (newPresetsTree.isValid() && newPresetsTree.getNumChildren() > 0)
     {
         apvts.state.appendChild(newPresetsTree, nullptr);
-        DBG("PresetLoader:   Successfully added new presets node");
+
     }
     else
     {
-        DBG("PresetLoader:   NOT adding new presets node - invalid or empty tree");
+
     }
 
-    DBG("PresetLoader:   Added new presets node with " << newPresetsTree.getNumChildren() << " files");
+
 
     // Count total banks for logging
     int totalBanks = 0;
     for (int i = 0; i < newPresetsTree.getNumChildren(); ++i)
         totalBanks += newPresetsTree.getChild(i).getNumChildren();
 
-    DBG("PresetLoader:   Total banks: " << totalBanks);
-    DBG("PresetLoader: State update complete");
+
+
 }

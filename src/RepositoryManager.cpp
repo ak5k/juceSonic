@@ -119,7 +119,7 @@ RepositoryManager::parseRepositoryXml(const juce::String& xmlContent, const juce
             // Only support packages ending with .jsfx
             if (!packageName.endsWithIgnoreCase(".jsfx"))
             {
-                DBG("Skipping non-JSFX package: " << packageName);
+
                 continue;
             }
 
@@ -177,17 +177,17 @@ RepositoryManager::parseRepositoryXml(const juce::String& xmlContent, const juce
 
 void RepositoryManager::installPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback)
 {
-    DBG("Installing package: " << package.name);
-    DBG("  Repository: " << package.repositoryName);
-    DBG("  Author: " << package.author);
-    DBG("  Version: " << package.version);
+
+
+
+
 
     // Install in background thread
     juce::Thread::launch(
         [this, package, callback]()
         {
             auto installDir = getPackageInstallDirectory(package);
-            DBG("  Install directory: " << installDir.getFullPathName());
+
 
             juce::String errorMsg;
 
@@ -291,8 +291,8 @@ void RepositoryManager::cancelInstallation()
 
 void RepositoryManager::uninstallPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback)
 {
-    DBG("Uninstalling package: " << package.name);
-    DBG("  Repository: " << package.repositoryName);
+
+
 
     // Uninstall in background thread
     juce::Thread::launch(
@@ -300,7 +300,7 @@ void RepositoryManager::uninstallPackage(const JSFXPackage& package, std::functi
         {
             auto installDir = getPackageInstallDirectory(package);
 
-            DBG("  Install directory: " << installDir.getFullPathName());
+
 
             if (!FileIO::exists(installDir))
             {

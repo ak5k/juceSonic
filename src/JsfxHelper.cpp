@@ -66,11 +66,11 @@ void JsfxHelper::initializeSharedResources()
     if (currentCount > 0)
     {
         // Shared resources already initialized by another instance
-        DBG("JsfxHelper: Shared resources already initialized (instance count: " << (currentCount + 1) << ")");
+
         return;
     }
 
-    DBG("JsfxHelper: Initializing shared JSFX resources (first instance)");
+
 
     // Get the module handle - required by JSFX system
 #ifdef _WIN32
@@ -78,13 +78,13 @@ void JsfxHelper::initializeSharedResources()
 
     if (!g_hInst)
     {
-        DBG("JsfxHelper: Failed to get module instance handle");
+
         return;
     }
 
     // Initialize WDL localization system (Windows only)
     WDL_LoadLanguagePack("", NULL);
-    DBG("JsfxHelper: WDL localization initialized");
+
 #else
     // On Linux/Mac with SWELL, initialize SWELL subsystems
     // JUCE has already initialized GTK, so we just initialize SWELL's message handling
@@ -95,14 +95,14 @@ void JsfxHelper::initializeSharedResources()
 
     // On Linux/Mac with SWELL, just use a dummy instance handle
     g_hInst = (HINSTANCE)1;
-    DBG("JsfxHelper: SWELL initialized (PostMessage and AppName)");
+
 #endif
 
     // Register host API function getter with JSFX
     // This allows JSFX to retrieve host callbacks like pin mapping
     extern void sx_provideAPIFunctionGetter(void* (*getFunc)(const char*));
     sx_provideAPIFunctionGetter(&getHostAPIFunction);
-    DBG("JsfxHelper: Registered host API function getter with JSFX");
+
 
     // Register JSFX window classes
     registerJsfxWindowClasses();
@@ -114,11 +114,11 @@ void JsfxHelper::cleanupSharedResources()
     if (currentCount > 1)
     {
         // Still have other instances using shared resources
-        DBG("JsfxHelper: Other instances still active (instance count: " << (currentCount - 1) << ")");
+
         return;
     }
 
-    DBG("JsfxHelper: Cleaning up shared JSFX resources (last instance)");
+
 
     // Unregister JSFX controls
     Sliders_Init(g_hInst, false, 0); // Unregister sliders
@@ -132,7 +132,7 @@ void JsfxHelper::cleanupSharedResources()
     SWELL_UnregisterCustomControlCreator(curses_ControlCreator);
 #endif
 
-    DBG("JsfxHelper: Shared resources cleanup completed");
+
 }
 
 void JsfxHelper::initializeJsfxSystem()
@@ -140,7 +140,7 @@ void JsfxHelper::initializeJsfxSystem()
     if (m_jsfxInitialized)
         return;
 
-    DBG("JsfxHelper: Initializing per-instance JSFX system");
+
 
     // Initialize JSFX standalone controls (sliders and VU meters) for this instance
     // These register custom control creators with SWELL on non-Windows platforms
@@ -177,7 +177,7 @@ void JsfxHelper::initializeJsfxSystem()
             graphics.drawRoundedRectangle(1.0f, 1.0f, thumbWidth - 2.0f, thumbHeight - 2.0f, 2.0f, 1.0f);
         } // Graphics context destroyed here
 
-        DBG("JsfxHelper: Created slider thumb image in memory for instance");
+
 
         // Create bitmap using Win32/SWELL CreateBitmap API
         // On Windows: standard Win32 CreateBitmap
@@ -211,11 +211,11 @@ void JsfxHelper::initializeJsfxSystem()
 
         if (m_sliderBitmap)
         {
-            DBG("JsfxHelper: Created cross-platform slider thumb bitmap using Win32/SWELL API for instance");
+
         }
         else
         {
-            DBG("JsfxHelper: CreateBitmap failed for slider thumb");
+
             return;
         }
     }
@@ -223,15 +223,15 @@ void JsfxHelper::initializeJsfxSystem()
     if (m_sliderBitmap)
     {
         Sliders_SetBitmap(static_cast<HBITMAP>(m_sliderBitmap), false);
-        DBG("JsfxHelper: Slider bitmap registered with controls for instance");
+
     }
     else
     {
-        DBG("JsfxHelper: No slider bitmap available to register");
+
     }
 
     m_jsfxInitialized = true;
-    DBG("JsfxHelper: Per-instance JSFX system initialized");
+
 }
 
 void JsfxHelper::cleanupJsfxSystem()
@@ -239,7 +239,7 @@ void JsfxHelper::cleanupJsfxSystem()
     if (!m_jsfxInitialized)
         return;
 
-    DBG("JsfxHelper: Cleaning up per-instance JSFX system");
+
 
     // Clean up per-instance bitmap
     if (m_sliderBitmap)
@@ -278,10 +278,10 @@ void JsfxHelper::registerJsfxWindowClasses()
     // SWELL_RegisterCustomControlCreator in sx_provideAPIFunctionGetter
     // JSFX will call SWELL_RegisterCustomControlCreator(curses_ControlCreator) itself
     // when it calls our getHostAPIFunction with "Mac_CustomControlCreator"
-    DBG("JsfxHelper: SWELL control creator will be registered by JSFX via API getter");
+
 #endif
 
-    DBG("JsfxHelper: Window classes registered");
+
 }
 
 void* JsfxHelper::createJsfxUI(SX_Instance* instance, void* parentWindow)
@@ -426,7 +426,7 @@ void* JsfxHelper::getHostAPIFunction(const char* functionName)
     if (!functionName)
         return nullptr;
 
-    DBG("JsfxHelper: JSFX requesting host function: " << juce::String(functionName));
+
 
     // Return function pointers for the callbacks JSFX needs
     if (strcmp(functionName, "fxGetSetHostNumChan") == 0)

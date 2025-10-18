@@ -46,7 +46,7 @@ void ParameterSyncManager::initialize(
         }
     }
 
-    DBG("ParameterSync initialized with " << numParams << " parameters");
+
 }
 
 void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int numSamples)
@@ -84,7 +84,7 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
         if (apvtsChanged && jsfxChanged)
         {
             // Both changed - APVTS takes precedence
-            DBG("Param " << i << " - both changed, APVTS wins: " << juce::String(currentApvtsValue, 3));
+
 
             // Convert and set JSFX value directly (no smoothing)
             double jsfxTargetValue = normalizedToJsfx(jsfxInstance, i, currentApvtsValue);
@@ -114,7 +114,7 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
             state.jsfxValue.store(currentJsfxValue, std::memory_order_release);
             state.apvtsNeedsUpdate.store(true, std::memory_order_release);
 
-            DBG("Param " << i << " - JSFX changed, queueing APVTS update: " << juce::String(normalizedValue, 3));
+
         }
     }
 }
@@ -142,14 +142,14 @@ void ParameterSyncManager::pushAPVTSUpdatesFromTimer()
             state.apvtsValue.store(pendingValue, std::memory_order_release);
             state.apvtsNeedsUpdate.store(false, std::memory_order_release);
 
-            DBG("Pushed JSFX->APVTS update for param " << i << ": " << juce::String(pendingValue, 3));
+
         }
     }
 }
 
 void ParameterSyncManager::reset()
 {
-    DBG("ParameterSync: Resetting sync state");
+
 
     numParams = 0;
 
@@ -169,7 +169,7 @@ void ParameterSyncManager::reset()
 void ParameterSyncManager::setSampleRate(double sampleRate)
 {
     currentSampleRate = sampleRate;
-    DBG("ParameterSync: Updated sample rate to " << juce::String(sampleRate, 1) << " Hz");
+
 }
 
 double ParameterSyncManager::jsfxToNormalized(SX_Instance* instance, int paramIndex, double jsfxValue)
