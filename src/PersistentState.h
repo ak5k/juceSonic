@@ -95,6 +95,32 @@ protected:
         return state->getProperty("jsfxFilePath", "").toString();
     }
 
+    /**
+     * Clear all state for the current JSFX.
+     * This removes all per-JSFX scoped properties.
+     */
+    void clearCurrentJsfxState()
+    {
+        if (!state)
+            return;
+
+        auto jsfxPath = getCurrentJsfxPath();
+        if (jsfxPath.isEmpty())
+            return;
+
+        // Get hash suffix used for scoping
+        auto hash = juce::String(jsfxPath.hashCode64());
+        auto suffix = "_" + hash;
+
+        // Remove all properties that end with this hash suffix
+        for (int i = state->getNumProperties() - 1; i >= 0; --i)
+        {
+            auto propName = state->getPropertyName(i).toString();
+            if (propName.endsWith(suffix))
+                state->removeProperty(propName, nullptr);
+        }
+    }
+
 private:
     /**
      * Create a scoped property key using JSFX file path hash.

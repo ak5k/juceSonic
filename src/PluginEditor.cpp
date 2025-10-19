@@ -377,11 +377,6 @@ void AudioPluginAudioProcessorEditor::restoreJsfxState()
     bool hasSavedState = getStateProperty("editorShowingJsfxUI", juce::var()).isVoid() == false;
     bool showingJsfxUI = getStateProperty("editorShowingJsfxUI", true);
 
-    DBG("Restoring JSFX state - hasSavedState="
-        << (hasSavedState ? "true" : "false")
-        << ", showingJsfxUI="
-        << (showingJsfxUI ? "true" : "false"));
-
     auto* sx = processorRef.getSXInstancePtr();
     if (sx && sx->gfx_hasCode())
     {
@@ -396,7 +391,7 @@ void AudioPluginAudioProcessorEditor::restoreJsfxState()
         // Calculate default size from JSFX's @gfx dimensions
         auto bounds = jsfxLiceRenderer->getRecommendedBounds();
         int defaultHeight = 40 + 30 + bounds.getHeight();
-        int defaultWidth = juce::jmax(700, bounds.getWidth());
+        int defaultWidth = bounds.getWidth();
         defaultHeight = juce::jlimit(300, 1080, defaultHeight);
         defaultWidth = juce::jlimit(400, 1920, defaultWidth);
 
@@ -734,25 +729,19 @@ void AudioPluginAudioProcessorEditor::toggleLiceFullscreen()
         // Exit fullscreen and kiosk mode
         juce::Desktop::getInstance().setKioskModeComponent(nullptr);
         jsfxLiceFullscreenWindow.reset();
+
+        // Re-add LICE component to main editor
         addAndMakeVisible(jsfxLiceRenderer.get());
 
-        // Ensure preset window is visible when returning from fullscreen
-        presetWindow.setVisible(buttonBarVisible);
-
         resized();
+        grabKeyboardFocus();
     }
     else
     {
-        // Enter fullscreen with kiosk mode
+        // Enter fullscreen - show LICE component in fullscreen window
         jsfxLiceFullscreenWindow = std::make_unique<JsfxLiceFullscreenWindow>();
         jsfxLiceFullscreenWindow->onWindowClosed = [this]() { toggleLiceFullscreen(); };
-        jsfxLiceFullscreenWindow->onToggleButtonBar = [this]()
-        {
-            buttonBarVisible = !buttonBarVisible;
-            resized();
-        };
 
-        removeChildComponent(jsfxLiceRenderer.get());
         jsfxLiceFullscreenWindow->showWithComponent(jsfxLiceRenderer.get());
 
         // Use Desktop::setKioskModeComponent for true kiosk mode
@@ -793,7 +782,12 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
                     // Update preset list after JSFX loads
                     updatePresetList();
 
+                    // Always clear state when manually loading a JSFX (new session)
+                    // State restoration only preserves state when DAW reopens the plugin
+                    clearCurrentJsfxState();
+
                     // Restore JSFX state after loading (internal "constructor")
+                    // Since we just cleared state, this will use defaults
                     restoreJsfxState();
                 }
                 else

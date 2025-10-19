@@ -6,7 +6,6 @@ class JsfxLiceComponent;
 
 /**
  * Fullscreen window for JSFX LICE renderer.
- * Borrows the component from PluginEditor, doesn't own it.
  */
 class JsfxLiceFullscreenWindow : public juce::ResizableWindow
 {
@@ -17,10 +16,9 @@ public:
     bool keyPressed(const juce::KeyPress& key) override;
     void closeButtonPressed();
 
-    void showWithComponent(JsfxLiceComponent* component);
+    void showWithComponent(JsfxLiceComponent* liceComponent);
 
     std::function<void()> onWindowClosed;
-    std::function<void()> onToggleButtonBar;
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxLiceFullscreenWindow)

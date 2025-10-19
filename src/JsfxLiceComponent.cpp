@@ -21,8 +21,6 @@ JsfxLiceComponent::JsfxLiceComponent(SX_Instance* instance, JsfxHelper& helper)
     setInterceptsMouseClicks(true, false); // This component intercepts mouse clicks
 
     startTimer(33); // 30fps polling
-
-
 }
 
 JsfxLiceComponent::~JsfxLiceComponent()
@@ -160,8 +158,6 @@ void JsfxLiceComponent::resized()
             r.top = 0;
             r.right = newWidth;
             r.bottom = newHeight;
-
-
 
             // This will resize the framebuffer
             liceState->setup_frame(nullptr, r);
@@ -313,8 +309,6 @@ void JsfxLiceComponent::timerCallback()
 
 void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
 {
-
-
     if (!instance)
         return;
 
@@ -325,8 +319,6 @@ void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
 {
-
-
     if (!instance)
         return;
 
@@ -352,8 +344,6 @@ void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
     // Set the cleared button state
     if (liceState->m_mouse_cap)
         *liceState->m_mouse_cap = static_cast<EEL_F>(mouseCap);
-
-
 }
 
 void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
@@ -472,16 +462,36 @@ juce::Rectangle<int> JsfxLiceComponent::getRecommendedBounds()
     if (!instance)
         return juce::Rectangle<int>(0, 0, 400, 300);
 
+    // Check if JSFX has requested specific dimensions via gfx(width, height) call
+    // These are set during @init section execution
+    if (instance->m_gfx_reqw > 0 && instance->m_gfx_reqh > 0)
+        return juce::Rectangle<int>(0, 0, instance->m_gfx_reqw, instance->m_gfx_reqh);
+
     auto* liceState = instance->m_lice_state;
-    if (!liceState || !liceState->m_framebuffer)
-        return juce::Rectangle<int>(0, 0, 400, 300);
+    if (liceState)
+    {
+        // Fall back to gfx_w/gfx_h variables if available
+        if (liceState->m_gfx_w && liceState->m_gfx_h)
+        {
+            int width = static_cast<int>(*liceState->m_gfx_w);
+            int height = static_cast<int>(*liceState->m_gfx_h);
 
-    LICE_IBitmap* fb = liceState->m_framebuffer;
-    int width = fb->getWidth();
-    int height = fb->getHeight();
+            if (width > 0 && height > 0)
+                return juce::Rectangle<int>(0, 0, width, height);
+        }
 
-    if (width <= 0 || height <= 0)
-        return juce::Rectangle<int>(0, 0, 400, 300);
+        // Fall back to framebuffer dimensions
+        if (liceState->m_framebuffer)
+        {
+            LICE_IBitmap* fb = liceState->m_framebuffer;
+            int width = fb->getWidth();
+            int height = fb->getHeight();
 
-    return juce::Rectangle<int>(0, 0, width, height);
+            if (width > 0 && height > 0)
+                return juce::Rectangle<int>(0, 0, width, height);
+        }
+    }
+
+    // Final fallback
+    return juce::Rectangle<int>(0, 0, 400, 300);
 }

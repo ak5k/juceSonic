@@ -14,6 +14,9 @@ extern void sx_set_midi_ctx(
     void* midi_ctxdata
 );
 
+// LICE image loader initialization (ensures PNG/JPG/GIF loading works)
+extern "C" void LICE_InitializeImageLoaders();
+
 // Minimal slider automation callback used by JSFX UI when user tweaks sliders
 static void JsfxSliderAutomateThunk(void* ctx, int parmidx, bool done)
 {
@@ -55,6 +58,9 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
       )
     , apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
+    // Initialize LICE image loaders (PNG, JPG, GIF support)
+    LICE_InitializeImageLoaders();
+
     // JsfxHelper constructor automatically initializes per-instance JSFX system
 
     // Set slider class name for JSFX controls

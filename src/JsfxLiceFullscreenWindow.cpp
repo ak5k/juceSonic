@@ -24,29 +24,18 @@ bool JsfxLiceFullscreenWindow::keyPressed(const juce::KeyPress& key)
         return true;
     }
 
-    // F key - Toggle button bar in main editor
-    if (key.getTextCharacter() == 'f' || key.getTextCharacter() == 'F')
-    {
-        if (onToggleButtonBar)
-            onToggleButtonBar();
-        return true;
-    }
-
     return ResizableWindow::keyPressed(key);
 }
 
-void JsfxLiceFullscreenWindow::showWithComponent(JsfxLiceComponent* component)
+void JsfxLiceFullscreenWindow::showWithComponent(JsfxLiceComponent* liceComponent)
 {
-    if (!component)
+    if (!liceComponent)
         return;
 
-    setContentNonOwned(component, false);
+    setContentNonOwned(liceComponent, false);
 
-    auto recommendedBounds = component->getRecommendedBounds();
-    if (recommendedBounds.getWidth() > 0 && recommendedBounds.getHeight() > 0)
-        centreWithSize(recommendedBounds.getWidth(), recommendedBounds.getHeight());
-    else
-        centreWithSize(800, 600);
+    // Size the window to match the LICE component size
+    centreWithSize(liceComponent->getWidth(), liceComponent->getHeight());
 
     setVisible(true);
     toFront(true);
