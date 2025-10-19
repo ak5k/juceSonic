@@ -7,6 +7,106 @@ if(APPLE)
     message(STATUS "Building universal binary for macOS (arm64 + x86_64)")
 endif()
 
+# Unified patch function with robust error handling and debug information
+function(apply_patch file_path patch_name search_pattern replacement_pattern already_patched_check)
+    if(NOT EXISTS "${file_path}")
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: File not found: ${file_path}")
+    endif()
+    
+    # Read file content
+    file(READ "${file_path}" file_content)
+    if("${file_content}" STREQUAL "")
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: File is empty or could not be read: ${file_path}")
+    endif()
+    
+    # Check if already patched
+    string(FIND "${file_content}" "${already_patched_check}" patch_check_result)
+    if(NOT patch_check_result EQUAL -1)
+        message(STATUS "[PATCH SKIP] ${patch_name}: Already patched - ${file_path}")
+        return()
+    endif()
+    
+    # Apply the patch
+    string(REPLACE "${search_pattern}" "${replacement_pattern}" patched_content "${file_content}")
+    
+    # Verify the patch was applied (content changed)
+    if("${patched_content}" STREQUAL "${file_content}")
+        # Get file size for debugging
+        string(LENGTH "${file_content}" file_size)
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Pattern not found in file: ${file_path}\n"
+                             "  Search pattern: '${search_pattern}'\n"
+                             "  File size: ${file_size} bytes\n"
+                             "  Hint: Check for whitespace differences, line endings, or case sensitivity")
+    endif()
+    
+    # Write the patched content back to file
+    file(WRITE "${file_path}" "${patched_content}")
+    
+    # Verify the file was written successfully
+    file(READ "${file_path}" verify_content)
+    if(NOT "${verify_content}" STREQUAL "${patched_content}")
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Failed to write patched content to: ${file_path}")
+    endif()
+    
+    # Verify the patch marker is now present
+    string(FIND "${verify_content}" "${already_patched_check}" verify_patch_result)
+    if(verify_patch_result EQUAL -1)
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Patch verification failed - marker not found after patching: ${file_path}")
+    endif()
+    
+    message(STATUS "[PATCH OK] ${patch_name}: Successfully patched - ${file_path}")
+endfunction()
+
+# Alternative function for regex-based patches
+function(apply_regex_patch file_path patch_name regex_pattern replacement_pattern already_patched_check)
+    if(NOT EXISTS "${file_path}")
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: File not found: ${file_path}")
+    endif()
+    
+    # Read file content
+    file(READ "${file_path}" file_content)
+    if("${file_content}" STREQUAL "")
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: File is empty or could not be read: ${file_path}")
+    endif()
+    
+    # Check if already patched
+    string(FIND "${file_content}" "${already_patched_check}" patch_check_result)
+    if(NOT patch_check_result EQUAL -1)
+        message(STATUS "[PATCH SKIP] ${patch_name}: Already patched - ${file_path}")
+        return()
+    endif()
+    
+    # Apply the regex patch
+    string(REGEX REPLACE "${regex_pattern}" "${replacement_pattern}" patched_content "${file_content}")
+    
+    # Verify the patch was applied (content changed)
+    if("${patched_content}" STREQUAL "${file_content}")
+        # Get file size for debugging
+        string(LENGTH "${file_content}" file_size)
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Regex pattern not found in file: ${file_path}\n"
+                             "  Regex pattern: '${regex_pattern}'\n"
+                             "  File size: ${file_size} bytes\n"
+                             "  Hint: Check regex syntax and ensure pattern matches expected content")
+    endif()
+    
+    # Write the patched content back to file
+    file(WRITE "${file_path}" "${patched_content}")
+    
+    # Verify the file was written successfully
+    file(READ "${file_path}" verify_content)
+    if(NOT "${verify_content}" STREQUAL "${patched_content}")
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Failed to write patched content to: ${file_path}")
+    endif()
+    
+    # Verify the patch marker is now present
+    string(FIND "${verify_content}" "${already_patched_check}" verify_patch_result)
+    if(verify_patch_result EQUAL -1)
+        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Patch verification failed - marker not found after patching: ${file_path}")
+    endif()
+    
+    message(STATUS "[PATCH OK] ${patch_name}: Successfully patched - ${file_path}")
+endfunction()
+
 # Use JSFX from git submodule instead of FetchContent
 set(jsfx_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/jsfx")
 message(STATUS "JSFX source directory: ${jsfx_SOURCE_DIR}")
@@ -18,27 +118,22 @@ endif()
 
 # Patch effectproc.cpp to remove hardcoded "Effects" directory requirement
 # This allows loading JSFX files directly from their source location
-file(READ "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp" EFFECTPROC_CONTENT)
-string(FIND "${EFFECTPROC_CONTENT}" "sx->m_effectdir.Append" EFFECTS_DIR_FOUND)
-if(NOT EFFECTS_DIR_FOUND EQUAL -1)
-    message(STATUS "Patching effectproc.cpp to remove hardcoded Effects directory")
-    # Patch Windows path
-    string(REPLACE 
-        "  sx->m_datadir.Append(\"\\\\Data\");\n  sx->m_effectdir.Append(\"\\\\Effects\");"
-        "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
-        EFFECTPROC_CONTENT
-        "${EFFECTPROC_CONTENT}")
-    # Patch Unix path
-    string(REPLACE 
-        "  sx->m_datadir.Append(\"/Data\");\n  sx->m_effectdir.Append(\"/Effects\");"
-        "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
-        EFFECTPROC_CONTENT
-        "${EFFECTPROC_CONTENT}")
-    file(WRITE "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp" "${EFFECTPROC_CONTENT}")
-    message(STATUS "effectproc.cpp patched successfully")
-else()
-    message(STATUS "effectproc.cpp already patched or pattern not found")
-endif()
+apply_patch(
+    "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp"
+    "effectproc-effects-dir"
+    "  sx->m_datadir.Append(\"\\\\Data\");\n  sx->m_effectdir.Append(\"\\\\Effects\");"
+    "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
+    "// This allows loading JSFX files from any location"
+)
+
+# Also patch Unix path in effectproc.cpp  
+apply_patch(
+    "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp"
+    "effectproc-effects-dir-unix"
+    "  sx->m_datadir.Append(\"/Data\");\n  sx->m_effectdir.Append(\"/Effects\");"
+    "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
+    "// This allows loading JSFX files from any location"
+)
 
 # Patch curses.h and related files to avoid macro conflicts with C++ STL
 # Rename problematic macros to prevent C++ conflicts
@@ -108,66 +203,33 @@ endforeach()
 
 # Patch gzguts.h to fix missing unistd.h include on macOS/Unix systems
 # This fixes compilation errors with undeclared functions: lseek, read, write, close
-set(GZGUTS_FILE "${jsfx_SOURCE_DIR}/WDL/zlib/gzguts.h")
-if(EXISTS "${GZGUTS_FILE}")
-    file(READ "${GZGUTS_FILE}" GZGUTS_CONTENT)
-    # Only patch if not already patched (check for unistd.h include after fcntl.h)
-    string(FIND "${GZGUTS_CONTENT}" "#if !defined(_WIN32)\n#include <unistd.h>\n#endif" GZGUTS_PATCH_FOUND)
-    if(GZGUTS_PATCH_FOUND EQUAL -1)
-        message(STATUS "Patching gzguts.h to include unistd.h on non-Windows platforms")
-        # Add unistd.h include for POSIX systems after fcntl.h
-        string(REPLACE 
-            "#ifndef _POSIX_SOURCE\n#define _POSIX_SOURCE\n#endif\n#include <fcntl.h>"
-            "#ifndef _POSIX_SOURCE\n#define _POSIX_SOURCE\n#endif\n#include <fcntl.h>\n\n#if !defined(_WIN32)\n#include <unistd.h>\n#endif"
-            GZGUTS_CONTENT "${GZGUTS_CONTENT}")
-        file(WRITE "${GZGUTS_FILE}" "${GZGUTS_CONTENT}")
-        message(STATUS "gzguts.h patched successfully")
-    else()
-        message(STATUS "gzguts.h already patched, skipping")
-    endif()
-endif()
+apply_patch(
+    "${jsfx_SOURCE_DIR}/WDL/zlib/gzguts.h"
+    "gzguts-unistd-include"
+    "#ifndef _POSIX_SOURCE\n#  define _POSIX_SOURCE\n#endif\n#include <fcntl.h>"
+    "#ifndef _POSIX_SOURCE\n#  define _POSIX_SOURCE\n#endif\n#include <fcntl.h>\n\n#if !defined(_WIN32)\n#include <unistd.h>\n#endif"
+    "#if !defined(_WIN32)\n#include <unistd.h>\n#endif"
+)
 
 # Patch pngpriv.h to fix fp.h include issue on modern macOS
 # This prevents the "fp.h file not found" error by using math.h instead
-set(PNGPRIV_FILE "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h")
-if(EXISTS "${PNGPRIV_FILE}")
-    file(READ "${PNGPRIV_FILE}" PNGPRIV_CONTENT)
-    # Only patch if not already patched (check for !defined(__APPLE__) condition)
-    string(FIND "${PNGPRIV_CONTENT}" "(defined(TARGET_OS_MAC) && !defined(__APPLE__))" PNGPRIV_PATCH_FOUND)
-    if(PNGPRIV_PATCH_FOUND EQUAL -1)
-        message(STATUS "Patching pngpriv.h to exclude modern macOS from using fp.h")
-        # Modify the condition to exclude modern macOS (which defines __APPLE__)
-        string(REPLACE 
-            "|| defined(TARGET_OS_MAC)"
-            "|| (defined(TARGET_OS_MAC) && !defined(__APPLE__))"
-            PNGPRIV_CONTENT "${PNGPRIV_CONTENT}")
-        file(WRITE "${PNGPRIV_FILE}" "${PNGPRIV_CONTENT}")
-        message(STATUS "pngpriv.h patched successfully")
-    else()
-        message(STATUS "pngpriv.h already patched, skipping")
-    endif()
-endif()
+apply_patch(
+    "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h"
+    "pngpriv-fp-header-fix"
+    "|| defined(TARGET_OS_MAC)"
+    "|| (defined(TARGET_OS_MAC) && !defined(__APPLE__))"
+    "(defined(TARGET_OS_MAC) && !defined(__APPLE__))"
+)
 
 # Patch pngpriv.h header inclusion order - pngstruct.h must come before pnginfo.h
 # This fixes "unknown type name 'png_colorspace'" error
-set(PNGPRIV_HEADER_ORDER_FILE "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h")
-if(EXISTS "${PNGPRIV_HEADER_ORDER_FILE}")
-    file(READ "${PNGPRIV_HEADER_ORDER_FILE}" PNGPRIV_ORDER_CONTENT)
-    # Only patch if not already fixed (check for pngstruct.h before pnginfo.h)
-    string(FIND "${PNGPRIV_ORDER_CONTENT}" "#include \"pnginfo.h\"\n#include \"pngstruct.h\"" HEADER_ORDER_ISSUE)
-    if(NOT HEADER_ORDER_ISSUE EQUAL -1)
-        message(STATUS "Fixing pngpriv.h header inclusion order (pngstruct.h before pnginfo.h)")
-        # Fix the header order - swap the two includes
-        string(REPLACE 
-            "#include \"pnginfo.h\"\n#include \"pngstruct.h\""
-            "#include \"pngstruct.h\"\n#include \"pnginfo.h\""
-            PNGPRIV_ORDER_CONTENT "${PNGPRIV_ORDER_CONTENT}")
-        file(WRITE "${PNGPRIV_HEADER_ORDER_FILE}" "${PNGPRIV_ORDER_CONTENT}")
-        message(STATUS "pngpriv.h header order fixed successfully")
-    else()
-        message(STATUS "pngpriv.h header order already correct, skipping")
-    endif()
-endif()
+apply_patch(
+    "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h"
+    "pngpriv-header-order-fix"
+    "#include \"pnginfo.h\"\n#include \"pngstruct.h\""
+    "#include \"pngstruct.h\"\n#include \"pnginfo.h\""
+    "#include \"pngstruct.h\"\n#include \"pnginfo.h\""
+)
 
 # Patch jsfx_api.cpp to disable DllMain for standalone builds
 # Apply on all platforms to ensure consistent API
