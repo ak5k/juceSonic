@@ -185,6 +185,7 @@ public:
 private:
     // Helper to restore routing from encoded string
     void restoreRoutingFromString(const juce::String& routingStr);
+
     //==============================================================================
     void timerCallback() override;
 

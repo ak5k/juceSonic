@@ -2,7 +2,7 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PresetTreeView.h"
-#include "JuceSonicLookAndFeel.h"
+#include "WindowWithButtonRow.h"
 #include <Config.h>
 
 // Forward declaration
@@ -18,14 +18,12 @@ class AudioPluginAudioProcessor;
  * - Delete selected presets
  * - Configure preset search directories
  */
-class PresetWindow : public juce::Component
+class PresetWindow : public WindowWithButtonRow
 {
 public:
     explicit PresetWindow(AudioPluginAudioProcessor& proc);
     ~PresetWindow() override;
 
-    void paint(juce::Graphics& g) override;
-    void resized() override;
     void visibilityChanged() override;
 
     /**
@@ -53,6 +51,13 @@ public:
      */
     std::function<void(const juce::String&, const juce::String&, const juce::String&)> onPresetSelected;
 
+protected:
+    // Override from WindowWithButtonRow
+    juce::Component* getMainComponent() override
+    {
+        return &presetTreeView;
+    }
+
 private:
     void importPresetFile();
     void exportSelectedPresets();
@@ -70,27 +75,23 @@ private:
 
     AudioPluginAudioProcessor& processor;
 
-    // UI Components
-    juce::TextButton importButton{"Import"};
-    juce::TextButton exportButton{"Export"};
-    juce::TextButton deleteButton{"Delete"};
-    juce::TextButton saveButton{"Save"};
-    juce::TextButton defaultButton{"Default"};
-    juce::TextButton setDefaultButton{"Set as Default"};
-    juce::TextButton directoriesButton{"Directories"};
-    juce::TextButton refreshButton{"Refresh"};
+    // UI Components - button pointers managed by base class ButtonRowComponent
+    juce::TextButton* importButton = nullptr;
+    juce::TextButton* exportButton = nullptr;
+    juce::TextButton* deleteButton = nullptr;
+    juce::TextButton* saveButton = nullptr;
+    juce::TextButton* defaultButton = nullptr;
+    juce::TextButton* setDefaultButton = nullptr;
+    juce::TextButton* directoriesButton = nullptr;
+    juce::TextButton* refreshButton = nullptr;
 
     PresetTreeView presetTreeView;
-
-    juce::Label statusLabel;
 
     bool showManagementButtons = true;
 
     // Track currently selected preset for delete operations
     juce::String currentPresetBankName;
     juce::String currentPresetName;
-
-    juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetWindow)
 };

@@ -6,6 +6,7 @@
 #include "JsfxLiceComponent.h"
 #include "JsfxLiceFullscreenWindow.h"
 #include "PresetWindow.h"
+#include "JsfxPluginWindow.h"
 #include "PluginProcessor.h"
 #include "PersistentState.h"
 #include "JuceSonicLookAndFeel.h"
@@ -282,6 +283,7 @@ private:
     void showUpdateNotification(const juce::String& latestVersion, const juce::String& downloadUrl);
     void openPresetManager();
     void showRepositoryBrowser();
+    void openJsfxPluginBrowser();
 
     // JSFX lifecycle management (internal constructor/destructor pattern)
     void saveJsfxState();    // Internal "destructor" - save state before unloading JSFX

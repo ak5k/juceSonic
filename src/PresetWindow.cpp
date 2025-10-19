@@ -9,32 +9,15 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     : processor(proc)
     , presetTreeView(proc)
 {
-    setLookAndFeel(&sharedLookAndFeel->lf);
-
-    // Setup buttons
-    addAndMakeVisible(importButton);
-    importButton.onClick = [this]() { importPresetFile(); };
-
-    addAndMakeVisible(exportButton);
-    exportButton.onClick = [this]() { exportSelectedPresets(); };
-
-    addAndMakeVisible(deleteButton);
-    deleteButton.onClick = [this]() { deleteSelectedPresets(); };
-
-    addAndMakeVisible(saveButton);
-    saveButton.onClick = [this]() { saveCurrentPreset(); };
-
-    addAndMakeVisible(defaultButton);
-    defaultButton.onClick = [this]() { resetToDefaults(); };
-
-    addAndMakeVisible(setDefaultButton);
-    setDefaultButton.onClick = [this]() { setAsDefaultPreset(); };
-
-    addAndMakeVisible(directoriesButton);
-    directoriesButton.onClick = [this]() { showDirectoryEditor(); };
-
-    addAndMakeVisible(refreshButton);
-    refreshButton.onClick = [this]() { refreshPresetList(); };
+    // Add buttons to the button row (from base class)
+    importButton = &getButtonRow().addButton("Import", [this]() { importPresetFile(); });
+    exportButton = &getButtonRow().addButton("Export", [this]() { exportSelectedPresets(); });
+    deleteButton = &getButtonRow().addButton("Delete", [this]() { deleteSelectedPresets(); });
+    saveButton = &getButtonRow().addButton("Save", [this]() { saveCurrentPreset(); });
+    defaultButton = &getButtonRow().addButton("Default", [this]() { resetToDefaults(); });
+    setDefaultButton = &getButtonRow().addButton("Set as Default", [this]() { setAsDefaultPreset(); });
+    directoriesButton = &getButtonRow().addButton("Directories", [this]() { showDirectoryEditor(); });
+    refreshButton = &getButtonRow().addButton("Refresh", [this]() { refreshPresetList(); });
 
     // Setup tree view
     addAndMakeVisible(presetTreeView);
@@ -47,57 +30,10 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
             handlePresetTreeItemSelected(selectedItems[0]);
     };
 
-    // Setup status label
-    addAndMakeVisible(statusLabel);
-    statusLabel.setJustificationType(juce::Justification::centred);
-
     setSize(600, 500);
 }
 
-PresetWindow::~PresetWindow()
-{
-    setLookAndFeel(nullptr);
-}
-
-void PresetWindow::paint(juce::Graphics& g)
-{
-    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-}
-
-void PresetWindow::resized()
-{
-    auto bounds = getLocalBounds().reduced(4);
-
-    // Top button row (if visible)
-    if (showManagementButtons)
-    {
-        auto topButtons = bounds.removeFromTop(30);
-        importButton.setBounds(topButtons.removeFromLeft(80));
-        topButtons.removeFromLeft(4);
-        exportButton.setBounds(topButtons.removeFromLeft(80));
-        topButtons.removeFromLeft(4);
-        deleteButton.setBounds(topButtons.removeFromLeft(80));
-        topButtons.removeFromLeft(4);
-        saveButton.setBounds(topButtons.removeFromLeft(80));
-        topButtons.removeFromLeft(4);
-        defaultButton.setBounds(topButtons.removeFromLeft(80));
-        topButtons.removeFromLeft(4);
-        setDefaultButton.setBounds(topButtons.removeFromLeft(110));
-        topButtons.removeFromLeft(20); // Spacer
-        directoriesButton.setBounds(topButtons.removeFromLeft(100));
-        topButtons.removeFromLeft(4);
-        refreshButton.setBounds(topButtons.removeFromLeft(80));
-
-        bounds.removeFromTop(4);
-
-        // Status label at bottom
-        statusLabel.setBounds(bounds.removeFromBottom(20));
-        bounds.removeFromBottom(4);
-    }
-
-    // Tree view fills remaining space
-    presetTreeView.setBounds(bounds);
-}
+PresetWindow::~PresetWindow() = default;
 
 void PresetWindow::setShowManagementButtons(bool show)
 {
@@ -105,16 +41,7 @@ void PresetWindow::setShowManagementButtons(bool show)
         return;
 
     showManagementButtons = show;
-    importButton.setVisible(show);
-    exportButton.setVisible(show);
-    deleteButton.setVisible(show);
-    saveButton.setVisible(show);
-    defaultButton.setVisible(show);
-    setDefaultButton.setVisible(show);
-    directoriesButton.setVisible(show);
-    refreshButton.setVisible(show);
-    statusLabel.setVisible(show);
-    resized();
+    setControlsVisible(show);
 }
 
 void PresetWindow::visibilityChanged()
@@ -132,7 +59,7 @@ void PresetWindow::refreshPresetList()
     if (!presetsNode.isValid() || presetsNode.getNumChildren() == 0)
     {
         presetTreeView.loadPresetsFromValueTree(juce::ValueTree());
-        statusLabel.setText("No presets loaded", juce::dontSendNotification);
+        getStatusLabel().setText("No presets loaded", juce::dontSendNotification);
         updateButtonsForSelection();
         return;
     }
@@ -146,7 +73,7 @@ void PresetWindow::refreshPresetList()
     for (int i = 0; i < fileCount; ++i)
         bankCount += presetsNode.getChild(i).getNumChildren();
 
-    statusLabel.setText(
+    getStatusLabel().setText(
         "Loaded " + juce::String(fileCount) + " preset files (" + juce::String(bankCount) + " banks)",
         juce::dontSendNotification
     );
@@ -226,7 +153,7 @@ void PresetWindow::importPresetFile()
             // Copy file to target directory
             if (file.copyFileTo(targetFile))
             {
-                statusLabel.setText(
+                getStatusLabel().setText(
                     "Imported: " + file.getFileName() + " to " + jsfxFilename,
                     juce::dontSendNotification
                 );
@@ -312,7 +239,7 @@ void PresetWindow::exportSelectedPresets()
 
             if (file.replaceWithText(exportContent))
             {
-                statusLabel.setText(
+                getStatusLabel().setText(
                     "Exported " + juce::String(selectedItems.size()) + " presets",
                     juce::dontSendNotification
                 );
@@ -444,7 +371,7 @@ void PresetWindow::deleteSelectedPresets()
         file.replaceWithText(content);
     }
 
-    statusLabel.setText(
+    getStatusLabel().setText(
         "Deleted " + juce::String(deletedFiles) + " files, " + juce::String(deletedPresets) + " presets",
         juce::dontSendNotification
     );
@@ -524,7 +451,7 @@ void PresetWindow::saveCurrentPreset()
                     // Save the preset
                     if (processor.saveUserPreset(bankName, presetName))
                     {
-                        statusLabel.setText("Saved preset: " + presetName, juce::dontSendNotification);
+                        getStatusLabel().setText("Saved preset: " + presetName, juce::dontSendNotification);
                         // The preset loader will automatically refresh when saveUserPreset triggers it
                     }
                     else
@@ -573,8 +500,8 @@ void PresetWindow::updateButtonsForSelection()
     auto selectedItems = presetTreeView.getSelectedPresetItems();
     bool hasSelection = !selectedItems.isEmpty();
 
-    exportButton.setEnabled(hasSelection);
-    deleteButton.setEnabled(hasSelection);
+    exportButton->setEnabled(hasSelection);
+    deleteButton->setEnabled(hasSelection);
 }
 
 juce::StringArray PresetWindow::getPresetDirectories() const
@@ -749,20 +676,20 @@ void PresetWindow::resetToDefaults()
         {
             // User clicked No - reset to JSFX defaults
             processor.resetToDefaults();
-            statusLabel.setText("Reset to JSFX parameter defaults", juce::dontSendNotification);
+            getStatusLabel().setText("Reset to JSFX parameter defaults", juce::dontSendNotification);
         }
         else
         {
             // User clicked Yes - load default preset
             processor.resetToDefaults(); // This will load the default preset
-            statusLabel.setText("Loaded default preset", juce::dontSendNotification);
+            getStatusLabel().setText("Loaded default preset", juce::dontSendNotification);
         }
     }
     else
     {
         // No default preset - just reset to JSFX defaults
         processor.resetToDefaults();
-        statusLabel.setText("Reset to JSFX parameter defaults", juce::dontSendNotification);
+        getStatusLabel().setText("Reset to JSFX parameter defaults", juce::dontSendNotification);
     }
 }
 
@@ -803,7 +730,7 @@ void PresetWindow::setAsDefaultPreset()
     // Save current state as default
     if (processor.setAsDefaultPreset())
     {
-        statusLabel.setText("Saved current state as default preset", juce::dontSendNotification);
+        getStatusLabel().setText("Saved current state as default preset", juce::dontSendNotification);
         refreshPresetList(); // Refresh to show the new default preset
     }
     else

@@ -3,7 +3,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "RepositoryManager.h"
 #include "RepositoryTreeView.h"
-#include "JuceSonicLookAndFeel.h"
+#include "WindowWithButtonRow.h"
 
 // Forward declaration
 class AudioPluginAudioProcessor;
@@ -19,16 +19,21 @@ class AudioPluginAudioProcessor;
  * Self-contained component that manages its own RepositoryManager instance
  */
 class RepositoryWindow
-    : public juce::Component
+    : public WindowWithButtonRow
     , private juce::Timer
 {
 public:
     explicit RepositoryWindow(AudioPluginAudioProcessor& processor);
     ~RepositoryWindow() override;
 
-    void paint(juce::Graphics& g) override;
-    void resized() override;
     void visibilityChanged() override;
+
+protected:
+    // Override from WindowWithButtonRow
+    juce::Component* getMainComponent() override
+    {
+        return &repositoryTreeView;
+    }
 
 private:
     // Timer for refreshing repository list
@@ -51,29 +56,6 @@ private:
     void batchInstallPackages(const std::vector<RepositoryManager::JSFXPackage>& packages);
     void batchUninstallPackages(const std::vector<RepositoryManager::JSFXPackage>& packages);
 
-private:
-    AudioPluginAudioProcessor& processor;
-    std::unique_ptr<RepositoryManager> repositoryManager;
-
-    // UI Components
-    juce::TextButton manageReposButton;
-    juce::TextButton refreshButton;
-
-    RepositoryTreeView repositoryTreeView;
-
-    juce::TextButton installButton;
-    juce::TextButton installAllButton;
-    juce::TextButton cancelButton;
-    juce::Label statusLabel;
-
-    // Data
-    std::vector<RepositoryManager::Repository> repositories;
-    std::vector<RepositoryManager::JSFXPackage> allPackages;
-    bool isLoading = false;
-    bool isInstalling = false;
-
-    juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
-
     // Helper methods for refactored operations
     struct PackageCollectionResult
     {
@@ -93,6 +75,24 @@ private:
         const juce::String& skipMessage,
         bool isInstall
     );
+
+    AudioPluginAudioProcessor& processor;
+    std::unique_ptr<RepositoryManager> repositoryManager;
+
+    // UI Components - button pointers managed by base class ButtonRowComponent
+    juce::TextButton* manageReposButton = nullptr;
+    juce::TextButton* refreshButton = nullptr;
+    juce::TextButton* installButton = nullptr;
+    juce::TextButton* installAllButton = nullptr;
+    juce::TextButton* cancelButton = nullptr;
+
+    RepositoryTreeView repositoryTreeView;
+
+    // Data
+    std::vector<RepositoryManager::Repository> repositories;
+    std::vector<RepositoryManager::JSFXPackage> allPackages;
+    bool isLoading = false;
+    bool isInstalling = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RepositoryWindow)
 };

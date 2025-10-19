@@ -5,6 +5,7 @@
 #include "PersistentFileChooser.h"
 #include "PluginProcessor.h"
 #include "PresetWindow.h"
+#include "JsfxPluginWindow.h"
 #include "RepositoryWindow.h"
 
 #include <jsfx.h>
@@ -1064,9 +1065,10 @@ void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
 
     // Add menu items
     presetManagementMenu.addItem("Presets...", 1);
-    presetManagementMenu.addItem("Repositories...", 2);
+    presetManagementMenu.addItem("JSFX Plugins...", 2);
+    presetManagementMenu.addItem("Repositories...", 3);
     presetManagementMenu.addSeparator();
-    presetManagementMenu.addItem("About...", 3);
+    presetManagementMenu.addItem("About...", 4);
 
     // Handle selection
     presetManagementMenu.onChange = [this]()
@@ -1089,11 +1091,15 @@ void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int select
         openPresetManager();
         break;
 
-    case 2: // Repositories...
+    case 2: // JSFX Plugins...
+        openJsfxPluginBrowser();
+        break;
+
+    case 3: // Repositories...
         showRepositoryBrowser();
         break;
 
-    case 3: // About...
+    case 4: // About...
         showAboutWindow();
         break;
 
@@ -1215,6 +1221,21 @@ void AudioPluginAudioProcessorEditor::showRepositoryBrowser()
     auto* window = options.launchAsync();
     if (window != nullptr)
         window->centreWithSize(800, 600);
+}
+
+void AudioPluginAudioProcessorEditor::openJsfxPluginBrowser()
+{
+    auto* windowContent = new JsfxPluginWindow(processorRef);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(windowContent);
+    options.dialogTitle = "JSFX Plugins";
+    options.resizable = true;
+    options.useNativeTitleBar = true;
+
+    auto* window = options.launchAsync();
+    if (window != nullptr)
+        window->centreWithSize(700, 600);
 }
 
 //==============================================================================

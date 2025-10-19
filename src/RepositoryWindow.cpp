@@ -7,8 +7,6 @@ RepositoryWindow::RepositoryWindow(AudioPluginAudioProcessor& proc)
     , repositoryManager(std::make_unique<RepositoryManager>(proc))
     , repositoryTreeView(*repositoryManager)
 {
-    setLookAndFeel(&sharedLookAndFeel->lf);
-
     // Setup repository tree view with callbacks
     addAndMakeVisible(repositoryTreeView);
     repositoryTreeView.onInstallPackage = [this](const RepositoryManager::JSFXPackage& pkg) { installPackage(pkg); };
@@ -47,38 +45,25 @@ RepositoryWindow::RepositoryWindow(AudioPluginAudioProcessor& proc)
         }
     };
 
-    // Setup repository controls
-    addAndMakeVisible(manageReposButton);
-    manageReposButton.setButtonText("Repositories...");
-    manageReposButton.onClick = [this]() { showRepositoryEditor(); };
+    // Add buttons to the button row (from base class)
+    manageReposButton = &getButtonRow().addButton("Repositories...", [this]() { showRepositoryEditor(); });
+    refreshButton = &getButtonRow().addButton("Refresh", [this]() { refreshRepositoryList(); });
+    installButton = &getButtonRow().addButton("Install Selected", [this]() { installSelectedPackage(); });
+    installAllButton = &getButtonRow().addButton("Install All", [this]() { installAllPackages(); });
+    cancelButton = &getButtonRow().addButton(
+        "Cancel",
+        [this]()
+        {
+            repositoryManager->cancelInstallation();
+            getStatusLabel().setText("Cancelling...", juce::dontSendNotification);
+            cancelButton->setEnabled(false);
+        }
+    );
 
-    addAndMakeVisible(refreshButton);
-    refreshButton.setButtonText("Refresh");
-    refreshButton.onClick = [this]() { refreshRepositoryList(); };
-
-    addAndMakeVisible(installButton);
-    installButton.setButtonText("Install Selected");
-    installButton.setEnabled(false);
-    installButton.onClick = [this]() { installSelectedPackage(); };
-
-    addAndMakeVisible(installAllButton);
-    installAllButton.setButtonText("Install All");
-    installAllButton.setEnabled(false);
-    installAllButton.onClick = [this]() { installAllPackages(); };
-
-    addAndMakeVisible(cancelButton);
-    cancelButton.setButtonText("Cancel");
-    cancelButton.setEnabled(false);
-    cancelButton.onClick = [this]()
-    {
-        repositoryManager->cancelInstallation();
-        statusLabel.setText("Cancelling...", juce::dontSendNotification);
-        cancelButton.setEnabled(false);
-    };
-
-    addAndMakeVisible(statusLabel);
-    statusLabel.setText("", juce::dontSendNotification);
-    statusLabel.setJustificationType(juce::Justification::centred);
+    // Set initial button states
+    installButton->setEnabled(false);
+    installAllButton->setEnabled(false);
+    cancelButton->setEnabled(false);
 
     setSize(600, 600);
     setWantsKeyboardFocus(true);
@@ -90,53 +75,14 @@ RepositoryWindow::RepositoryWindow(AudioPluginAudioProcessor& proc)
 RepositoryWindow::~RepositoryWindow()
 {
     stopTimer();
-    setLookAndFeel(nullptr);
 }
 
 void RepositoryWindow::visibilityChanged()
 {
     // Refresh installation status when window becomes visible
     if (isVisible() && !allPackages.empty())
-
         repositoryTreeView.getTreeView().repaint();
 }
-
-void RepositoryWindow::paint(juce::Graphics& g)
-{
-    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-}
-
-void RepositoryWindow::resized()
-{
-    auto bounds = getLocalBounds().reduced(4);
-
-    const int buttonHeight = 30;
-    const int buttonSpacing = 4;
-
-    auto topButtons = bounds.removeFromTop(buttonHeight);
-
-    manageReposButton.setBounds(topButtons.removeFromLeft(130));
-    topButtons.removeFromLeft(buttonSpacing);
-    refreshButton.setBounds(topButtons.removeFromLeft(90));
-    topButtons.removeFromLeft(buttonSpacing);
-    installButton.setBounds(topButtons.removeFromLeft(150));
-    topButtons.removeFromLeft(buttonSpacing);
-    installAllButton.setBounds(topButtons.removeFromLeft(120));
-    topButtons.removeFromLeft(buttonSpacing);
-    cancelButton.setBounds(topButtons.removeFromLeft(90));
-
-    bounds.removeFromTop(buttonSpacing);
-
-    auto statusArea = bounds.removeFromBottom(20);
-    statusLabel.setBounds(statusArea);
-    bounds.removeFromBottom(buttonSpacing);
-
-    repositoryTreeView.setBounds(bounds);
-}
-
-// (ListBox painting replaced by TreeView items)
-
-// ListBox-related methods removed; selection is handled via TreeView
 
 void RepositoryWindow::timerCallback()
 {
@@ -148,7 +94,7 @@ void RepositoryWindow::timerCallback()
         juce::String loadingText = "Loading repositories";
         for (int i = 0; i < dots; ++i)
             loadingText += ".";
-        statusLabel.setText(loadingText, juce::dontSendNotification);
+        getStatusLabel().setText(loadingText, juce::dontSendNotification);
     }
     else
     {
@@ -160,12 +106,12 @@ void RepositoryWindow::timerCallback()
 void RepositoryWindow::refreshRepositoryList()
 {
     // Clear any selection and reset button labels
-    installButton.setButtonText("Install Selected");
-    installButton.setEnabled(false);
+    installButton->setButtonText("Install Selected");
+    installButton->setEnabled(false);
 
     isLoading = true;
-    statusLabel.setText("Loading repositories...", juce::dontSendNotification);
-    refreshButton.setEnabled(false);
+    getStatusLabel().setText("Loading repositories...", juce::dontSendNotification);
+    refreshButton->setEnabled(false);
     startTimer(500);
 
     repositories.clear();
@@ -176,11 +122,11 @@ void RepositoryWindow::refreshRepositoryList()
     {
         isLoading = false;
         stopTimer();
-        statusLabel.setText(
+        getStatusLabel().setText(
             "No repositories configured. Click 'Repositories' to add some.",
             juce::dontSendNotification
         );
-        refreshButton.setEnabled(true);
+        refreshButton->setEnabled(true);
         return;
     }
 
@@ -221,14 +167,14 @@ void RepositoryWindow::refreshRepositoryList()
                                         + juce::String(repositories.size())
                                         + " repositor"
                                         + (repositories.size() == 1 ? "y" : "ies");
-                    statusLabel.setText(status, juce::dontSendNotification);
-                    refreshButton.setEnabled(true);
-                    installAllButton.setEnabled(!allPackages.empty());
+                    getStatusLabel().setText(status, juce::dontSendNotification);
+                    refreshButton->setEnabled(true);
+                    installAllButton->setEnabled(!allPackages.empty());
 
                     if (!allPackages.empty())
                     {
-                        installButton.setButtonText("Install Selected");
-                        installButton.setEnabled(true);
+                        installButton->setButtonText("Install Selected");
+                        installButton->setEnabled(true);
                     }
 
                     // Check for version mismatches after loading
@@ -305,7 +251,7 @@ void RepositoryWindow::checkForVersionMismatches()
 
                 if (totalToUpdate == 0)
                 {
-                    statusLabel.setText("All mismatched packages are pinned", juce::dontSendNotification);
+                    getStatusLabel().setText("All mismatched packages are pinned", juce::dontSendNotification);
                     return;
                 }
 
@@ -317,9 +263,9 @@ void RepositoryWindow::checkForVersionMismatches()
                 auto updated = std::make_shared<std::atomic<int>>(0);
                 auto failed = std::make_shared<std::atomic<int>>(0);
 
-                installButton.setEnabled(false);
-                installAllButton.setEnabled(false);
-                refreshButton.setEnabled(false);
+                installButton->setEnabled(false);
+                installAllButton->setEnabled(false);
+                refreshButton->setEnabled(false);
 
                 for (const auto& package : *packagesToUpdate)
                 {
@@ -333,14 +279,14 @@ void RepositoryWindow::checkForVersionMismatches()
                                 (*failed)++;
 
                             int completed = (*updated) + (*failed);
-                            statusLabel.setText(
+                            getStatusLabel().setText(
                                 "Updating... " + juce::String(completed) + "/" + juce::String(totalToUpdate),
                                 juce::dontSendNotification
                             );
 
                             if (completed >= totalToUpdate)
                             {
-                                statusLabel.setText(
+                                getStatusLabel().setText(
                                     "Update complete: "
                                         + juce::String(*updated)
                                         + " updated, "
@@ -349,9 +295,9 @@ void RepositoryWindow::checkForVersionMismatches()
                                     juce::dontSendNotification
                                 );
 
-                                installButton.setEnabled(true);
-                                installAllButton.setEnabled(true);
-                                refreshButton.setEnabled(true);
+                                installButton->setEnabled(true);
+                                installAllButton->setEnabled(true);
+                                refreshButton->setEnabled(true);
                                 repositoryTreeView.getTreeView().repaint();
                                 updateButtonsForSelection();
                             }
@@ -366,7 +312,7 @@ void RepositoryWindow::checkForVersionMismatches()
 void RepositoryWindow::installSelectedPackage()
 {
     // Check if button says "Uninstall Selected"
-    if (installButton.getButtonText().startsWith("Uninstall"))
+    if (installButton->getButtonText().startsWith("Uninstall"))
     {
         uninstallSelectedPackage();
         return;
@@ -421,9 +367,9 @@ void RepositoryWindow::installSelectedPackage()
     auto installed = std::make_shared<std::atomic<int>>(0);
     auto failed = std::make_shared<std::atomic<int>>(0);
 
-    installButton.setEnabled(false);
-    installAllButton.setEnabled(false);
-    refreshButton.setEnabled(false);
+    installButton->setEnabled(false);
+    installAllButton->setEnabled(false);
+    refreshButton->setEnabled(false);
 
     for (size_t i = 0; i < packagesToInstall->size(); ++i)
     {
@@ -438,14 +384,14 @@ void RepositoryWindow::installSelectedPackage()
                     (*failed)++;
                 int completed = (*installed) + (*failed);
 
-                statusLabel.setText(
+                getStatusLabel().setText(
                     "Installing... " + juce::String(completed) + "/" + juce::String(totalToInstall),
                     juce::dontSendNotification
                 );
 
                 if (completed >= static_cast<int>(totalToInstall))
                 {
-                    statusLabel.setText(
+                    getStatusLabel().setText(
                         "Installation complete: "
                             + juce::String(*installed)
                             + " installed, "
@@ -454,9 +400,9 @@ void RepositoryWindow::installSelectedPackage()
                         juce::dontSendNotification
                     );
 
-                    installButton.setEnabled(true);
-                    installAllButton.setEnabled(true);
-                    refreshButton.setEnabled(true);
+                    installButton->setEnabled(true);
+                    installAllButton->setEnabled(true);
+                    refreshButton->setEnabled(true);
                     repositoryTreeView.getTreeView().repaint();
                     updateButtonsForSelection();
                 }
@@ -472,7 +418,7 @@ void RepositoryWindow::installAllPackages()
         return;
 
     // Check if button says "Uninstall All"
-    if (installAllButton.getButtonText() == "Uninstall All")
+    if (installAllButton->getButtonText() == "Uninstall All")
     {
         uninstallAllPackages();
         return;
@@ -518,11 +464,14 @@ void RepositoryWindow::proceedWithInstallation()
     int toInstall = static_cast<int>(packagesToInstall->size());
 
     // Disable buttons during installation
-    installButton.setEnabled(false);
-    installAllButton.setEnabled(false);
-    refreshButton.setEnabled(false);
+    installButton->setEnabled(false);
+    installAllButton->setEnabled(false);
+    refreshButton->setEnabled(false);
 
-    statusLabel.setText("Preparing to install " + juce::String(toInstall) + " packages...", juce::dontSendNotification);
+    getStatusLabel().setText(
+        "Preparing to install " + juce::String(toInstall) + " packages...",
+        juce::dontSendNotification
+    );
 
     auto totalToInstall = packagesToInstall->size();
     auto installed = std::make_shared<std::atomic<int>>(0);
@@ -530,9 +479,9 @@ void RepositoryWindow::proceedWithInstallation()
 
     if (totalToInstall == 0)
     {
-        installButton.setEnabled(true);
-        installAllButton.setEnabled(true);
-        refreshButton.setEnabled(true);
+        installButton->setEnabled(true);
+        installAllButton->setEnabled(true);
+        refreshButton->setEnabled(true);
         return;
     }
 
@@ -561,7 +510,7 @@ void RepositoryWindow::proceedWithInstallation()
                     << *failed
                     << ")");
 
-                statusLabel.setText(
+                getStatusLabel().setText(
                     "Installing... " + juce::String(completed) + "/" + juce::String(totalToInstall),
                     juce::dontSendNotification
                 );
@@ -572,7 +521,7 @@ void RepositoryWindow::proceedWithInstallation()
                     juce::String resultMessage =
                         "Installed: " + juce::String(*installed) + "\n" + "Failed: " + juce::String(*failed);
 
-                    statusLabel.setText(
+                    getStatusLabel().setText(
                         "Installation complete: "
                             + juce::String(*installed)
                             + " installed, "
@@ -581,9 +530,9 @@ void RepositoryWindow::proceedWithInstallation()
                         juce::dontSendNotification
                     );
 
-                    installButton.setEnabled(true);
-                    installAllButton.setEnabled(true);
-                    refreshButton.setEnabled(true);
+                    installButton->setEnabled(true);
+                    installAllButton->setEnabled(true);
+                    refreshButton->setEnabled(true);
                     // Update tree and buttons
                     repositoryTreeView.getTreeView().repaint(); // Update INSTALLED badges
                     updateButtonsForSelection();                // Update button text
@@ -747,7 +696,7 @@ void RepositoryWindow::uninstallAllPackages()
             if (failed > 0)
                 message += "\nFailed to uninstall " + juce::String(failed) + " package" + (failed == 1 ? "" : "s");
 
-            statusLabel.setText(message, juce::dontSendNotification);
+            getStatusLabel().setText(message, juce::dontSendNotification);
 
             juce::NativeMessageBox::showMessageBoxAsync(
                 failed > 0 ? juce::MessageBoxIconType::WarningIcon : juce::MessageBoxIconType::InfoIcon,
@@ -764,7 +713,7 @@ void RepositoryWindow::updateInstallAllButtonText()
 {
     if (allPackages.empty())
     {
-        installAllButton.setButtonText("Install All");
+        installAllButton->setButtonText("Install All");
         return;
     }
 
@@ -774,9 +723,9 @@ void RepositoryWindow::updateInstallAllButtonText()
             installedCount++;
 
     if (installedCount == static_cast<int>(allPackages.size()))
-        installAllButton.setButtonText("Uninstall All");
+        installAllButton->setButtonText("Uninstall All");
     else
-        installAllButton.setButtonText("Install All");
+        installAllButton->setButtonText("Install All");
 }
 
 void RepositoryWindow::updateButtonsForSelection()
@@ -786,8 +735,8 @@ void RepositoryWindow::updateButtonsForSelection()
     if (selected.isEmpty())
     {
         // No selection - default to Install/Uninstall All based on overall state
-        installButton.setButtonText("Install Selected");
-        installButton.setEnabled(false);
+        installButton->setButtonText("Install Selected");
+        installButton->setEnabled(false);
         updateInstallAllButtonText();
         return;
     }
@@ -827,16 +776,16 @@ void RepositoryWindow::updateButtonsForSelection()
     // Update buttons based on whether selection contains installed packages
     if (hasInstalledPackage)
     {
-        installButton.setButtonText("Uninstall Selected");
-        installAllButton.setButtonText("Uninstall All");
+        installButton->setButtonText("Uninstall Selected");
+        installAllButton->setButtonText("Uninstall All");
     }
     else
     {
-        installButton.setButtonText("Install Selected");
-        installAllButton.setButtonText("Install All");
+        installButton->setButtonText("Install Selected");
+        installAllButton->setButtonText("Install All");
     }
 
-    installButton.setEnabled(true);
+    installButton->setEnabled(true);
 }
 
 // Helper Methods
@@ -908,10 +857,10 @@ RepositoryWindow::collectPackagesFromTreeItem(RepositoryTreeItem* item, bool ins
 
 void RepositoryWindow::setButtonsEnabled(bool enabled)
 {
-    installButton.setEnabled(enabled);
-    installAllButton.setEnabled(enabled);
-    refreshButton.setEnabled(enabled);
-    cancelButton.setEnabled(!enabled); // Cancel is enabled when other buttons are disabled
+    installButton->setEnabled(enabled);
+    installAllButton->setEnabled(enabled);
+    refreshButton->setEnabled(enabled);
+    cancelButton->setEnabled(!enabled); // Cancel is enabled when other buttons are disabled
 }
 
 void RepositoryWindow::showConfirmationDialog(
@@ -977,7 +926,7 @@ void RepositoryWindow::executeBatchOperation(
         if (*currentIndex >= packagesPtr->size())
         {
             // All done
-            statusLabel.setText(
+            getStatusLabel().setText(
                 operationCaps
                     + " complete: "
                     + juce::String(*succeeded)
@@ -999,7 +948,7 @@ void RepositoryWindow::executeBatchOperation(
         const auto& package = (*packagesPtr)[*currentIndex];
         size_t packageNum = *currentIndex + 1;
 
-        statusLabel.setText(
+        getStatusLabel().setText(
             operationCaps
                 + "ing "
                 + package.name

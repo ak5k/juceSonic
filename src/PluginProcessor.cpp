@@ -1070,51 +1070,44 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     if (!jsfxFile.existsAsFile())
         return false;
 
-    unloadJSFX();
-
-    // Use the JSFX file's location directly - no copying needed!
-    // This allows:
-    // - Live updates to source files
-    // - No disk space duplication
-    // - Proper dependency resolution from source directory (*.jsfx-inc, *.png, *.rpl)
+    // Create new instance from source directory (allows live updates and dependency resolution)
     juce::File sourceDir = jsfxFile.getParentDirectory();
     juce::String fileName = jsfxFile.getFileName();
 
-    // sx_createInstance expects (dir_root, relative_path_to_file)
-    // With our JSFX patch, we pass the parent directory as dir_root and just the filename
-    // This sets m_effectdir = sourceDir, allowing relative imports to work
     bool wantWak = false;
-    sxInstance =
+    SX_Instance* newInstance =
         JesusonicAPI.sx_createInstance(sourceDir.getFullPathName().toRawUTF8(), fileName.toRawUTF8(), &wantWak);
 
-    if (!sxInstance)
+    if (!newInstance)
         return false;
 
+    // Setup new instance
+    sx_set_host_ctx(newInstance, this, JsfxSliderAutomateThunk);
+    JesusonicAPI.sx_extended(newInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
+    sx_set_midi_ctx(newInstance, &midiSendRecvCallback, this);
+
+    int latencySamples = JesusonicAPI.sx_getCurrentLatency(newInstance);
+
+    // Atomically swap instances while audio is suspended
+    suspendProcessing(true);
+    SX_Instance* oldInstance = sxInstance;
+    sxInstance = newInstance;
+    suspendProcessing(false);
+
+    // Destroy old instance after swap
+    if (oldInstance)
+    {
+        JesusonicAPI.sx_destroyInstance(oldInstance);
+        parameterSync.reset();
+    }
+
+    // Update state and parameters
     apvts.state.setProperty(jsfxPathParamID, jsfxFile.getFullPathName(), nullptr);
-
-    // Provide host context and slider automate callback for UI
-    // Use 'this' as host context so we can route callbacks if needed
-    sx_set_host_ctx(sxInstance, this, JsfxSliderAutomateThunk);
-
-    JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
-
     updateParameterMapping();
-
-    // Get and set initial latency
-    int latencySamples = JesusonicAPI.sx_getCurrentLatency(sxInstance);
     currentJSFXLatency.store(latencySamples, std::memory_order_relaxed);
     setLatencySamples(latencySamples);
 
-    // Note: Routing initialization moved to prepareToPlay() where bus layout is guaranteed valid
-
-    // Register MIDI callback (not in jsfxAPI struct, call directly)
-    sx_set_midi_ctx(sxInstance, &midiSendRecvCallback, this);
-
-    // Note: Preset management now handled by LibraryBrowser in editor
-    // Note: Directory remembering now handled by PersistentFileChooser in editor
-
-    // Set the effect name from JSFX after successful load
-    // Try to get description (from desc: tag) first, fall back to effect name (filename)
+    // Get effect name and author
     const char* description = sxInstance->m_description.Get();
 
     if (description && description[0] != '\0')
@@ -1122,17 +1115,13 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     else
     {
         const char* effectName = JesusonicAPI.sx_getEffectName(sxInstance);
-
-        if (effectName && effectName[0] != '\0')
-            currentJSFXName = juce::String::fromUTF8(effectName);
-        else
-            currentJSFXName = jsfxFile.getFileNameWithoutExtension();
+        currentJSFXName = (effectName && effectName[0] != '\0') ? juce::String::fromUTF8(effectName)
+                                                                : jsfxFile.getFileNameWithoutExtension();
     }
 
-    // Parse author from JSFX file
     currentJSFXAuthor = JsfxHelper::parseJSFXAuthor(jsfxFile);
 
-    // Trigger preset loading for this JSFX
+    // Trigger preset refresh
     if (presetLoader)
         presetLoader->requestRefresh(jsfxFile.getFullPathName());
 
@@ -1141,27 +1130,27 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
 
 void AudioPluginAudioProcessor::unloadJSFX()
 {
-    if (sxInstance)
-    {
-        // Destroy JSFX instance and ensure proper cleanup
-        JesusonicAPI.sx_destroyInstance(sxInstance);
-        sxInstance = nullptr;
+    if (!sxInstance)
+        return;
 
-        // Reset latency to 0 when unloading
-        currentJSFXLatency.store(0, std::memory_order_relaxed);
-        setLatencySamples(0);
+    // Atomically clear instance while audio is suspended
+    suspendProcessing(true);
+    SX_Instance* oldInstance = sxInstance;
+    sxInstance = nullptr;
+    suspendProcessing(false);
 
-        // Reset parameter sync manager
-        parameterSync.reset();
-    }
+    // Destroy old instance and reset state
+    JesusonicAPI.sx_destroyInstance(oldInstance);
+    parameterSync.reset();
+
+    currentJSFXLatency.store(0, std::memory_order_relaxed);
+    setLatencySamples(0);
 
     apvts.state.setProperty(jsfxPathParamID, "", nullptr);
-
     currentJSFXName.clear();
     currentJSFXAuthor.clear();
     numActiveParams = 0;
 
-    // Clear presets when JSFX is unloaded
     if (presetLoader)
         presetLoader->requestRefresh("");
 }
