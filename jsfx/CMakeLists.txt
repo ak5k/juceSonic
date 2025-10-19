@@ -299,6 +299,26 @@ if(EXISTS "${SLIDER_CONTROL_FILE}")
     endif()
 endif()
 
+# Patch lice_loader_init.cpp to fix _stricmp usage on non-Windows platforms
+# _stricmp is Windows-specific, replace with strcasecmp for Unix/macOS
+set(LICE_LOADER_FILE "${CMAKE_CURRENT_SOURCE_DIR}/lice_loader_init.cpp")
+if(EXISTS "${LICE_LOADER_FILE}")
+    file(READ "${LICE_LOADER_FILE}" LICE_LOADER_CONTENT)
+    # Only patch if not already patched (check for strcasecmp)
+    string(FIND "${LICE_LOADER_CONTENT}" "strcasecmp" LICE_LOADER_PATCH_FOUND)
+    if(LICE_LOADER_PATCH_FOUND EQUAL -1)
+        message(STATUS "Patching lice_loader_init.cpp to use strcasecmp instead of _stricmp")
+        # Replace _stricmp with strcasecmp for Unix/macOS compatibility
+        string(REPLACE 
+            "_stricmp(ext, \".png\")"
+            "strcasecmp(ext, \".png\")"
+            LICE_LOADER_CONTENT "${LICE_LOADER_CONTENT}")
+        file(WRITE "${LICE_LOADER_FILE}" "${LICE_LOADER_CONTENT}")
+        message(STATUS "lice_loader_init.cpp patched successfully")
+    else()
+        message(STATUS "lice_loader_init.cpp already patched, skipping")
+    endif()
+endif()
 
 # Create JSFX as a static library
 add_library(${PROJECT_NAME} STATIC)

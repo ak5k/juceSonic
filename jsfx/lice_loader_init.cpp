@@ -2,7 +2,13 @@
 // This ensures the image loaders are properly registered even if static constructors don't run
 
 #include "jsfx/WDL/lice/lice.h"
+
 #include <cstring>
+
+// Cross-platform case-insensitive string comparison
+#ifdef _WIN32
+#define strcasecmp _stricmp
+#endif
 
 // External references to the loader objects defined in WDL
 extern class LICE_PNGLoader LICE_pngldr; // from lice_png.cpp
@@ -42,7 +48,7 @@ static void EnsurePNGLoader()
         if (checkFileName)
         {
             const char* ext = strrchr(filename, '.');
-            if (!ext || _stricmp(ext, ".png") != 0)
+            if (!ext || strcasecmp(ext, ".png") != 0)
                 return nullptr;
         }
         return LICE_LoadPNG(filename, bmpbase);
