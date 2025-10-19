@@ -137,69 +137,107 @@ apply_patch(
 
 # Patch curses.h and related files to avoid macro conflicts with C++ STL
 # Rename problematic macros to prevent C++ conflicts
-file(READ "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h" CURSES_CONTENT)
 
-# Only patch if not already patched (check for curses_move macro)
-string(FIND "${CURSES_CONTENT}" "curses_move" PATCH_FOUND)
-if(PATCH_FOUND EQUAL -1)
-    # Patch move macro conflict with std::move
-    string(REPLACE 
-        "#define move(y,x) __move(CURSES_INSTANCE,y,x,0)"
-        "// #define move(y,x) __move(CURSES_INSTANCE,y,x,0)  /* Disabled - conflicts with std::move */\n#define curses_move(y,x) __move(CURSES_INSTANCE,y,x,0)"
-        CURSES_CONTENT 
-        "${CURSES_CONTENT}")
+# Patch move macro conflict with std::move
+apply_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h"
+    "curses-move-macro-fix"
+    "#define move(y,x) __move(CURSES_INSTANCE,y,x,0)"
+    "// #define move(y,x) __move(CURSES_INSTANCE,y,x,0)  /* Disabled - conflicts with std::move */\n#define curses_move(y,x) __move(CURSES_INSTANCE,y,x,0)"
+    "#define curses_move(y,x) __move(CURSES_INSTANCE,y,x,0)"
+)
 
-    # Patch erase macro conflict with std::string::erase and std::vector::erase
-    string(REPLACE 
-        "#define erase() curses_erase(CURSES_INSTANCE)"
-        "// #define erase() curses_erase(CURSES_INSTANCE)  /* Disabled - conflicts with STL erase */\n#define curses_erase_screen() __curses_erase(CURSES_INSTANCE)"
-        CURSES_CONTENT 
-        "${CURSES_CONTENT}")
+# Patch erase macro conflict with std::string::erase and std::vector::erase
+apply_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h"
+    "curses-erase-macro-fix"
+    "#define erase() curses_erase(CURSES_INSTANCE)"
+    "// #define erase() curses_erase(CURSES_INSTANCE)  /* Disabled - conflicts with STL erase */\n#define curses_erase_screen() __curses_erase(CURSES_INSTANCE)"
+    "#define curses_erase_screen() __curses_erase(CURSES_INSTANCE)"
+)
 
-    # Patch sync macro conflict with std::ios::sync
-    string(REPLACE 
-        "#define sync()"
-        "// #define sync()  /* Disabled - conflicts with STL sync */\n#define curses_sync()"
-        CURSES_CONTENT 
-        "${CURSES_CONTENT}")
+# Patch sync macro conflict with std::ios::sync
+apply_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h"
+    "curses-sync-macro-fix"
+    "#define sync()"
+    "// #define sync()  /* Disabled - conflicts with STL sync */\n#define curses_sync()"
+    "#define curses_sync()"
+)
 
-    # Patch refresh macro conflict with JUCE and other GUI frameworks
-    string(REPLACE 
-        "#define refresh()"
-        "// #define refresh()  /* Disabled - conflicts with GUI refresh() methods */\n#define curses_refresh()"
-        CURSES_CONTENT 
-        "${CURSES_CONTENT}")
-
-    file(WRITE "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h" "${CURSES_CONTENT}")
-    message(STATUS "Applied curses.h macro patches")
-else()
-    message(STATUS "curses.h already patched, skipping")
-endif()
+# Patch refresh macro conflict with JUCE and other GUI frameworks
+apply_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h"
+    "curses-refresh-macro-fix"
+    "#define refresh()"
+    "// #define refresh()  /* Disabled - conflicts with GUI refresh() methods */\n#define curses_refresh()"
+    "#define curses_refresh()"
+)
 
 # Patch curses source files to use renamed macros
-foreach(CURSES_FILE 
+apply_regex_patch(
     "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp")
-    if(EXISTS "${CURSES_FILE}")
-        file(READ "${CURSES_FILE}" FILE_CONTENT)
-        # Only patch if not already patched (check for curses_move in file)
-        string(FIND "${FILE_CONTENT}" "curses_move" FILE_PATCH_FOUND)
-        if(FILE_PATCH_FOUND EQUAL -1)
-            # Replace move() calls with curses_move()
-            string(REGEX REPLACE "([^a-zA-Z_])move\\(" "\\1curses_move(" FILE_CONTENT "${FILE_CONTENT}")
-            # Replace erase() calls with curses_erase_screen() if any exist
-            string(REGEX REPLACE "([^a-zA-Z_])erase\\(" "\\1curses_erase_screen(" FILE_CONTENT "${FILE_CONTENT}")
-            # Replace sync() calls with curses_sync() if any exist  
-            string(REGEX REPLACE "([^a-zA-Z_])sync\\(" "\\1curses_sync(" FILE_CONTENT "${FILE_CONTENT}")
-            # Replace refresh() calls with curses_refresh() if any exist
-            string(REGEX REPLACE "([^a-zA-Z_])refresh\\(" "\\1curses_refresh(" FILE_CONTENT "${FILE_CONTENT}")
-            file(WRITE "${CURSES_FILE}" "${FILE_CONTENT}")
-            message(STATUS "Applied patches to ${CURSES_FILE}")
-        else()
-            message(STATUS "Already patched: ${CURSES_FILE}")
-        endif()
-    endif()
-endforeach()
+    "curses-editor-move-calls"
+    "([^a-zA-Z_])move\\("
+    "\\1curses_move("
+    "curses_move("
+)
+
+apply_regex_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
+    "curses-editor-erase-calls"
+    "([^a-zA-Z_])erase\\("
+    "\\1curses_erase_screen("
+    "curses_erase_screen("
+)
+
+apply_regex_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
+    "curses-editor-sync-calls"
+    "([^a-zA-Z_])sync\\("
+    "\\1curses_sync("
+    "curses_sync("
+)
+
+apply_regex_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
+    "curses-editor-refresh-calls"
+    "([^a-zA-Z_])refresh\\("
+    "\\1curses_refresh("
+    "curses_refresh("
+)
+
+apply_regex_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
+    "eel-edit-move-calls"
+    "([^a-zA-Z_])move\\("
+    "\\1curses_move("
+    "curses_move("
+)
+
+apply_regex_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
+    "eel-edit-erase-calls"
+    "([^a-zA-Z_])erase\\("
+    "\\1curses_erase_screen("
+    "curses_erase_screen("
+)
+
+apply_regex_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
+    "eel-edit-sync-calls"
+    "([^a-zA-Z_])sync\\("
+    "\\1curses_sync("
+    "curses_sync("
+)
+
+apply_regex_patch(
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
+    "eel-edit-refresh-calls"
+    "([^a-zA-Z_])refresh\\("
+    "\\1curses_refresh("
+    "curses_refresh("
+)
 
 # Patch gzguts.h to fix missing unistd.h include on macOS/Unix systems
 # This fixes compilation errors with undeclared functions: lseek, read, write, close
@@ -233,42 +271,42 @@ apply_patch(
 
 # Patch jsfx_api.cpp to disable DllMain for standalone builds
 # Apply on all platforms to ensure consistent API
-set(JSFX_API_FILE "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp")
-if(EXISTS "${JSFX_API_FILE}")
-    file(READ "${JSFX_API_FILE}" API_CONTENT)
-    # Only patch if not already patched (check for #if 0 before DllMain)
-    string(FIND "${API_CONTENT}" "#if 0  // Disabled for standalone builds" API_PATCH_FOUND)
-    if(API_PATCH_FOUND EQUAL -1)
-        # Remove extern "C" { wrapper
-        string(REPLACE 
-            "extern \"C\" {\n\n#ifdef _WIN32"
-            "#ifdef _WIN32"
-            API_CONTENT "${API_CONTENT}")
-        
-        # Simplify JesusonicAPI declaration - remove platform-specific export declarations
-        string(REPLACE 
-            "#ifdef _WIN32\n__declspec(dllexport) jsfxAPI JesusonicAPI=\n#else\n__attribute__((visibility(\"default\"))) jsfxAPI JesusonicAPI=\n#endif"
-            "jsfxAPI JesusonicAPI="
-            API_CONTENT "${API_CONTENT}")
-        
-        # Comment out the DllMain function for standalone builds (on all platforms)
-        # Wrap it in #if 0 ... #endif (do this before removing };)
-        string(REPLACE 
-            "BOOL WINAPI DllMain"
-            "#if 0  // Disabled for standalone builds\nBOOL WINAPI DllMain"
-            API_CONTENT "${API_CONTENT}")
-        # Find the closing brace and return statement, add #endif after
-        string(REPLACE 
-            "}\n\n};\n\nextern int g_last_srate;"
-            "}\n#endif  // Disabled for standalone builds\n\n\nextern int g_last_srate;"
-            API_CONTENT "${API_CONTENT}")
-        
-        file(WRITE "${JSFX_API_FILE}" "${API_CONTENT}")
-        message(STATUS "Applied DllMain and extern C patches to jsfx_api.cpp")
-    else()
-        message(STATUS "jsfx_api.cpp already patched, skipping")
-    endif()
-endif()
+
+# Remove extern "C" { wrapper
+apply_patch(
+    "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp"
+    "jsfx-api-extern-c-removal"
+    "extern \"C\" {\n\n#ifdef _WIN32"
+    "#ifdef _WIN32"
+    "#ifdef _WIN32"
+)
+
+# Simplify JesusonicAPI declaration - remove platform-specific export declarations
+apply_patch(
+    "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp"
+    "jsfx-api-export-simplification"
+    "#ifdef _WIN32\n__declspec(dllexport) jsfxAPI JesusonicAPI=\n#else\n__attribute__((visibility(\"default\"))) jsfxAPI JesusonicAPI=\n#endif"
+    "jsfxAPI JesusonicAPI="
+    "jsfxAPI JesusonicAPI="
+)
+
+# Comment out the DllMain function for standalone builds (on all platforms)
+apply_patch(
+    "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp"
+    "jsfx-api-dllmain-disable"
+    "BOOL WINAPI DllMain"
+    "#if 0  // Disabled for standalone builds\nBOOL WINAPI DllMain"
+    "#if 0  // Disabled for standalone builds"
+)
+
+# Close the DllMain function disable block
+apply_patch(
+    "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp"
+    "jsfx-api-dllmain-close"
+    "}\n\n};\n\nextern int g_last_srate;"
+    "}\n#endif  // Disabled for standalone builds\n\n\nextern int g_last_srate;"
+    "#endif  // Disabled for standalone builds"
+)
 
 # Generate SWELL resource files from res.rc (needed for jsfx_api.cpp)
 if(NOT WIN32)
