@@ -105,8 +105,7 @@ target_sources(jsfx PRIVATE
     
     # EEL2 (Expression Evaluation Language) sources
     ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-lextab.c
-    # Note: nseel-cfunc.c is excluded when using GCC inline assembly (it contains fallback C implementations)
-    # ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-cfunc.c
+    ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-cfunc.c
     ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-caltab.c
     ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-compiler.c
     ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-eval.c
@@ -191,15 +190,12 @@ else()
 endif()
 
 # Add EEL2 assembly optimizations to the jsfx target
-eel2_add_assembly_to_target(jsfx)
-
-# Add nseel-cfunc.c conditionally - it's only needed when NOT using GCC inline assembly
-# (GCC inline assembly includes the asm functions, nseel-cfunc.c has fallback C implementations)
+# Note: For ARM64 Linux, this adds asm-nseel-aarch64-gcc.c which is also #include'd by nseel-cfunc.c
+# We need to prevent adding it twice to avoid multiple definitions
 if(NOT EEL2_USE_GCC_ASM)
-    target_sources(jsfx PRIVATE ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-cfunc.c)
-    message(STATUS "EEL2: Added nseel-cfunc.c (C fallback implementations)")
+    eel2_add_assembly_to_target(jsfx)
 else()
-    message(STATUS "EEL2: Skipping nseel-cfunc.c (using GCC inline assembly instead)")
+    message(STATUS "EEL2: GCC inline assembly will be included via nseel-cfunc.c, not adding separately")
 endif()
 
 # Set compiler flags based on Makefile
