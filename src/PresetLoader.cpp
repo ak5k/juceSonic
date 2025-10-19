@@ -1,8 +1,9 @@
 #include "PresetLoader.h"
 
-PresetLoader::PresetLoader(juce::AudioProcessorValueTreeState& apvts_)
+PresetLoader::PresetLoader(juce::AudioProcessorValueTreeState& apvts_, PresetCache& cache)
     : juce::Thread("PresetLoader")
     , apvts(apvts_)
+    , presetCache(cache)
     , converter(std::make_unique<ReaperPresetConverter>())
 {
     // Start the background thread (will wait for requests)
@@ -32,22 +33,17 @@ void PresetLoader::requestRefresh(const juce::String& jsfxPath)
 
 int PresetLoader::getLoadedFileCount() const
 {
-    auto presetsNode = apvts.state.getChildWithName("presets");
-    if (!presetsNode.isValid())
-        return 0;
-    return presetsNode.getNumChildren();
+    return presetCache.getNumFiles();
 }
 
 int PresetLoader::getLoadedBankCount() const
 {
-    auto presetsNode = apvts.state.getChildWithName("presets");
-    if (!presetsNode.isValid())
-        return 0;
+    auto presetsTree = presetCache.getPresetsTree();
 
     int totalBanks = 0;
-    for (int i = 0; i < presetsNode.getNumChildren(); ++i)
+    for (int i = 0; i < presetsTree.getNumChildren(); ++i)
     {
-        auto fileNode = presetsNode.getChild(i);
+        auto fileNode = presetsTree.getChild(i);
         totalBanks += fileNode.getNumChildren();
     }
     return totalBanks;
@@ -87,7 +83,7 @@ void PresetLoader::loadPresetsInBackground()
     if (currentJsfxPath.isEmpty())
     {
         juce::MessageManager::callAsync([this, newPresetsTree]() mutable
-                                        { updatePresetsInState(std::move(newPresetsTree)); });
+                                        { updatePresetsInCache(std::move(newPresetsTree)); });
         isCurrentlyLoading.store(false);
         return;
     }
@@ -135,11 +131,11 @@ void PresetLoader::loadPresetsInBackground()
 
     DBG("PresetLoader: Finished loading, total files: "
         << newPresetsTree.getNumChildren()
-        << ", scheduling state update on message thread");
+        << ", scheduling cache update on message thread");
 
-    // Phase 3: Update APVTS state on message thread (atomic)
+    // Phase 3: Update preset cache on message thread (atomic)
     juce::MessageManager::callAsync([this, newPresetsTree]() mutable
-                                    { updatePresetsInState(std::move(newPresetsTree)); });
+                                    { updatePresetsInCache(std::move(newPresetsTree)); });
 
     isCurrentlyLoading.store(false);
 }
@@ -217,27 +213,18 @@ juce::Array<juce::File> PresetLoader::findPresetFiles(const juce::File& jsfxFile
     return presetFiles;
 }
 
-void PresetLoader::updatePresetsInState(juce::ValueTree newPresetsTree)
+void PresetLoader::updatePresetsInCache(juce::ValueTree newPresetsTree)
 {
-    // This runs on the message thread - safe to modify APVTS
+    // This runs on the message thread - safe to update cache
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-    // Remove old presets node if it exists
-    auto oldPresetsNode = apvts.state.getChildWithName("presets");
-    if (oldPresetsNode.isValid())
-        apvts.state.removeChild(oldPresetsNode, nullptr);
-
-    // Add new presets node
-    if (newPresetsTree.isValid() && newPresetsTree.getNumChildren() > 0)
-    {
-        apvts.state.appendChild(newPresetsTree, nullptr);
-    }
-    else
-    {
-    }
+    // Update preset cache (will notify listeners)
+    presetCache.updateCache(newPresetsTree);
 
     // Count total banks for logging
     int totalBanks = 0;
     for (int i = 0; i < newPresetsTree.getNumChildren(); ++i)
         totalBanks += newPresetsTree.getChild(i).getNumChildren();
+
+    DBG("PresetCache updated: " << newPresetsTree.getNumChildren() << " files, " << totalBanks << " banks");
 }

@@ -254,8 +254,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     rebuildParameterSliders();
 
-    // Listen to APVTS state for preset updates
-    processorRef.getAPVTS().state.addListener(this);
+    // Listen to preset cache updates
+    processorRef.getPresetCache().onCacheUpdated = [this]() { updatePresetList(); };
 
     // If JSFX is already loaded at startup, enable the Edit button and load presets
     if (processorRef.getSXInstancePtr() != nullptr)
@@ -299,8 +299,8 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
         setStateProperty("juceControlsHeight", getHeight());
     }
 
-    // Stop listening to APVTS state
-    processorRef.getAPVTS().state.removeListener(this);
+    // Clear preset cache callback
+    processorRef.getPresetCache().onCacheUpdated = nullptr;
 
     // Stop timer first to prevent callbacks during destruction
     stopTimer();
@@ -1249,27 +1249,6 @@ void AudioPluginAudioProcessorEditor::openJsfxPluginBrowser()
     auto* window = options.launchAsync();
     if (window != nullptr)
         window->centreWithSize(700, 600);
-}
-
-//==============================================================================
-// ValueTree::Listener implementation
-
-void AudioPluginAudioProcessorEditor::valueTreeChildAdded(juce::ValueTree& parent, juce::ValueTree& child)
-{
-    // Check if the "presets" node was added or modified
-    if (parent == processorRef.getAPVTS().state && child.getType() == juce::Identifier("presets"))
-    {
-        // Update UI on message thread (we're already on it since this is a ValueTree listener)
-        updatePresetList();
-    }
-}
-
-void AudioPluginAudioProcessorEditor::valueTreeChildRemoved(juce::ValueTree& parent, juce::ValueTree& child, int)
-{
-    // Check if the "presets" node was removed
-    if (parent == processorRef.getAPVTS().state && child.getType() == juce::Identifier("presets"))
-
-        updatePresetList();
 }
 
 //==============================================================================

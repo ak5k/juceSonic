@@ -52,11 +52,10 @@ void PresetWindow::visibilityChanged()
 
 void PresetWindow::refreshPresetList()
 {
-    // Read presets from APVTS state (populated by PresetLoader in background)
-    auto& state = processor.getAPVTS().state;
-    auto presetsNode = state.getChildWithName("presets");
+    // Read presets from in-memory cache (populated by PresetLoader in background)
+    auto presetsTree = processor.getPresetCache().getPresetsTree();
 
-    if (!presetsNode.isValid() || presetsNode.getNumChildren() == 0)
+    if (!presetsTree.isValid() || presetsTree.getNumChildren() == 0)
     {
         presetTreeView.loadPresetsFromValueTree(juce::ValueTree());
         getStatusLabel().setText("No presets loaded", juce::dontSendNotification);
@@ -64,14 +63,14 @@ void PresetWindow::refreshPresetList()
         return;
     }
 
-    // Load presets from APVTS ValueTree
-    presetTreeView.loadPresetsFromValueTree(presetsNode);
+    // Load presets from cache
+    presetTreeView.loadPresetsFromValueTree(presetsTree);
 
     // Count files and banks
-    int fileCount = presetsNode.getNumChildren();
+    int fileCount = presetsTree.getNumChildren();
     int bankCount = 0;
     for (int i = 0; i < fileCount; ++i)
-        bankCount += presetsNode.getChild(i).getNumChildren();
+        bankCount += presetsTree.getChild(i).getNumChildren();
 
     getStatusLabel().setText(
         "Loaded " + juce::String(fileCount) + " preset files (" + juce::String(bankCount) + " banks)",

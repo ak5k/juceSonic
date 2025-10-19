@@ -202,7 +202,6 @@ class AudioPluginAudioProcessorEditor final
     : public juce::AudioProcessorEditor
     , public PersistentState
     , private juce::Timer
-    , private juce::ValueTree::Listener
 {
 public:
     explicit AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor&);
@@ -220,22 +219,6 @@ private:
     void unloadJSFXFile();
     void rebuildParameterSliders();
     void updatePresetList();
-
-    // ValueTree::Listener
-    void valueTreeChildAdded(juce::ValueTree& parent, juce::ValueTree& child) override;
-    void valueTreeChildRemoved(juce::ValueTree& parent, juce::ValueTree& child, int index) override;
-
-    void valueTreeChildOrderChanged(juce::ValueTree&, int, int) override
-    {
-    }
-
-    void valueTreeParentChanged(juce::ValueTree&) override
-    {
-    }
-
-    void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) override
-    {
-    }
 
     AudioPluginAudioProcessor& processorRef;
 

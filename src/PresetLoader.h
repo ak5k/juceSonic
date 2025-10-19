@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ReaperPresetConverter.h"
+#include "PresetCache.h"
 #include <Config.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_data_structures/juce_data_structures.h>
@@ -14,15 +15,15 @@
  * Thread-safe class that:
  * - Loads presets from default locations in a background thread
  * - Parses .rpl files using ReaperPresetConverter
- * - Atomically updates APVTS state via message thread
+ * - Updates in-memory PresetCache (not persisted to APVTS/project files)
  * - Can be triggered to refresh when needed
  *
  * Default locations searched:
  * 1. Same directory as current JSFX file (*.rpl)
- * 2. User-configured preset directories from APVTS
+ * 2. User-configured preset directories from APVTS (settings only)
  * 3. REAPER Effects directory (recursive, filtered by JSFX name)
  *
- * Storage structure in APVTS.state:
+ * Preset data structure (stored in PresetCache, not APVTS):
  * ```
  * presets (ValueTree)
  *   PresetFile (multiple children from ReaperPresetConverter)
@@ -40,9 +41,10 @@ class PresetLoader : private juce::Thread
 public:
     /**
      * @brief Construct a new Preset Loader
-     * @param apvts Reference to the AudioProcessorValueTreeState
+     * @param apvts Reference to the AudioProcessorValueTreeState (for directory settings only)
+     * @param cache Reference to the PresetCache (for storing loaded presets)
      */
-    explicit PresetLoader(juce::AudioProcessorValueTreeState& apvts);
+    explicit PresetLoader(juce::AudioProcessorValueTreeState& apvts, PresetCache& cache);
 
     /**
      * @brief Destructor - ensures thread is stopped
@@ -101,13 +103,16 @@ private:
     juce::Array<juce::File> findPresetFiles(const juce::File& jsfxFile, const juce::String& jsfxName);
 
     /**
-     * @brief Update APVTS state with loaded presets (runs on message thread)
-     * @param newPresetsTree The new preset tree to store
+     * @brief Update preset cache with loaded presets (runs on message thread)
+     * @param newPresetsTree The new preset tree to cache
      */
-    void updatePresetsInState(juce::ValueTree newPresetsTree);
+    void updatePresetsInCache(juce::ValueTree newPresetsTree);
 
-    // Reference to APVTS for reading config and storing results
+    // Reference to APVTS for reading directory settings only
     juce::AudioProcessorValueTreeState& apvts;
+
+    // Reference to preset cache for storing loaded presets
+    PresetCache& presetCache;
 
     // Converter for parsing .rpl files
     std::unique_ptr<ReaperPresetConverter> converter;

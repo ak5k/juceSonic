@@ -92,8 +92,8 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         parameterCache[i] = apvts.getParameter(paramID);
     }
 
-    // Initialize preset loader
-    presetLoader = std::make_unique<PresetLoader>(apvts);
+    // Initialize preset loader with preset cache
+    presetLoader = std::make_unique<PresetLoader>(apvts, presetCache);
 
     // Start timer for latency updates and parameter sync (30 Hz = ~33ms)
     startTimer(33);

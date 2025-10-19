@@ -6,6 +6,7 @@
 #include "JsfxHelper.h"
 #include "ParameterSyncManager.h"
 #include <Config.h>
+#include "PresetCache.h"
 #include "PresetLoader.h"
 #include "ReaperPresetConverter.h"
 
@@ -144,6 +145,11 @@ public:
         return apvts;
     }
 
+    PresetCache& getPresetCache()
+    {
+        return presetCache;
+    }
+
     void setWetAmount(double wet)
     {
         currentWet = juce::jlimit(0.0, 1.0, wet);
@@ -222,6 +228,9 @@ private:
 
     // Two-way parameter synchronization between APVTS and JSFX
     ParameterSyncManager parameterSync;
+
+    // In-memory preset cache (not persisted in project files)
+    PresetCache presetCache;
 
     // Async preset loader
     std::unique_ptr<PresetLoader> presetLoader;
