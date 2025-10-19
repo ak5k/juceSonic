@@ -40,15 +40,14 @@ DEPENDENCIES=(
     
     # GTK and WebKit
     "libgtk-3-dev"
-    "libgtk-*-dev"
-    "libwebkit2gtk-*-dev"
+    "libwebkit2gtk-4.1-dev"
     
     # OpenGL/Mesa
     "libglu1-mesa-dev"
     "mesa-common-dev"
-
+    
     # Assembler for optimized builds
-    nasm
+    "nasm"
 )
 
 # Export the array so it can be sourced by other scripts
