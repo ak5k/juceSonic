@@ -221,21 +221,22 @@ if(MSVC)
         $<$<COMPILE_LANGUAGE:C,CXX>:/wd4996>  # deprecated functions
     )
 else()
+    # Apply compiler flags only to C/CXX files, not to assembly files
     target_compile_options(jsfx PRIVATE
-        -Wno-error
-        -fvisibility=hidden
-        -fstrict-aliasing
-        -fno-math-errno
-        -Wall
-        -Wtype-limits
-        -Wno-unused-parameter
-        -Wno-sign-compare
-        -Wno-unused-function
-        -Wno-shift-negative-value
-        $<$<NOT:$<PLATFORM_ID:Darwin>>:-Wno-format-truncation>
-        $<$<PLATFORM_ID:Darwin>:-Wno-deprecated>
-        $<$<PLATFORM_ID:Darwin>:-Wno-switch>
-        $<$<PLATFORM_ID:Darwin>:-Wno-c++11-narrowing>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-error>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-fvisibility=hidden>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-fstrict-aliasing>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-fno-math-errno>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wall>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wtype-limits>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-unused-parameter>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-sign-compare>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-unused-function>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-shift-negative-value>
+        $<$<AND:$<COMPILE_LANGUAGE:C,CXX>,$<NOT:$<PLATFORM_ID:Darwin>>>:-Wno-format-truncation>
+        $<$<AND:$<COMPILE_LANGUAGE:C,CXX>,$<PLATFORM_ID:Darwin>>:-Wno-deprecated>
+        $<$<AND:$<COMPILE_LANGUAGE:C,CXX>,$<PLATFORM_ID:Darwin>>:-Wno-switch>
+        $<$<AND:$<COMPILE_LANGUAGE:C,CXX>,$<PLATFORM_ID:Darwin>>:-Wno-c++11-narrowing>
     )
 endif()
 

@@ -311,7 +311,10 @@ if(NOT EEL2_USE_PRECOMPILED)
             message(FATAL_ERROR "EEL2: Unknown platform")
         endif()
 
-        set(CMAKE_ASM_NASM_FLAGS "" CACHE STRING "NASM flags")
+        # Clear any inherited C/C++ compiler flags that NASM doesn't understand
+        set(CMAKE_ASM_NASM_FLAGS "" CACHE STRING "NASM flags" FORCE)
+        set(CMAKE_ASM_NASM_COMPILE_OBJECT "<CMAKE_ASM_NASM_COMPILER> <INCLUDES> <FLAGS> -f ${CMAKE_ASM_NASM_OBJECT_FORMAT} -o <OBJECT> <SOURCE>" CACHE STRING "NASM compile command" FORCE)
+        
         message(STATUS "EEL2: Object format: ${CMAKE_ASM_NASM_OBJECT_FORMAT}")
     endif()
 endif()
