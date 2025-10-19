@@ -118,10 +118,8 @@ RepositoryManager::parseRepositoryXml(const juce::String& xmlContent, const juce
 
             // Only support packages ending with .jsfx
             if (!packageName.endsWithIgnoreCase(".jsfx"))
-            {
 
                 continue;
-            }
 
             juce::String packageType = reapack->getStringAttribute("type");
             juce::String description = reapack->getStringAttribute("desc");
@@ -177,18 +175,11 @@ RepositoryManager::parseRepositoryXml(const juce::String& xmlContent, const juce
 
 void RepositoryManager::installPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback)
 {
-
-
-
-
-
     // Install in background thread
     juce::Thread::launch(
         [this, package, callback]()
         {
             auto installDir = getPackageInstallDirectory(package);
-
-
             juce::String errorMsg;
 
             // Check for cancellation
@@ -206,7 +197,26 @@ void RepositoryManager::installPackage(const JSFXPackage& package, std::function
                 return;
             }
 
-            // Download and write main file directly (serial operation)
+            // Prepare list of all files to download
+            struct FileDownload
+            {
+                juce::String url;
+                juce::String relativePath;
+                juce::String content;
+                bool isMainFile;
+            };
+
+            std::vector<FileDownload> downloads;
+
+            // Add main file
+            downloads.push_back({package.mainFileUrl, package.name, {}, true});
+
+            // Add dependencies
+            for (const auto& [relativePath, url] : package.dependencies)
+                downloads.push_back({url, relativePath, {}, false});
+
+            // Download all files first (fail fast if any download fails)
+            for (auto& download : downloads)
             {
                 if (shouldCancelInstallation.load())
                 {
@@ -214,29 +224,42 @@ void RepositoryManager::installPackage(const JSFXPackage& package, std::function
                     return;
                 }
 
-                juce::URL mainUrl(package.mainFileUrl);
-                auto mainStream =
-                    mainUrl.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress));
-                if (mainStream == nullptr)
+                juce::URL fileUrl(download.url);
+                juce::StringPairArray responseHeaders;
+                int statusCode = 0;
+
+                // Use HTTP/1.1 with keep-alive by default (JUCE handles this internally)
+                auto stream = fileUrl.createInputStream(
+                    juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                        .withConnectionTimeoutMs(10000)
+                        .withNumRedirectsToFollow(5)
+                        .withResponseHeaders(&responseHeaders)
+                        .withStatusCode(&statusCode)
+                        .withExtraHeaders("Connection: keep-alive\r\n") // Request connection reuse
+                );
+
+                if (stream == nullptr || statusCode != 200)
                 {
-                    errorMsg = "Failed to download main file from: " + package.mainFileUrl;
+                    juce::String fileType = download.isMainFile ? "main file" : "dependency";
+                    errorMsg = "Failed to download "
+                             + fileType
+                             + " from: "
+                             + download.url
+                             + " (HTTP "
+                             + juce::String(statusCode)
+                             + ")";
                     juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
                     return;
                 }
 
-                auto content = mainStream->readEntireStreamAsString();
-                auto destination = installDir.getChildFile(package.name);
+                download.content = stream->readEntireStreamAsString();
 
-                if (!FileIO::writeFile(destination, content))
-                {
-                    errorMsg = "Failed to write file: " + destination.getFullPathName();
-                    juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
-                    return;
-                }
+                // Release stream immediately to allow connection reuse
+                stream.reset();
             }
 
-            // Download and write dependencies serially
-            for (const auto& [relativePath, url] : package.dependencies)
+            // All downloads succeeded - now write files
+            for (const auto& download : downloads)
             {
                 if (shouldCancelInstallation.load())
                 {
@@ -244,20 +267,9 @@ void RepositoryManager::installPackage(const JSFXPackage& package, std::function
                     return;
                 }
 
-                juce::URL depUrl(url);
-                auto depStream =
-                    depUrl.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress));
-                if (depStream == nullptr)
-                {
-                    errorMsg = "Failed to download dependency from: " + url;
-                    juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
-                    return;
-                }
+                auto destination = installDir.getChildFile(download.relativePath);
 
-                auto content = depStream->readEntireStreamAsString();
-                auto destination = installDir.getChildFile(relativePath);
-
-                if (!FileIO::writeFile(destination, content))
+                if (!FileIO::writeFile(destination, download.content))
                 {
                     errorMsg = "Failed to write file: " + destination.getFullPathName();
                     juce::MessageManager::callAsync([callback, errorMsg]() { callback(false, errorMsg); });
@@ -291,16 +303,11 @@ void RepositoryManager::cancelInstallation()
 
 void RepositoryManager::uninstallPackage(const JSFXPackage& package, std::function<void(bool, juce::String)> callback)
 {
-
-
-
     // Uninstall in background thread
     juce::Thread::launch(
         [this, package, callback]()
         {
             auto installDir = getPackageInstallDirectory(package);
-
-
 
             if (!FileIO::exists(installDir))
             {
