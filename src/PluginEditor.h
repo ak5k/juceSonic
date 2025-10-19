@@ -248,7 +248,7 @@ private:
     juce::ComboBox presetManagementMenu;
 
     // PresetWindow embedded as component (minimal UI mode)
-    PresetWindow presetBrowser;
+    PresetWindow presetWindow;
 
     juce::Slider wetSlider;
     juce::Label wetLabel;
@@ -279,7 +279,7 @@ private:
     void showAboutWindow();
     void checkForUpdatesIfNeeded();
     void showUpdateNotification(const juce::String& latestVersion, const juce::String& downloadUrl);
-    void showPresetBrowser();
+    void openPresetManager();
     void showRepositoryBrowser();
 
     // JSFX lifecycle management (internal constructor/destructor pattern)

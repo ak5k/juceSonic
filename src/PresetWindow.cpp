@@ -41,7 +41,6 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     // Setup status label
     addAndMakeVisible(statusLabel);
     statusLabel.setJustificationType(juce::Justification::centred);
-    statusLabel.setFont(juce::FontOptions(12.0f));
 
     setSize(600, 500);
 }

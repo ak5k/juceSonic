@@ -6,8 +6,6 @@
 #include "PluginProcessor.h"
 #include "PresetWindow.h"
 #include "RepositoryWindow.h"
-#include "RepositoryManager.h"
-#include "ReaperPresetConverter.h"
 
 #include <jsfx.h>
 #include <memory>
@@ -18,7 +16,7 @@ extern jsfxAPI JesusonicAPI;
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
     : AudioProcessorEditor(&p)
     , processorRef(p)
-    , presetBrowser(p)
+    , presetWindow(p)
 {
     setLookAndFeel(&sharedLookAndFeel->lf);
 
@@ -167,18 +165,18 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     setupPresetManagementMenu();
 
     // Preset browser (embedded, minimal UI)
-    addAndMakeVisible(presetBrowser);
-    presetBrowser.setShowManagementButtons(false);           // Hide import/export/etc buttons
-    presetBrowser.getTreeView().setShowMetadataLabel(false); // Hide metadata label
-    presetBrowser.getTreeView().setAutoHideTreeWithoutResults(
+    addAndMakeVisible(presetWindow);
+    presetWindow.setShowManagementButtons(false);           // Hide import/export/etc buttons
+    presetWindow.getTreeView().setShowMetadataLabel(false); // Hide metadata label
+    presetWindow.getTreeView().setAutoHideTreeWithoutResults(
         true
-    );                            // Show hint line when no search, expand to show results
-    presetBrowser.toFront(false); // Ensure it's on top of LICE component
+    );                           // Show hint line when no search, expand to show results
+    presetWindow.toFront(false); // Ensure it's on top of LICE component
 
     // PresetWindow now handles preset selection internally via its own callback
 
     // Handle tree expansion for adaptive sizing
-    presetBrowser.getTreeView().onTreeExpansionChanged = [this](bool isExpanded)
+    presetWindow.getTreeView().onTreeExpansionChanged = [this](bool isExpanded)
     {
         // Trigger layout update when tree height changes
         resized();
@@ -583,15 +581,14 @@ void AudioPluginAudioProcessorEditor::resized()
 
     buttonArea.removeFromLeft(spacing * 2);
 
-    // Calculate preset browser bounds - search field and tree (title is separate now)
-    auto presetBrowserArea = buttonArea.removeFromLeft(libraryWidth);
+    // Calculate preset window bounds - search field and tree (title is separate now)
+    auto presetWindowArea = buttonArea.removeFromLeft(libraryWidth);
 
     // Always use adaptive height - tree resizes based on content/search
-    auto& treeView = presetBrowser.getTreeView();
+    auto& treeView = presetWindow.getTreeView();
     int neededHeight = treeView.getNeededHeight();
-    presetBrowserArea.setHeight(neededHeight);
-
-    presetBrowser.setBounds(presetBrowserArea);
+    presetWindowArea.setHeight(neededHeight);
+    presetWindow.setBounds(presetWindowArea);
 
     buttonArea.removeFromLeft(spacing * 2);
     wetLabel.setBounds(buttonArea.removeFromLeft(wetLabelWidth));
@@ -627,8 +624,8 @@ void AudioPluginAudioProcessorEditor::resized()
     if (jsfxLiceRenderer)
         jsfxLiceRenderer->setBounds(bounds);
 
-    // Ensure preset browser is always on top (after all other layout is done)
-    presetBrowser.toFront(false);
+    // Ensure preset window is always on top (after all other layout is done)
+    presetWindow.toFront(false);
 
     // Save current size to appropriate property based on which view is showing
     // This ensures sizes are persisted when host calls getStateInformation() (per-JSFX via PersistentState)
@@ -772,7 +769,7 @@ void AudioPluginAudioProcessorEditor::unloadJSFXFile()
                 rebuildParameterSliders();
 
                 // Clear preset browser (PresetLoader will handle clearing APVTS)
-                presetBrowser.refreshPresetList();
+                presetWindow.refreshPresetList();
 
                 // Reset UI state - show parameters, update buttons
                 viewport.setVisible(true);
@@ -956,7 +953,7 @@ void AudioPluginAudioProcessorEditor::toggleIOMatrix()
 void AudioPluginAudioProcessorEditor::updatePresetList()
 {
     // Trigger preset refresh - PresetWindow will load from APVTS and refresh tree
-    presetBrowser.refreshPresetList();
+    presetWindow.refreshPresetList();
 }
 
 //==============================================================================
@@ -991,7 +988,7 @@ void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int select
     switch (selectedId)
     {
     case 1: // Presets...
-        showPresetBrowser();
+        openPresetManager();
         break;
 
     case 2: // Repositories...
@@ -1091,12 +1088,12 @@ void AudioPluginAudioProcessorEditor::showUpdateNotification(
     );
 }
 
-void AudioPluginAudioProcessorEditor::showPresetBrowser()
+void AudioPluginAudioProcessorEditor::openPresetManager()
 {
-    auto* presetWindow = new PresetWindow(processorRef);
+    auto* windowContent = new PresetWindow(processorRef);
 
     juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(presetWindow);
+    options.content.setOwned(windowContent);
     options.dialogTitle = "Preset Manager";
     options.resizable = true;
     options.useNativeTitleBar = true;

@@ -61,6 +61,17 @@ void SearchableTreeItem::paintMatchHighlight(juce::Graphics& g, int width, int h
     }
 }
 
+void SearchableTreeItem::paintItem(juce::Graphics& g, int width, int height)
+{
+    // Draw highlight backgrounds (selected, focused, matched states)
+    paintMatchHighlight(g, width, height);
+
+    // Draw item name in white with standard formatting
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::FontOptions(14.0f));
+    g.drawText(getName(), 4, 0, width - 8, height, juce::Justification::centredLeft, true);
+}
+
 // ============================================================================
 // SearchTextEditor implementation
 // ============================================================================

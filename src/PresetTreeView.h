@@ -38,13 +38,6 @@ public:
         return itemName;
     }
 
-    void paintItem(juce::Graphics& g, int width, int height) override;
-    void paintOpenCloseButton(
-        juce::Graphics& g,
-        const juce::Rectangle<float>& area,
-        juce::Colour backgroundColour,
-        bool isMouseOver
-    ) override;
     bool mightContainSubItems() override;
     bool canBeSelected() const override;
     void itemDoubleClicked(const juce::MouseEvent& e) override;

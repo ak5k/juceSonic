@@ -1,5 +1,4 @@
 #include "AboutWindow.h"
-#include "PluginConstants.h"
 #include "BinaryData.h" // Include the generated binary data header
 
 AboutWindow::AboutWindow()

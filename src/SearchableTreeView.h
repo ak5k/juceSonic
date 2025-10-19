@@ -50,6 +50,10 @@ public:
     // Override to customize match highlighting
     virtual void paintMatchHighlight(juce::Graphics& g, int width, int height);
 
+    // Default paintItem implementation - draws highlight and text
+    // Derived classes can override for custom rendering
+    void paintItem(juce::Graphics& g, int width, int height) override;
+
     // Override getItemHeight to hide filtered items
     int getItemHeight() const override
     {

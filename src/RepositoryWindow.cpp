@@ -108,31 +108,29 @@ void RepositoryWindow::paint(juce::Graphics& g)
 
 void RepositoryWindow::resized()
 {
-    auto bounds = getLocalBounds().reduced(10);
+    auto bounds = getLocalBounds().reduced(4);
 
-    // Top controls
-    auto topBar = bounds.removeFromTop(30);
-    manageReposButton.setBounds(topBar.removeFromLeft(170));
-    topBar.removeFromLeft(5);
-    refreshButton.setBounds(topBar.removeFromLeft(80));
+    const int buttonHeight = 30;
+    const int buttonSpacing = 4;
 
-    bounds.removeFromTop(10);
+    auto topButtons = bounds.removeFromTop(buttonHeight);
 
-    // Status at bottom
-    auto statusBar = bounds.removeFromBottom(25);
-    statusLabel.setBounds(statusBar);
-    bounds.removeFromBottom(5);
+    manageReposButton.setBounds(topButtons.removeFromLeft(130));
+    topButtons.removeFromLeft(buttonSpacing);
+    refreshButton.setBounds(topButtons.removeFromLeft(90));
+    topButtons.removeFromLeft(buttonSpacing);
+    installButton.setBounds(topButtons.removeFromLeft(150));
+    topButtons.removeFromLeft(buttonSpacing);
+    installAllButton.setBounds(topButtons.removeFromLeft(120));
+    topButtons.removeFromLeft(buttonSpacing);
+    cancelButton.setBounds(topButtons.removeFromLeft(90));
 
-    // Install buttons
-    auto buttonBar = bounds.removeFromBottom(30);
-    installAllButton.setBounds(buttonBar.removeFromRight(100));
-    buttonBar.removeFromRight(5);
-    installButton.setBounds(buttonBar.removeFromRight(150));
-    buttonBar.removeFromRight(5);
-    cancelButton.setBounds(buttonBar.removeFromRight(80));
-    bounds.removeFromBottom(10);
+    bounds.removeFromTop(buttonSpacing);
 
-    // Repository tree view (includes built-in search)
+    auto statusArea = bounds.removeFromBottom(20);
+    statusLabel.setBounds(statusArea);
+    bounds.removeFromBottom(buttonSpacing);
+
     repositoryTreeView.setBounds(bounds);
 }
 

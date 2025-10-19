@@ -55,8 +55,6 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
       )
     , apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
-
-
     // JsfxHelper constructor automatically initializes per-instance JSFX system
 
     // Set slider class name for JSFX controls
@@ -87,14 +85,10 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
 
     // Start timer for latency updates and parameter sync (30 Hz = ~33ms)
     startTimer(33);
-
-
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
 {
-
-
     // Stop timer first to prevent any callbacks during destruction
     stopTimer();
 
@@ -102,8 +96,6 @@ AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
     unloadJSFX();
 
     // Arrays don't need explicit clearing - they're automatically cleaned up
-
-
 }
 
 //==============================================================================
@@ -134,17 +126,13 @@ void AudioPluginAudioProcessor::updateRoutingConfig(const RoutingConfig& newConf
 bool AudioPluginAudioProcessor::loadPresetFromBase64(const juce::String& base64Data)
 {
     if (base64Data.isEmpty())
-    {
 
         return false;
-    }
 
     auto* instance = getSXInstancePtr();
     if (!instance)
-    {
 
         return false;
-    }
 
     // Decode base64 data to text
     juce::MemoryOutputStream decodedStream;
@@ -152,19 +140,15 @@ bool AudioPluginAudioProcessor::loadPresetFromBase64(const juce::String& base64D
 
     // Check if we got any data (ignore return value - JUCE can return false even on successful decode)
     if (decodedStream.getDataSize() == 0)
-    {
 
         return false;
-    }
 
     // Convert decoded data to string (JSFX text state format)
     juce::String stateText = decodedStream.toString();
 
     if (stateText.isEmpty())
-    {
 
         return false;
-    }
 
     // Use JSFX API to load text state
     JesusonicAPI.sx_loadState(instance, stateText.toRawUTF8());
@@ -303,9 +287,6 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     {
         auto bus = getBusesLayout();
         int juceOutputs = bus.getMainOutputChannels();
-
-
-
 
         // Initialize all routing configs with diagonal routing
         for (int i = 0; i < 3; ++i)
@@ -650,7 +631,6 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                         // Parse author from JSFX file
                         currentJSFXAuthor = JsfxHelper::parseJSFXAuthor(jsfxFile);
 
-
                         // Set sample rate
                         JesusonicAPI
                             .sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
@@ -676,12 +656,10 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                                 // Get restored normalized value from APVTS
                                 float normalizedValue = param->getValue();
 
-
                                 // Convert to actual JSFX value and set it
                                 double actualValue =
                                     ParameterUtils::normalizedToActualValue(sxInstance, i, normalizedValue);
                                 JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
-
                             }
                         }
 
@@ -696,22 +674,14 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                         // Register MIDI callback
                         sx_set_midi_ctx(sxInstance, &midiSendRecvCallback, this);
 
-
-                        // Check instrument flag
-                        INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
-                        bool isInstrument = (flags & 1) != 0;
-
-
                         // Trigger preset loading for restored JSFX
 
                         if (presetLoader)
                         {
                             presetLoader->requestRefresh(jsfxFile.getFullPathName());
-
                         }
                         else
                         {
-
                         }
                     }
 
@@ -849,18 +819,12 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     // Register MIDI callback (not in jsfxAPI struct, call directly)
     sx_set_midi_ctx(sxInstance, &midiSendRecvCallback, this);
 
-    // Check if this JSFX is marked as an instrument (receives MIDI)
-    INT_PTR flags = JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_GETFLAGS, nullptr, nullptr);
-    bool isInstrument = (flags & 1) != 0;
-
-
     // Note: Preset management now handled by LibraryBrowser in editor
     // Note: Directory remembering now handled by PersistentFileChooser in editor
 
     // Set the effect name from JSFX after successful load
     // Try to get description (from desc: tag) first, fall back to effect name (filename)
     const char* description = sxInstance->m_description.Get();
-
 
     if (description && description[0] != '\0')
         currentJSFXName = juce::String::fromUTF8(description);
@@ -874,11 +838,8 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
             currentJSFXName = jsfxFile.getFileNameWithoutExtension();
     }
 
-
-
     // Parse author from JSFX file
     currentJSFXAuthor = JsfxHelper::parseJSFXAuthor(jsfxFile);
-
 
     // Trigger preset loading for this JSFX
     if (presetLoader)

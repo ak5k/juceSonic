@@ -24,88 +24,6 @@ PresetTreeItem::PresetTreeItem(
 {
 }
 
-void PresetTreeItem::paintItem(juce::Graphics& g, int width, int height)
-{
-    // Paint match highlight if matched
-    if (getMatched())
-        paintMatchHighlight(g, width, height);
-
-    // Choose color based on item type
-    juce::Colour textColour;
-    switch (type)
-    {
-    case ItemType::Directory:
-        textColour = juce::Colours::lightblue;
-        break;
-    case ItemType::File:
-        textColour = juce::Colours::lightgreen;
-        break;
-    case ItemType::Bank:
-        textColour = juce::Colours::lightyellow;
-        break;
-    case ItemType::Preset:
-        textColour = juce::Colours::white;
-        break;
-    }
-
-    // Dim if not selected
-    if (!isSelected())
-        textColour = textColour.withAlpha(0.7f);
-
-    g.setColour(textColour);
-    g.setFont(juce::FontOptions(14.0f));
-
-    // Add icon based on type
-    juce::String icon;
-    switch (type)
-    {
-    case ItemType::Directory:
-        icon = juce::CharPointer_UTF8("\xF0\x9F\x93\x81 "); // 📁
-        break;
-    case ItemType::File:
-        icon = juce::CharPointer_UTF8("\xF0\x9F\x93\x84 "); // 📄
-        break;
-    case ItemType::Bank:
-        icon = juce::CharPointer_UTF8("\xF0\x9F\x93\x82 "); // 📂
-        break;
-    case ItemType::Preset:
-        icon = juce::CharPointer_UTF8("\xE2\x9A\xA1 "); // ⚡
-        break;
-    }
-
-    g.drawText(icon + itemName, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
-}
-
-void PresetTreeItem::paintOpenCloseButton(
-    juce::Graphics& g,
-    const juce::Rectangle<float>& area,
-    juce::Colour backgroundColour,
-    bool isMouseOver
-)
-{
-    // Only paint for items that have children
-    if (!mightContainSubItems())
-        return;
-
-    juce::Path p;
-    p.addTriangle(0.0f, 0.0f, 1.0f, 0.5f, 0.0f, 1.0f);
-
-    auto bounds = area.reduced(area.getWidth() / 4);
-    g.setColour(backgroundColour.contrasting().withAlpha(isMouseOver ? 0.9f : 0.6f));
-
-    auto transform = p.getTransformToScaleToFit(bounds, true);
-    if (isOpen())
-        transform = transform.followedBy(
-            juce::AffineTransform::rotation(
-                juce::MathConstants<float>::halfPi,
-                bounds.getCentreX(),
-                bounds.getCentreY()
-            )
-        );
-
-    g.fillPath(p, transform);
-}
-
 bool PresetTreeItem::mightContainSubItems()
 {
     return type != ItemType::Preset; // Only Preset items are leaves
@@ -502,8 +420,6 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
 {
     auto root = std::make_unique<PresetTreeItem>("Root", PresetTreeItem::ItemType::Directory);
 
-
-
     for (const auto& dirEntry : presetDirectories)
     {
         // Determine display name based on directory type
@@ -539,9 +455,6 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
         {
             displayName = dirEntry.directory.getFullPathName();
         }
-
-
-
 
         DBG("  isDefault: "
             + juce::String(dirEntry.isDefaultRoot ? "true" : "false")
@@ -607,8 +520,6 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
 
         root->addSubItem(dirItem.release());
     }
-
-
 
     // Set root directory items to be open by default AFTER they're added to the tree
     // This ensures the openness state is properly applied
