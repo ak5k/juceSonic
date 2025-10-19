@@ -133,6 +133,15 @@ add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory
 # juce_set_vst2_sdk_path(...)
 # juce_set_aax_sdk_path(...)
 
+# Check if we can use VST3 auto manifest (requires vst3_helper to run on host)
+# Disable for ARM Linux during cross-compilation (vst3_helper is ARM64, host is x86_64)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    set(USE_VST3_AUTO_MANIFEST FALSE)
+    message(STATUS "VST3_AUTO_MANIFEST disabled for ${CMAKE_SYSTEM_PROCESSOR} (cross-compilation)")
+else()
+    set(USE_VST3_AUTO_MANIFEST TRUE)
+endif()
+
 # `juce_add_plugin` adds a static library target with the name passed as the first argument
 # (AudioPluginExample here). This target is a normal CMake target, but has a lot of extra properties set
 # up by default. As well as this shared code static library, this function adds targets for each of
@@ -159,6 +168,7 @@ juce_add_plugin(${PROJECT_NAME}
     NEEDS_CURL FALSE
 
     VST3_CATEGORIES Fx
+    VST3_AUTO_MANIFEST ${USE_VST3_AUTO_MANIFEST}
     
     FORMATS AU VST3 Standalone
     PRODUCT_NAME ${PROJECT_NAME})
