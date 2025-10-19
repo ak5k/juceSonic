@@ -208,17 +208,13 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
         return nullptr;
     };
 
-    // Check if this is a navigation key (up/down/j/k)
-    bool isNavigationKey =
-        (keyCode == juce::KeyPress::upKey
-         || keyCode == juce::KeyPress::downKey
-         || keyCode == 'j'
-         || keyCode == 'J'
-         || keyCode == 'k'
-         || keyCode == 'K');
+    // Check if this is a navigation key (up/down arrows only)
+    bool isNavigationKey = (keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey);
+
+    // Get modifier state once for reuse
+    auto modifiers = juce::ModifierKeys::currentModifiers;
 
     // Show immediate focus indicator when Ctrl+navigation key pressed (without Shift)
-    auto modifiers = juce::ModifierKeys::currentModifiers;
     if (isNavigationKey && modifiers.isCtrlDown() && !modifiers.isShiftDown() && !focusedItem)
     {
         if (auto* firstSelected = findFirstSelected())
@@ -251,29 +247,25 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
     }
 
     // Handle Ctrl+Space for toggling selection of current item
-    if (key.getKeyCode() == juce::KeyPress::spaceKey)
+    if (keyCode == juce::KeyPress::spaceKey && modifiers.isCtrlDown())
     {
-        modifiers = juce::ModifierKeys::currentModifiers;
-        if (modifiers.isCtrlDown())
-        {
-            // Toggle the focused item if it exists, otherwise use first selected item
-            juce::TreeViewItem* currentItem = focusedItem ? focusedItem : findFirstSelected();
+        // Toggle the focused item if it exists, otherwise use first selected item
+        juce::TreeViewItem* currentItem = focusedItem ? focusedItem : findFirstSelected();
 
-            if (currentItem && currentItem->canBeSelected())
-            {
-                currentItem->setSelected(!currentItem->isSelected(), false);
-                return true;
-            }
+        if (currentItem && currentItem->canBeSelected())
+        {
+            currentItem->setSelected(!currentItem->isSelected(), false);
+            return true;
         }
     }
 
-    // Handle up/down navigation (arrow keys or vim keys: j/k)
+    // Handle up/down navigation (arrow keys)
     if (isNavigationKey)
     {
         // Get current modifier state
-        bool shiftHeld = juce::ModifierKeys::currentModifiers.isShiftDown();
-        bool ctrlHeld = juce::ModifierKeys::currentModifiers.isCtrlDown();
-        bool isDown = (keyCode == juce::KeyPress::downKey || keyCode == 'j' || keyCode == 'J');
+        bool shiftHeld = modifiers.isShiftDown();
+        bool ctrlHeld = modifiers.isCtrlDown();
+        bool isDown = (keyCode == juce::KeyPress::downKey);
 
         // Collect appropriate item list
         juce::Array<juce::TreeViewItem*> items;
@@ -497,18 +489,10 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
         return true;
     }
 
-    // Handle left/right navigation (arrow keys or vim keys: h/l) for expanding/collapsing
-    bool isLeftRight =
-        (keyCode == juce::KeyPress::leftKey
-         || keyCode == juce::KeyPress::rightKey
-         || keyCode == 'h'
-         || keyCode == 'H'
-         || keyCode == 'l'
-         || keyCode == 'L');
-
-    if (isLeftRight)
+    // Handle left/right navigation (arrow keys only) for expanding/collapsing
+    if (keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey)
     {
-        bool isRight = (keyCode == juce::KeyPress::rightKey || keyCode == 'l' || keyCode == 'L');
+        bool isRight = (keyCode == juce::KeyPress::rightKey);
 
         // Prioritize lastNavigationItem, fall back to first selected item
         juce::TreeViewItem* targetItem = lastNavigationItem ? lastNavigationItem : findFirstSelected();
@@ -521,6 +505,18 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
                 targetItem->setOpen(false);
 
             return true; // Prevent default JUCE behavior
+        }
+    }
+
+    // Handle alphanumeric keys - move focus to search field and insert the character
+    if (searchView)
+    {
+        auto textChar = key.getTextCharacter();
+        if (juce::CharacterFunctions::isLetterOrDigit(textChar))
+        {
+            searchView->moveFocusToSearchField();
+            searchView->insertTextIntoSearchField(juce::String::charToString(textChar));
+            return true;
         }
     }
 
@@ -724,6 +720,11 @@ void SearchableTreeView::moveFocusToTree()
 void SearchableTreeView::moveFocusToSearchField()
 {
     searchField.grabKeyboardFocus();
+}
+
+void SearchableTreeView::insertTextIntoSearchField(const juce::String& text)
+{
+    searchField.insertTextAtCaret(text);
 }
 
 void SearchableTreeView::executeCommand(const juce::Array<juce::TreeViewItem*>& selectedItems)

@@ -185,6 +185,7 @@ public:
     // Focus management (called by custom widgets)
     void moveFocusToTree();
     void moveFocusToSearchField();
+    void insertTextIntoSearchField(const juce::String& text);
 
     // Tree access
     FilteredTreeView& getTreeView()
