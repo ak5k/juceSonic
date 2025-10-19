@@ -70,10 +70,10 @@ if(APPLE)
     set(EEL2_USE_PRECOMPILED TRUE)
     message(STATUS "EEL2: Using pre-compiled universal binary object for macOS")
 elseif(IS_ARM64 AND WIN32)
-    # ARM64 Windows - use MSVC ARM64 assembly
-    set(EEL2_ASM_SOURCE "${jsfx_SOURCE_DIR}/WDL/eel2/asm-nseel-aarch64-msvc.asm")
-    set(EEL2_USE_PRECOMPILED FALSE)
-    message(STATUS "EEL2: Using ARM64 assembly for Windows")
+    # ARM64 Windows - use pre-compiled object to avoid armasm64 toolchain issues
+    set(EEL2_ASM_SOURCE "${jsfx_SOURCE_DIR}/WDL/eel2/asm-nseel-aarch64-msvc.obj")
+    set(EEL2_USE_PRECOMPILED TRUE)
+    message(STATUS "EEL2: Using pre-compiled ARM64 object for Windows")
 elseif(IS_ARM64)
     # ARM64 on Linux - compile from source
     set(EEL2_ASM_SOURCE "${jsfx_SOURCE_DIR}/WDL/eel2/asm-nseel-aarch64-msvc.asm")
@@ -200,45 +200,15 @@ function(download_and_setup_nasm)
 endfunction()
 
 # ==============================================================================
-# Find or Download NASM (x64) or use MSVC assembler (ARM64) or use pre-compiled (macOS)
+# Find or Download NASM for source compilation, or use pre-compiled objects
 # ==============================================================================
 if(EEL2_USE_PRECOMPILED)
-    # macOS universal binary or single-arch pre-compiled object
+    # Pre-compiled object (macOS, Windows ARM64)
     message(STATUS "EEL2: Using pre-compiled assembly object - no assembler needed")
     set(EEL2_HAS_ASM TRUE CACHE INTERNAL "Assembly available")
     
-elseif(IS_ARM64 AND WIN32)
-    # ARM64 Windows uses MSVC's armasm64 assembler
-    message(STATUS "EEL2: ARM64 Windows - using MSVC armasm64 assembler")
-    
-    # armasm64.exe should be in the MSVC toolchain
-    # CMake usually finds it automatically, but we can help
-    if(NOT CMAKE_ASM_MASM_COMPILER)
-        # Try to find armasm64.exe
-        find_program(ARMASM64_EXECUTABLE armasm64
-            HINTS
-                "$ENV{VCToolsInstallDir}/bin/Hostx64/arm64"
-                "$ENV{VCToolsInstallDir}/bin/Hostx86/arm64"
-            DOC "ARM64 assembler executable"
-        )
-        
-        if(ARMASM64_EXECUTABLE)
-            set(CMAKE_ASM_MASM_COMPILER "${ARMASM64_EXECUTABLE}" CACHE FILEPATH "ARM64 assembler" FORCE)
-            message(STATUS "EEL2: Found armasm64 at ${ARMASM64_EXECUTABLE}")
-        else()
-            message(STATUS "EEL2: armasm64 not found in path, relying on CMake to find it")
-        endif()
-    endif()
-    
-    # Enable ASM_MASM for ARM64
-    enable_language(ASM_MASM)
-    
-    set(EEL2_USE_MASM TRUE)
-    set(EEL2_HAS_ASM TRUE CACHE INTERNAL "Assembly available")
-    message(STATUS "EEL2: Using MASM for ARM64")
-    
 elseif(WIN32)
-    # x64 Windows uses NASM
+    # Windows x64 - download NASM for consistent build environment
     message(STATUS "EEL2: Windows x64 - downloading NASM for consistent build environment")
     download_and_setup_nasm()
     
@@ -279,44 +249,37 @@ else()
     else()
         message(FATAL_ERROR "EEL2: NASM is required but not found. Install with:\n  Ubuntu/Debian: sudo apt-get install nasm\n  macOS: brew install nasm\n  Arch: sudo pacman -S nasm")
     endif()
-    
-    set(EEL2_USE_MASM FALSE)
 endif()
 
 # Configure assembler (skip if using pre-compiled object)
 if(NOT EEL2_USE_PRECOMPILED)
-    if(EEL2_USE_MASM)
-        # MASM already configured above for ARM64 Windows
-        message(STATUS "EEL2: MASM configured")
-    else()
-        # Configure NASM for x64
-        if(NOT NASM_EXECUTABLE OR NOT EXISTS "${NASM_EXECUTABLE}")
-            message(FATAL_ERROR "EEL2: NASM executable not found")
-        endif()
-
-        message(STATUS "EEL2: Using NASM: ${NASM_EXECUTABLE}")
-
-        # IMPORTANT: Set compiler BEFORE enable_language
-        set(CMAKE_ASM_NASM_COMPILER "${NASM_EXECUTABLE}" CACHE FILEPATH "NASM compiler" FORCE)
-
-        enable_language(ASM_NASM)
-
-        if(WIN32)
-            set(CMAKE_ASM_NASM_OBJECT_FORMAT win64)
-        elseif(APPLE)
-            set(CMAKE_ASM_NASM_OBJECT_FORMAT macho64)
-        elseif(UNIX)
-            set(CMAKE_ASM_NASM_OBJECT_FORMAT elf64)
-        else()
-            message(FATAL_ERROR "EEL2: Unknown platform")
-        endif()
-
-        # Clear any inherited C/C++ compiler flags that NASM doesn't understand
-        set(CMAKE_ASM_NASM_FLAGS "" CACHE STRING "NASM flags" FORCE)
-        set(CMAKE_ASM_NASM_COMPILE_OBJECT "<CMAKE_ASM_NASM_COMPILER> <INCLUDES> <FLAGS> -f ${CMAKE_ASM_NASM_OBJECT_FORMAT} -o <OBJECT> <SOURCE>" CACHE STRING "NASM compile command" FORCE)
-        
-        message(STATUS "EEL2: Object format: ${CMAKE_ASM_NASM_OBJECT_FORMAT}")
+    # Configure NASM for source compilation
+    if(NOT NASM_EXECUTABLE OR NOT EXISTS "${NASM_EXECUTABLE}")
+        message(FATAL_ERROR "EEL2: NASM executable not found")
     endif()
+
+    message(STATUS "EEL2: Using NASM: ${NASM_EXECUTABLE}")
+
+    # IMPORTANT: Set compiler BEFORE enable_language
+    set(CMAKE_ASM_NASM_COMPILER "${NASM_EXECUTABLE}" CACHE FILEPATH "NASM compiler" FORCE)
+
+    enable_language(ASM_NASM)
+
+    if(WIN32)
+        set(CMAKE_ASM_NASM_OBJECT_FORMAT win64)
+    elseif(APPLE)
+        set(CMAKE_ASM_NASM_OBJECT_FORMAT macho64)
+    elseif(UNIX)
+        set(CMAKE_ASM_NASM_OBJECT_FORMAT elf64)
+    else()
+        message(FATAL_ERROR "EEL2: Unknown platform")
+    endif()
+
+    # Clear any inherited C/C++ compiler flags that NASM doesn't understand
+    set(CMAKE_ASM_NASM_FLAGS "" CACHE STRING "NASM flags" FORCE)
+    set(CMAKE_ASM_NASM_COMPILE_OBJECT "<CMAKE_ASM_NASM_COMPILER> <INCLUDES> <FLAGS> -f ${CMAKE_ASM_NASM_OBJECT_FORMAT} -o <OBJECT> <SOURCE>" CACHE STRING "NASM compile command" FORCE)
+    
+    message(STATUS "EEL2: Object format: ${CMAKE_ASM_NASM_OBJECT_FORMAT}")
 endif()
 
 set(EEL2_HAS_ASM TRUE CACHE INTERNAL "Assembly available")
@@ -335,7 +298,7 @@ function(eel2_add_assembly_to_target target)
     target_sources(${target} PRIVATE ${EEL2_ASM_SOURCE})
     
     if(EEL2_USE_PRECOMPILED)
-        # Pre-compiled object file (macOS universal binary or single-arch .o)
+        # Pre-compiled object file (.o or .obj)
         # No need to set language, just link it directly
         set_source_files_properties(${EEL2_ASM_SOURCE}
             PROPERTIES 
@@ -343,17 +306,11 @@ function(eel2_add_assembly_to_target target)
                 GENERATED TRUE
         )
         message(STATUS "EEL2: Pre-compiled assembly object added to target '${target}'")
-    elseif(EEL2_USE_MASM)
-        # ARM64 Windows uses MASM
-        set_source_files_properties(${EEL2_ASM_SOURCE}
-            PROPERTIES LANGUAGE ASM_MASM
-        )
-        message(STATUS "EEL2: ARM64 assembly added to target '${target}' (MASM)")
     else()
-        # x64 uses NASM
+        # Source assembly file - compile with NASM
         set_source_files_properties(${EEL2_ASM_SOURCE}
             PROPERTIES LANGUAGE ASM_NASM
         )
-        message(STATUS "EEL2: x64 assembly added to target '${target}' (NASM)")
+        message(STATUS "EEL2: Assembly source added to target '${target}' (will be compiled with NASM)")
     endif()
 endfunction()
