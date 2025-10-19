@@ -9,7 +9,7 @@
 !cmakelists.txt
 !cross-compile.sh
 !src/
-!src/*.h
+!src/*.h*
 !src/*.cpp
 !Effects/%
 !jsfx/
