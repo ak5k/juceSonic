@@ -105,7 +105,8 @@ target_sources(jsfx PRIVATE
     
     # EEL2 (Expression Evaluation Language) sources
     ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-lextab.c
-    ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-cfunc.c
+    # Note: nseel-cfunc.c is excluded when using GCC inline assembly (it contains fallback C implementations)
+    # ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-cfunc.c
     ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-caltab.c
     ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-compiler.c
     ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-eval.c
@@ -191,6 +192,15 @@ endif()
 
 # Add EEL2 assembly optimizations to the jsfx target
 eel2_add_assembly_to_target(jsfx)
+
+# Add nseel-cfunc.c conditionally - it's only needed when NOT using GCC inline assembly
+# (GCC inline assembly includes the asm functions, nseel-cfunc.c has fallback C implementations)
+if(NOT EEL2_USE_GCC_ASM)
+    target_sources(jsfx PRIVATE ${jsfx_SOURCE_DIR}/WDL/eel2/nseel-cfunc.c)
+    message(STATUS "EEL2: Added nseel-cfunc.c (C fallback implementations)")
+else()
+    message(STATUS "EEL2: Skipping nseel-cfunc.c (using GCC inline assembly instead)")
+endif()
 
 # Set compiler flags based on Makefile
 target_compile_definitions(jsfx PUBLIC
