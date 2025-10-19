@@ -10,6 +10,7 @@
 #endif
 
 class JsfxHelper;
+class AudioPluginAudioProcessor;
 
 /**
  * JUCE component that renders JSFX @gfx section by reading the LICE framebuffer
@@ -18,13 +19,16 @@ class JsfxHelper;
  *
  * The component polls the LICE framebuffer at the display refresh rate and
  * forwards mouse/keyboard events to JSFX.
+ *
+ * Thread-safety: Lazily finds AudioPluginAudioProcessor via parent hierarchy,
+ * then uses renderCallbackLock for thread-safe instance access.
  */
 class JsfxLiceComponent
     : public juce::Component
     , private juce::Timer
 {
 public:
-    JsfxLiceComponent(SX_Instance* instance, JsfxHelper& helper);
+    JsfxLiceComponent();
     ~JsfxLiceComponent() override;
 
     void paint(juce::Graphics& g) override;
@@ -48,14 +52,13 @@ private:
     void updateMousePosition(const juce::MouseEvent& event);
     void updateMouseButtons(const juce::MouseEvent& event);
 
-    // Helper method to trigger JSFX graphics initialization
-    void triggerJsfxGraphicsInit();
-
     // Helper method to immediately execute @gfx code (for interactive updates)
     void triggerGfxExecution();
 
-    SX_Instance* instance;
-    JsfxHelper& helper;
+    // Lazy initialization - finds processor on first timer call
+    AudioPluginAudioProcessor* getProcessor();
+
+    AudioPluginAudioProcessor* processor = nullptr;
 
     // For future use when we implement LICE rendering
     int lastFramebufferWidth = 0;

@@ -1,7 +1,7 @@
 #include "JsfxLiceComponent.h"
 
 #include "../jsfx/include/jsfx.h"
-#include "JsfxHelper.h"
+#include "PluginProcessor.h"
 
 // Use the same defines as sfxui.cpp to safely include eel_lice.h
 #define EEL_LICE_STANDALONE_NOINITQUIT
@@ -9,9 +9,8 @@
 #define EEL_LICE_API_ONLY
 #include "WDL/eel2/eel_lice.h"
 
-JsfxLiceComponent::JsfxLiceComponent(SX_Instance* instance, JsfxHelper& helper)
-    : instance(instance)
-    , helper(helper)
+JsfxLiceComponent::JsfxLiceComponent()
+    : processor(nullptr)
     , lastFramebufferWidth(0)
     , lastFramebufferHeight(0)
 {
@@ -28,8 +27,38 @@ JsfxLiceComponent::~JsfxLiceComponent()
     stopTimer();
 }
 
+AudioPluginAudioProcessor* JsfxLiceComponent::getProcessor()
+{
+    if (processor)
+        return processor;
+
+    // Lazy init: find AudioProcessorEditor parent and get processor
+    auto* parent = getParentComponent();
+    while (parent != nullptr)
+    {
+        if (auto* editor = dynamic_cast<juce::AudioProcessorEditor*>(parent))
+        {
+            processor = dynamic_cast<AudioPluginAudioProcessor*>(editor->getAudioProcessor());
+            return processor;
+        }
+        parent = parent->getParentComponent();
+    }
+
+    return nullptr;
+}
+
 void JsfxLiceComponent::paint(juce::Graphics& g)
 {
+    auto* proc = getProcessor();
+    if (!proc)
+    {
+        g.fillAll(juce::Colours::black);
+        g.setColour(juce::Colours::white);
+        g.drawText("No processor", getLocalBounds(), juce::Justification::centred);
+        return;
+    }
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
     {
         g.fillAll(juce::Colours::black);
@@ -52,16 +81,10 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
     {
         g.fillAll(juce::Colours::black);
         g.setColour(juce::Colours::white);
-        g.drawText("Waiting for JSFX to initialize graphics...", getLocalBounds(), juce::Justification::centred);
-
-        // Show more detailed status
-        juce::String status = "(Triggering @gfx execution)";
-        g.drawText(status, getLocalBounds().withTrimmedTop(20), juce::Justification::centred);
-
-        // Try to trigger JSFX graphics initialization
-        triggerJsfxGraphicsInit();
+        g.drawText("No LICE framebuffer - graphics not initialized", getLocalBounds(), juce::Justification::centred);
         return;
     }
+
     LICE_IBitmap* fb = liceState->m_framebuffer;
 
     int width = fb->getWidth();
@@ -126,6 +149,11 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
 
 void JsfxLiceComponent::resized()
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -175,61 +203,13 @@ void JsfxLiceComponent::resized()
     }
 }
 
-void JsfxLiceComponent::triggerJsfxGraphicsInit()
-{
-    if (!instance)
-        return;
-
-    auto* liceState = instance->m_lice_state;
-    if (!liceState)
-        return;
-
-    // Follow the sfxui.cpp pattern for graphics initialization:
-
-    // Step 1: If JSFX needs initialization, call on_slider_change()
-    if (instance->m_need_init)
-    {
-        instance->m_mutex.Enter();
-        instance->m_init_mutex.Enter();
-        if (instance->m_need_init)
-            instance->on_slider_change();
-        instance->m_mutex.Leave();
-    }
-    else
-    {
-        instance->m_init_mutex.Enter();
-    }
-
-    // Step 2: Set up the framebuffer dimensions using setup_frame()
-    // This creates the m_framebuffer if it doesn't exist
-    int width = getWidth() > 0 ? getWidth() : 400;
-    int height = getHeight() > 0 ? getHeight() : 300;
-
-    // Create a fake RECT for setup_frame (it just needs width/height)
-    RECT r;
-    r.left = 0;
-    r.top = 0;
-    r.right = width;
-    r.bottom = height;
-
-    // setup_frame() will create the framebuffer and set gfx_w/gfx_h
-    int result = liceState->setup_frame(nullptr, r);
-
-    // Step 3: If setup succeeded, trigger @gfx execution
-    if (result >= 0)
-    {
-        instance->gfx_runCode(0); // Run @gfx section
-
-        // Mark framebuffer as dirty so we repaint
-        if (liceState->m_framebuffer)
-            liceState->m_framebuffer_dirty = true;
-    }
-
-    instance->m_init_mutex.Leave();
-}
-
 void JsfxLiceComponent::triggerGfxExecution()
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -264,19 +244,17 @@ void JsfxLiceComponent::triggerGfxExecution()
 
 void JsfxLiceComponent::timerCallback()
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
     auto* liceState = instance->m_lice_state;
-    if (!liceState)
+    if (!liceState || !liceState->m_framebuffer)
         return;
-
-    // If we don't have a framebuffer yet, try to trigger graphics init
-    if (!liceState->m_framebuffer)
-    {
-        repaint(); // This will call triggerJsfxGraphicsInit via paint()
-        return;
-    }
 
     // Continuously run the @gfx section (like sfxui.cpp does in its timer)
     // This keeps the graphics updating in real-time
@@ -310,6 +288,11 @@ void JsfxLiceComponent::timerCallback()
 
 void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -320,6 +303,11 @@ void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -349,6 +337,11 @@ void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -359,6 +352,11 @@ void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseMove(const juce::MouseEvent& event)
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -382,6 +380,11 @@ void JsfxLiceComponent::mouseMove(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -407,6 +410,11 @@ void JsfxLiceComponent::mouseWheelMove(const juce::MouseEvent& event, const juce
 // Helper methods to update JSFX mouse variables
 void JsfxLiceComponent::updateMousePosition(const juce::MouseEvent& event)
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -424,6 +432,11 @@ void JsfxLiceComponent::updateMousePosition(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::updateMouseButtons(const juce::MouseEvent& event)
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return;
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return;
 
@@ -460,6 +473,11 @@ bool JsfxLiceComponent::keyPressed(const juce::KeyPress& key)
 
 juce::Rectangle<int> JsfxLiceComponent::getRecommendedBounds()
 {
+    auto* proc = getProcessor();
+    if (!proc)
+        return juce::Rectangle<int>(0, 0, 400, 300);
+
+    auto* instance = proc->getSXInstancePtr();
     if (!instance)
         return juce::Rectangle<int>(0, 0, 400, 300);
 

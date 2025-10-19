@@ -110,18 +110,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
         // Step 2: Create LICE renderer if needed
         if (!jsfxLiceRenderer)
         {
-            auto* sx = processorRef.getSXInstancePtr();
-            if (!sx)
-            {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon,
-                    "No JSFX Loaded",
-                    "Please load a JSFX file first before opening the UI."
-                );
-                return;
-            }
-
-            jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
+            jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>();
             addAndMakeVisible(*jsfxLiceRenderer);
         }
 
@@ -382,7 +371,7 @@ void AudioPluginAudioProcessorEditor::restoreJsfxState()
     if (sx && sx->gfx_hasCode())
     {
         // JSFX has @gfx section - create LICE renderer
-        jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>(sx, processorRef);
+        jsfxLiceRenderer = std::make_unique<JsfxLiceComponent>();
         addAndMakeVisible(*jsfxLiceRenderer);
         viewport.setVisible(false);
         uiButton.setButtonText("Params");
