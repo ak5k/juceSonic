@@ -358,7 +358,7 @@ void AudioPluginAudioProcessorEditor::saveJsfxState()
     }
 }
 
-void AudioPluginAudioProcessorEditor::restoreJsfxState()
+void AudioPluginAudioProcessorEditor::restoreJsfxUiState()
 {
     // Restore editor state after loading JSFX (internal "constructor")
     // Uses per-JSFX saved state if available, otherwise uses defaults
@@ -805,7 +805,7 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
 
                     // Restore JSFX state after loading (internal "constructor")
                     // Since we just cleared state, this will use defaults
-                    restoreJsfxState();
+                    restoreJsfxUiState();
                 }
                 else
                 {
@@ -1215,6 +1215,30 @@ void AudioPluginAudioProcessorEditor::showRepositoryBrowser()
 void AudioPluginAudioProcessorEditor::openJsfxPluginBrowser()
 {
     auto* windowContent = new JsfxPluginWindow(processorRef);
+
+    // Set up callback to handle UI updates when a plugin is loaded
+    windowContent->onPluginSelected = [this](const juce::String& pluginPath)
+    {
+        juce::ignoreUnused(pluginPath);
+
+        // Save current JSFX state before loading new one
+        saveJsfxState();
+
+        // Ensure any native window is closed
+        destroyJsfxUI();
+
+        // Rebuild UI for the newly loaded JSFX
+        rebuildParameterSliders();
+
+        // Update preset list
+        updatePresetList();
+
+        // Clear state for new JSFX (fresh start)
+        clearCurrentJsfxState();
+
+        // Restore JSFX state (will use defaults since we just cleared)
+        restoreJsfxUiState();
+    };
 
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(windowContent);

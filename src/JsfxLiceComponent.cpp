@@ -47,23 +47,22 @@ AudioPluginAudioProcessor* JsfxLiceComponent::getProcessor()
     return nullptr;
 }
 
-void JsfxLiceComponent::paint(juce::Graphics& g)
+SX_Instance* JsfxLiceComponent::getSXInstancePtr()
 {
     auto* proc = getProcessor();
-    if (!proc)
-    {
-        g.fillAll(juce::Colours::black);
-        g.setColour(juce::Colours::white);
-        g.drawText("No processor", getLocalBounds(), juce::Justification::centred);
-        return;
-    }
+    if (proc)
+        return proc->getSXInstancePtr();
+    return nullptr;
+}
 
-    auto* instance = proc->getSXInstancePtr();
+void JsfxLiceComponent::paint(juce::Graphics& g)
+{
+    auto* instance = getSXInstancePtr();
     if (!instance)
     {
         g.fillAll(juce::Colours::black);
         g.setColour(juce::Colours::white);
-        g.drawText("No JSFX instance", getLocalBounds(), juce::Justification::centred);
+        g.drawText("No processor", getLocalBounds(), juce::Justification::centred);
         return;
     }
 
@@ -149,11 +148,7 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
 
 void JsfxLiceComponent::resized()
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -205,11 +200,7 @@ void JsfxLiceComponent::resized()
 
 void JsfxLiceComponent::triggerGfxExecution()
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -244,11 +235,7 @@ void JsfxLiceComponent::triggerGfxExecution()
 
 void JsfxLiceComponent::timerCallback()
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -288,11 +275,7 @@ void JsfxLiceComponent::timerCallback()
 
 void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -303,11 +286,7 @@ void JsfxLiceComponent::mouseDown(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -337,11 +316,7 @@ void JsfxLiceComponent::mouseUp(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -352,11 +327,7 @@ void JsfxLiceComponent::mouseDrag(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseMove(const juce::MouseEvent& event)
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -380,11 +351,7 @@ void JsfxLiceComponent::mouseMove(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -410,11 +377,7 @@ void JsfxLiceComponent::mouseWheelMove(const juce::MouseEvent& event, const juce
 // Helper methods to update JSFX mouse variables
 void JsfxLiceComponent::updateMousePosition(const juce::MouseEvent& event)
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -432,11 +395,7 @@ void JsfxLiceComponent::updateMousePosition(const juce::MouseEvent& event)
 
 void JsfxLiceComponent::updateMouseButtons(const juce::MouseEvent& event)
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return;
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return;
 
@@ -473,11 +432,7 @@ bool JsfxLiceComponent::keyPressed(const juce::KeyPress& key)
 
 juce::Rectangle<int> JsfxLiceComponent::getRecommendedBounds()
 {
-    auto* proc = getProcessor();
-    if (!proc)
-        return juce::Rectangle<int>(0, 0, 400, 300);
-
-    auto* instance = proc->getSXInstancePtr();
+    auto* instance = getSXInstancePtr();
     if (!instance)
         return juce::Rectangle<int>(0, 0, 400, 300);
 

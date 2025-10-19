@@ -58,6 +58,8 @@ private:
     // Lazy initialization - finds processor on first timer call
     AudioPluginAudioProcessor* getProcessor();
 
+    SX_Instance* getSXInstancePtr();
+
     AudioPluginAudioProcessor* processor = nullptr;
 
     // For future use when we implement LICE rendering

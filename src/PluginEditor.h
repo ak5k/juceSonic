@@ -286,8 +286,8 @@ private:
     void openJsfxPluginBrowser();
 
     // JSFX lifecycle management (internal constructor/destructor pattern)
-    void saveJsfxState();    // Internal "destructor" - save state before unloading JSFX
-    void restoreJsfxState(); // Internal "constructor" - restore state after loading JSFX
+    void saveJsfxState();      // Internal "destructor" - save state before unloading JSFX
+    void restoreJsfxUiState(); // Internal "constructor" - restore state after loading JSFX
 
     // Deferred size restoration for DAW compatibility
     bool needsSizeRestoration = false;
