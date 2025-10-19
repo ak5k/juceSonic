@@ -34,12 +34,10 @@ set(JUCESONIC_DEFAULT_REPO_URL "https://raw.githubusercontent.com/ak5k/jsfx-inde
 # Generate Config.h from Config.h.in
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Config.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/Config.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/Config.h"
     @ONLY
 )
 
-# Add generated directory to include path (will be set for targets later)
-set(GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 # ==============================================================================
 # Submodule and Dependency Initialization (runs only on first successful configure)
@@ -172,6 +170,12 @@ juce_add_plugin(${PROJECT_NAME}
     
     FORMATS AU VST3 Standalone
     PRODUCT_NAME ${PROJECT_NAME})
+
+# Add Config.h to include directories (needs to be after juce_add_plugin creates the target)
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}  # For Config.h
+)
     
 
 # `juce_generate_juce_header` will create a JuceHeader.h for a given target, which will be generated

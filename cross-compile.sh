@@ -39,6 +39,37 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Temporarily disable Linuxbrew/Homebrew to prevent interference
+disable_brew() {
+    if [ -d "/home/linuxbrew/.linuxbrew" ] || [ -d "/opt/homebrew" ] || [ -d "/usr/local/Homebrew" ]; then
+        log_info "Temporarily disabling Linuxbrew/Homebrew for clean cross-compilation..."
+        
+        # Save original PATH
+        export ORIGINAL_PATH="$PATH"
+        
+        # Remove brew paths from PATH
+        export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v -E 'linuxbrew|homebrew|Homebrew' | tr '\n' ':' | sed 's/:$//')
+        
+        # Clear pkg-config paths that might point to brew
+        export ORIGINAL_PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}"
+        export PKG_CONFIG_PATH=""
+        
+        log_info "Brew paths removed from environment"
+    fi
+}
+
+# Re-enable Linuxbrew/Homebrew after cross-compilation
+enable_brew() {
+    if [ -n "${ORIGINAL_PATH:-}" ]; then
+        log_info "Re-enabling Linuxbrew/Homebrew..."
+        export PATH="$ORIGINAL_PATH"
+        export PKG_CONFIG_PATH="${ORIGINAL_PKG_CONFIG_PATH:-}"
+        unset ORIGINAL_PATH
+        unset ORIGINAL_PKG_CONFIG_PATH
+        log_info "Brew paths restored"
+    fi
+}
+
 # Check if running as root for apt operations
 check_sudo() {
     if ! sudo -n true 2>/dev/null; then
@@ -474,14 +505,9 @@ install_dependencies() {
     fi
 }
 
-# Create sysroot (DISABLED - using system multiarch instead)
-# Ubuntu's multiarch support means we don't need a separate sysroot
-# The cross-compiler toolchain already knows to look in:
-#   /usr/lib/aarch64-linux-gnu/
-#   /usr/include/aarch64-linux-gnu/
-# And the system headers in /usr/aarch64-linux-gnu/include/
+# Create sysroot - Using system multiarch instead (simpler and more reliable)
 create_sysroot() {
-    log_info "Sysroot creation skipped - using system multiarch directories"
+    log_info "Skipping sysroot creation - using system multiarch directories"
     log_info "Cross-compiler will use:"
     log_info "  Libraries: /usr/lib/${CROSS_COMPILE_PREFIX}/"
     log_info "  Headers: /usr/include/${CROSS_COMPILE_PREFIX}/"
@@ -703,6 +729,12 @@ main() {
     log_info "Starting cross-compilation for $TARGET_ARCH"
     log_info "================================================"
     
+    # Disable Linuxbrew/Homebrew to prevent interference
+    disable_brew
+    
+    # Ensure brew is re-enabled even if script fails
+    trap enable_brew EXIT INT TERM
+    
     setup_cross_tools
     install_dependencies
     create_sysroot
@@ -710,6 +742,9 @@ main() {
     generate_toolchain
     configure_cmake
     build_project
+    
+    # Re-enable Linuxbrew/Homebrew
+    enable_brew
     
     log_info "================================================"
     log_info "Cross-compilation successful!"
