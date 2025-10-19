@@ -190,12 +190,17 @@ else()
 endif()
 
 # Add EEL2 assembly optimizations to the jsfx target
-# Note: For ARM64 Linux, this adds asm-nseel-aarch64-gcc.c which is also #include'd by nseel-cfunc.c
-# We need to prevent adding it twice to avoid multiple definitions
+# Note: For ARM64 Linux with GCC inline assembly, asm-nseel-aarch64-gcc.c is #include'd by nseel-cfunc.c
+# We must NOT add it as a separate source to avoid multiple definitions
 if(NOT EEL2_USE_GCC_ASM)
     eel2_add_assembly_to_target(jsfx)
 else()
-    message(STATUS "EEL2: GCC inline assembly will be included via nseel-cfunc.c, not adding separately")
+    # GCC inline assembly is included via nseel-cfunc.c - just add the required defines to that file
+    set_source_files_properties(${jsfx_SOURCE_DIR}/WDL/eel2/nseel-cfunc.c
+        PROPERTIES 
+            COMPILE_DEFINITIONS "NSEEL_RAM_BLOCKS_LOG2=11;NSEEL_RAM_ITEMSPERBLOCK_LOG2=16;NSEEL_RAM_BLOCKS=(1<<11);NSEEL_RAM_ITEMSPERBLOCK=(1<<16);EEL_F_SIZE=8"
+    )
+    message(STATUS "EEL2: GCC inline assembly will be included via nseel-cfunc.c (with required defines)")
 endif()
 
 # Set compiler flags based on Makefile
