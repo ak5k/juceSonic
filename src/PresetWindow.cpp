@@ -24,6 +24,12 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     addAndMakeVisible(saveButton);
     saveButton.onClick = [this]() { saveCurrentPreset(); };
 
+    addAndMakeVisible(defaultButton);
+    defaultButton.onClick = [this]() { resetToDefaults(); };
+
+    addAndMakeVisible(setDefaultButton);
+    setDefaultButton.onClick = [this]() { setAsDefaultPreset(); };
+
     addAndMakeVisible(directoriesButton);
     directoriesButton.onClick = [this]() { showDirectoryEditor(); };
 
@@ -74,6 +80,9 @@ void PresetWindow::resized()
         topButtons.removeFromLeft(4);
         saveButton.setBounds(topButtons.removeFromLeft(80));
         topButtons.removeFromLeft(4);
+        defaultButton.setBounds(topButtons.removeFromLeft(80));
+        topButtons.removeFromLeft(4);
+        setDefaultButton.setBounds(topButtons.removeFromLeft(110));
         topButtons.removeFromLeft(20); // Spacer
         directoriesButton.setBounds(topButtons.removeFromLeft(100));
         topButtons.removeFromLeft(4);
@@ -100,6 +109,8 @@ void PresetWindow::setShowManagementButtons(bool show)
     exportButton.setVisible(show);
     deleteButton.setVisible(show);
     saveButton.setVisible(show);
+    defaultButton.setVisible(show);
+    setDefaultButton.setVisible(show);
     directoriesButton.setVisible(show);
     refreshButton.setVisible(show);
     statusLabel.setVisible(show);
@@ -700,6 +711,110 @@ void PresetWindow::handlePresetTreeItemSelected(juce::TreeViewItem* item)
             // Also load directly via processor
             processor.loadPresetFromBase64(presetData);
         }
+    }
+}
+
+void PresetWindow::resetToDefaults()
+{
+    // Check if JSFX is loaded
+    juce::String jsfxPath = processor.getCurrentJSFXPath();
+    if (jsfxPath.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "No JSFX Loaded",
+            "Please load a JSFX before resetting to defaults.",
+            "OK",
+            nullptr
+        );
+        return;
+    }
+
+    // Check if a default preset exists
+    if (processor.hasDefaultPreset())
+    {
+        auto result = juce::AlertWindow::showOkCancelBox(
+            juce::MessageBoxIconType::QuestionIcon,
+            "Reset to Defaults",
+            "A default preset exists for this JSFX. Do you want to load it?\n\n"
+            "Yes: Load the saved default preset\n"
+            "No: Reset to JSFX parameter defaults",
+            "Yes",
+            "No",
+            nullptr,
+            nullptr
+        );
+
+        if (result == 0)
+        {
+            // User clicked No - reset to JSFX defaults
+            processor.resetToDefaults();
+            statusLabel.setText("Reset to JSFX parameter defaults", juce::dontSendNotification);
+        }
+        else
+        {
+            // User clicked Yes - load default preset
+            processor.resetToDefaults(); // This will load the default preset
+            statusLabel.setText("Loaded default preset", juce::dontSendNotification);
+        }
+    }
+    else
+    {
+        // No default preset - just reset to JSFX defaults
+        processor.resetToDefaults();
+        statusLabel.setText("Reset to JSFX parameter defaults", juce::dontSendNotification);
+    }
+}
+
+void PresetWindow::setAsDefaultPreset()
+{
+    // Check if JSFX is loaded
+    juce::String jsfxPath = processor.getCurrentJSFXPath();
+    if (jsfxPath.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "No JSFX Loaded",
+            "Please load a JSFX before setting a default preset.",
+            "OK",
+            nullptr
+        );
+        return;
+    }
+
+    // Check if default preset already exists
+    if (processor.hasDefaultPreset())
+    {
+        auto result = juce::AlertWindow::showOkCancelBox(
+            juce::MessageBoxIconType::QuestionIcon,
+            "Overwrite Default Preset",
+            "A default preset already exists for this JSFX.\n\n"
+            "Do you want to overwrite it with the current parameter state?",
+            "Overwrite",
+            "Cancel",
+            nullptr,
+            nullptr
+        );
+
+        if (result == 0)
+            return;
+    }
+
+    // Save current state as default
+    if (processor.setAsDefaultPreset())
+    {
+        statusLabel.setText("Saved current state as default preset", juce::dontSendNotification);
+        refreshPresetList(); // Refresh to show the new default preset
+    }
+    else
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "Save Failed",
+            "Failed to save default preset. Please check that the JSFX is loaded correctly.",
+            "OK",
+            nullptr
+        );
     }
 }
 

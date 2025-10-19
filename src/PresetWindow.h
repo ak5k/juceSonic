@@ -61,6 +61,8 @@ private:
     void updateButtonsForSelection();
     void handlePresetTreeItemSelected(juce::TreeViewItem* item);
     void saveCurrentPreset();
+    void resetToDefaults();
+    void setAsDefaultPreset();
 
     // Load/save directory paths from persistent storage
     juce::StringArray getPresetDirectories() const;
@@ -73,6 +75,8 @@ private:
     juce::TextButton exportButton{"Export"};
     juce::TextButton deleteButton{"Delete"};
     juce::TextButton saveButton{"Save"};
+    juce::TextButton defaultButton{"Default"};
+    juce::TextButton setDefaultButton{"Set as Default"};
     juce::TextButton directoriesButton{"Directories"};
     juce::TextButton refreshButton{"Refresh"};
 

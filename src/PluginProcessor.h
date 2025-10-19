@@ -7,6 +7,7 @@
 #include "ParameterSyncManager.h"
 #include <Config.h>
 #include "PresetLoader.h"
+#include "ReaperPresetConverter.h"
 
 #include <atomic>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -171,6 +172,15 @@ public:
     // Save current state as a user preset
     // Returns true on success, false on failure
     bool saveUserPreset(const juce::String& bankName, const juce::String& presetName);
+
+    // Reset all parameters to JSFX defaults or load default preset if it exists
+    void resetToDefaults();
+
+    // Save current parameter state as the default preset
+    bool setAsDefaultPreset();
+
+    // Check if a default preset exists for the current JSFX
+    bool hasDefaultPreset() const;
 
 private:
     // Helper to restore routing from encoded string

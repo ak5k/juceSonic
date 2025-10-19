@@ -227,8 +227,16 @@ bool AudioPluginAudioProcessor::saveUserPreset(const juce::String& bankName, con
     if (!userPresetsDir.exists() && !userPresetsDir.createDirectory())
         return false;
 
-    // Target file: user/<jsfx-filename>/<bankname>.rpl
-    auto presetFile = userPresetsDir.getChildFile(bankName + ".rpl");
+    // Determine the target file name
+    // Special case: if this is the default preset, use the default filename
+    juce::String filename;
+    if (bankName == PluginConstants::DefaultPresetBankName && presetName == PluginConstants::DefaultPresetName)
+        filename = PluginConstants::DefaultPresetFileName;
+    else
+        filename = bankName + ".rpl";
+
+    // Target file: user/<jsfx-filename>/<filename>
+    auto presetFile = userPresetsDir.getChildFile(filename);
 
     // Load existing content or create new
     juce::String fileContent;
@@ -378,6 +386,83 @@ bool AudioPluginAudioProcessor::saveUserPreset(const juce::String& bankName, con
         presetLoader->requestRefresh(jsfxPath);
 
     return true;
+}
+
+void AudioPluginAudioProcessor::resetToDefaults()
+{
+    // Check if a default preset exists
+    if (hasDefaultPreset())
+    {
+        // Load the default preset
+        juce::String jsfxPath = getCurrentJSFXPath();
+        if (jsfxPath.isEmpty())
+            return;
+
+        juce::File jsfxFile(jsfxPath);
+        juce::String jsfxFilename = jsfxFile.getFileNameWithoutExtension();
+
+        // Build path to default preset file
+        auto defaultPresetFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                     .getChildFile(PluginConstants::ApplicationName)
+                                     .getChildFile(PluginConstants::DataDirectoryName)
+                                     .getChildFile(PluginConstants::UserPresetsDirectoryName)
+                                     .getChildFile(jsfxFilename)
+                                     .getChildFile(PluginConstants::DefaultPresetFileName);
+
+        if (defaultPresetFile.existsAsFile())
+        {
+            // Use ReaperPresetConverter to find and extract the default preset
+            juce::String presetData =
+                ReaperPresetConverter::findPresetByName(defaultPresetFile, PluginConstants::DefaultPresetName);
+
+            if (presetData.isNotEmpty())
+            {
+                loadPresetFromBase64(presetData);
+                return;
+            }
+        }
+    }
+
+    // No default preset found - reset to JSFX parameter defaults
+    if (!sxInstance)
+        return;
+
+    // To get true JSFX defaults, we need to reload the JSFX
+    // Save the current JSFX path
+    juce::String jsfxPath = getCurrentJSFXPath();
+    if (jsfxPath.isEmpty())
+        return;
+
+    // Reload the JSFX to reset all parameters to their @init values
+    juce::File jsfxFile(jsfxPath);
+    if (jsfxFile.existsAsFile())
+        loadJSFX(jsfxFile);
+}
+
+bool AudioPluginAudioProcessor::setAsDefaultPreset()
+{
+    // Save current state as default preset
+    return saveUserPreset(PluginConstants::DefaultPresetBankName, PluginConstants::DefaultPresetName);
+}
+
+bool AudioPluginAudioProcessor::hasDefaultPreset() const
+{
+    juce::String jsfxPath = getCurrentJSFXPath();
+    if (jsfxPath.isEmpty())
+        return false;
+
+    juce::File jsfxFile(jsfxPath);
+    juce::String jsfxFilename = jsfxFile.getFileNameWithoutExtension();
+
+    // Check if default preset file exists
+    auto defaultPresetFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                 .getChildFile(PluginConstants::ApplicationName)
+                                 .getChildFile(PluginConstants::DataDirectoryName)
+                                 .getChildFile(PluginConstants::UserPresetsDirectoryName)
+                                 .getChildFile(jsfxFilename)
+                                 .getChildFile(PluginConstants::DefaultPresetFileName);
+
+    return defaultPresetFile.existsAsFile();
 }
 
 void AudioPluginAudioProcessor::timerCallback()

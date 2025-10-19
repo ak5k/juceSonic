@@ -135,8 +135,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
             int jsfxWidth = recommended.getWidth();
             int jsfxHeight = recommended.getHeight();
 
-            // Calculate total size including buttons and status
-            int totalHeight = 40 + 30 + jsfxHeight;
+            // Calculate total size including buttons and status (with extra pixels for borders/spacing)
+            int totalHeight = 40 + 30 + jsfxHeight + PluginConstants::LiceComponentExtraHeightPixels;
             int totalWidth = juce::jmax(700, jsfxWidth);
             totalHeight = juce::jlimit(170, 1080, totalHeight);
             totalWidth = juce::jlimit(600, 1920, totalWidth);
@@ -388,9 +388,9 @@ void AudioPluginAudioProcessorEditor::restoreJsfxState()
         uiButton.setEnabled(true);
         editButton.setEnabled(true);
 
-        // Calculate default size from JSFX's @gfx dimensions
+        // Calculate default size from JSFX's @gfx dimensions (with extra pixels for borders/spacing)
         auto bounds = jsfxLiceRenderer->getRecommendedBounds();
-        int defaultHeight = 40 + 30 + bounds.getHeight();
+        int defaultHeight = 40 + 30 + bounds.getHeight() + PluginConstants::LiceComponentExtraHeightPixels;
         int defaultWidth = bounds.getWidth();
         defaultHeight = juce::jlimit(300, 1080, defaultHeight);
         defaultWidth = juce::jlimit(400, 1920, defaultWidth);

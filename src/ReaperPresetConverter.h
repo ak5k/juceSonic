@@ -330,6 +330,106 @@ public:
         return "Reaper Preset";
     }
 
+    /**
+     * Find and extract a specific preset by name from a preset file.
+     * This is a utility method that can be used without creating a full ValueTree.
+     *
+     * @param file The .rpl preset file to search
+     * @param presetName The name of the preset to find
+     * @return The base64 encoded preset data, or empty string if not found
+     */
+    static juce::String findPresetByName(const juce::File& file, const juce::String& presetName)
+    {
+        if (!file.existsAsFile())
+            return {};
+
+        auto content = file.loadFileAsString();
+        if (content.isEmpty())
+            return {};
+
+        const char* data = content.toRawUTF8();
+        int len = content.length();
+
+        // Find the preset with the given name
+        int presetPos = 0;
+        while (presetPos < len)
+        {
+            // Find <PRESET
+            int presetStart = presetPos;
+            while (presetStart < len && (presetStart + 7 >= len || strncmp(data + presetStart, "<PRESET", 7) != 0))
+                presetStart++;
+
+            if (presetStart >= len)
+                break;
+
+            // Find preset name - first non-whitespace char after <PRESET
+            int pNameStart = presetStart + 7;
+            while (pNameStart < len
+                   && (data[pNameStart] == ' '
+                       || data[pNameStart] == '\t'
+                       || data[pNameStart] == '\r'
+                       || data[pNameStart] == '\n'))
+                pNameStart++;
+
+            if (pNameStart >= len)
+                break;
+
+            char pQuoteChar = data[pNameStart];
+            int pNameEnd = pNameStart + 1;
+            while (pNameEnd < len && data[pNameEnd] != pQuoteChar)
+                pNameEnd++;
+
+            if (pNameEnd >= len)
+                break;
+
+            juce::String foundPresetName = content.substring(pNameStart + 1, pNameEnd);
+
+            // Check if this is the preset we're looking for
+            if (foundPresetName == presetName)
+            {
+                // Find closing > for this preset using bracket matching
+                int pDepth = 1;
+                int presetEnd = -1;
+
+                for (int i = pNameEnd + 1; i < len && pDepth > 0; i++)
+                {
+                    char c = data[i];
+                    // Skip quoted sections
+                    if (c == '`' || c == '"' || c == '\'')
+                    {
+                        char quote = c;
+                        i++;
+                        while (i < len && data[i] != quote)
+                            i++;
+                        continue;
+                    }
+
+                    if (c == '<')
+                        pDepth++;
+                    else if (c == '>')
+                    {
+                        pDepth--;
+                        if (pDepth == 0)
+                        {
+                            presetEnd = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (presetEnd > 0)
+                {
+                    // Extract preset data (everything between name and closing >)
+                    return content.substring(pNameEnd + 1, presetEnd).trim();
+                }
+            }
+
+            presetPos = pNameEnd + 1;
+        }
+
+        return {}; // Preset not found
+    }
+
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ReaperPresetConverter)
 };

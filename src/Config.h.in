@@ -68,6 +68,14 @@ static constexpr const char* DataDirectoryName = "data";
 static constexpr const char* LocalPresetsDirectoryName = "local";
 static constexpr const char* RemotePresetsDirectoryName = "remote";
 static constexpr const char* UserPresetsDirectoryName = "user";
+
+// Default preset settings
+static constexpr const char* DefaultPresetFileName = "default.rpl";
+static constexpr const char* DefaultPresetBankName = "User";
+static constexpr const char* DefaultPresetName = "Default";
+
+// UI Layout constants
+static constexpr int LiceComponentExtraHeightPixels = 16; // Extra pixels to add when calculating LICE UI height
 } // namespace PluginConstants
 
 // ==============================================================================
