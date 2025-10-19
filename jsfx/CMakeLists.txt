@@ -7,106 +7,6 @@ if(APPLE)
     message(STATUS "Building universal binary for macOS (arm64 + x86_64)")
 endif()
 
-# Unified patch function with robust error handling and debug information
-function(apply_patch file_path patch_name search_pattern replacement_pattern already_patched_check)
-    if(NOT EXISTS "${file_path}")
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: File not found: ${file_path}")
-    endif()
-    
-    # Read file content
-    file(READ "${file_path}" file_content)
-    if("${file_content}" STREQUAL "")
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: File is empty or could not be read: ${file_path}")
-    endif()
-    
-    # Check if already patched
-    string(FIND "${file_content}" "${already_patched_check}" patch_check_result)
-    if(NOT patch_check_result EQUAL -1)
-        message(STATUS "[PATCH SKIP] ${patch_name}: Already patched - ${file_path}")
-        return()
-    endif()
-    
-    # Apply the patch
-    string(REPLACE "${search_pattern}" "${replacement_pattern}" patched_content "${file_content}")
-    
-    # Verify the patch was applied (content changed)
-    if("${patched_content}" STREQUAL "${file_content}")
-        # Get file size for debugging
-        string(LENGTH "${file_content}" file_size)
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Pattern not found in file: ${file_path}\n"
-                             "  Search pattern: '${search_pattern}'\n"
-                             "  File size: ${file_size} bytes\n"
-                             "  Hint: Check for whitespace differences, line endings, or case sensitivity")
-    endif()
-    
-    # Write the patched content back to file
-    file(WRITE "${file_path}" "${patched_content}")
-    
-    # Verify the file was written successfully
-    file(READ "${file_path}" verify_content)
-    if(NOT "${verify_content}" STREQUAL "${patched_content}")
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Failed to write patched content to: ${file_path}")
-    endif()
-    
-    # Verify the patch marker is now present
-    string(FIND "${verify_content}" "${already_patched_check}" verify_patch_result)
-    if(verify_patch_result EQUAL -1)
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Patch verification failed - marker not found after patching: ${file_path}")
-    endif()
-    
-    message(STATUS "[PATCH OK] ${patch_name}: Successfully patched - ${file_path}")
-endfunction()
-
-# Alternative function for regex-based patches
-function(apply_regex_patch file_path patch_name regex_pattern replacement_pattern already_patched_check)
-    if(NOT EXISTS "${file_path}")
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: File not found: ${file_path}")
-    endif()
-    
-    # Read file content
-    file(READ "${file_path}" file_content)
-    if("${file_content}" STREQUAL "")
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: File is empty or could not be read: ${file_path}")
-    endif()
-    
-    # Check if already patched
-    string(FIND "${file_content}" "${already_patched_check}" patch_check_result)
-    if(NOT patch_check_result EQUAL -1)
-        message(STATUS "[PATCH SKIP] ${patch_name}: Already patched - ${file_path}")
-        return()
-    endif()
-    
-    # Apply the regex patch
-    string(REGEX REPLACE "${regex_pattern}" "${replacement_pattern}" patched_content "${file_content}")
-    
-    # Verify the patch was applied (content changed)
-    if("${patched_content}" STREQUAL "${file_content}")
-        # Get file size for debugging
-        string(LENGTH "${file_content}" file_size)
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Regex pattern not found in file: ${file_path}\n"
-                             "  Regex pattern: '${regex_pattern}'\n"
-                             "  File size: ${file_size} bytes\n"
-                             "  Hint: Check regex syntax and ensure pattern matches expected content")
-    endif()
-    
-    # Write the patched content back to file
-    file(WRITE "${file_path}" "${patched_content}")
-    
-    # Verify the file was written successfully
-    file(READ "${file_path}" verify_content)
-    if(NOT "${verify_content}" STREQUAL "${patched_content}")
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Failed to write patched content to: ${file_path}")
-    endif()
-    
-    # Verify the patch marker is now present
-    string(FIND "${verify_content}" "${already_patched_check}" verify_patch_result)
-    if(verify_patch_result EQUAL -1)
-        message(FATAL_ERROR "[PATCH ERROR] ${patch_name}: Patch verification failed - marker not found after patching: ${file_path}")
-    endif()
-    
-    message(STATUS "[PATCH OK] ${patch_name}: Successfully patched - ${file_path}")
-endfunction()
-
 # Use JSFX from git submodule instead of FetchContent
 set(jsfx_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/jsfx")
 message(STATUS "JSFX source directory: ${jsfx_SOURCE_DIR}")
@@ -118,201 +18,195 @@ endif()
 
 # Patch effectproc.cpp to remove hardcoded "Effects" directory requirement
 # This allows loading JSFX files directly from their source location
-apply_patch(
-    "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp"
-    "effectproc-effects-dir"
-    "  sx->m_datadir.Append(\"\\\\Data\");\n  sx->m_effectdir.Append(\"\\\\Effects\");"
-    "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
-    "// This allows loading JSFX files from any location"
-)
-
-# Also patch Unix path in effectproc.cpp  
-apply_patch(
-    "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp"
-    "effectproc-effects-dir-unix"
-    "  sx->m_datadir.Append(\"/Data\");\n  sx->m_effectdir.Append(\"/Effects\");"
-    "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
-    "// This allows loading JSFX files from any location"
-)
+file(READ "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp" EFFECTPROC_CONTENT)
+string(FIND "${EFFECTPROC_CONTENT}" "sx->m_effectdir.Append" EFFECTS_DIR_FOUND)
+if(NOT EFFECTS_DIR_FOUND EQUAL -1)
+    message(STATUS "Patching effectproc.cpp to remove hardcoded Effects directory")
+    # Patch Windows path
+    string(REPLACE 
+        "  sx->m_datadir.Append(\"\\\\Data\");\n  sx->m_effectdir.Append(\"\\\\Effects\");"
+        "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
+        EFFECTPROC_CONTENT
+        "${EFFECTPROC_CONTENT}")
+    # Patch Unix path
+    string(REPLACE 
+        "  sx->m_datadir.Append(\"/Data\");\n  sx->m_effectdir.Append(\"/Effects\");"
+        "  // Patched: Don't append hardcoded subdirectories\n  // This allows loading JSFX files from any location"
+        EFFECTPROC_CONTENT
+        "${EFFECTPROC_CONTENT}")
+    file(WRITE "${jsfx_SOURCE_DIR}/jsfx/effectproc.cpp" "${EFFECTPROC_CONTENT}")
+    message(STATUS "effectproc.cpp patched successfully")
+else()
+    message(STATUS "effectproc.cpp already patched or pattern not found")
+endif()
 
 # Patch curses.h and related files to avoid macro conflicts with C++ STL
 # Rename problematic macros to prevent C++ conflicts
+file(READ "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h" CURSES_CONTENT)
 
-# Patch move macro conflict with std::move
-apply_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h"
-    "curses-move-macro-fix"
-    "#define move(y,x) __move(CURSES_INSTANCE,y,x,0)"
-    "// #define move(y,x) __move(CURSES_INSTANCE,y,x,0)  /* Disabled - conflicts with std::move */\n#define curses_move(y,x) __move(CURSES_INSTANCE,y,x,0)"
-    "#define curses_move(y,x) __move(CURSES_INSTANCE,y,x,0)"
-)
+# Only patch if not already patched (check for curses_move macro)
+string(FIND "${CURSES_CONTENT}" "curses_move" PATCH_FOUND)
+if(PATCH_FOUND EQUAL -1)
+    # Patch move macro conflict with std::move
+    string(REPLACE 
+        "#define move(y,x) __move(CURSES_INSTANCE,y,x,0)"
+        "// #define move(y,x) __move(CURSES_INSTANCE,y,x,0)  /* Disabled - conflicts with std::move */\n#define curses_move(y,x) __move(CURSES_INSTANCE,y,x,0)"
+        CURSES_CONTENT 
+        "${CURSES_CONTENT}")
 
-# Patch erase macro conflict with std::string::erase and std::vector::erase
-apply_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h"
-    "curses-erase-macro-fix"
-    "#define erase() curses_erase(CURSES_INSTANCE)"
-    "// #define erase() curses_erase(CURSES_INSTANCE)  /* Disabled - conflicts with STL erase */\n#define curses_erase_screen() __curses_erase(CURSES_INSTANCE)"
-    "#define curses_erase_screen() __curses_erase(CURSES_INSTANCE)"
-)
+    # Patch erase macro conflict with std::string::erase and std::vector::erase
+    string(REPLACE 
+        "#define erase() curses_erase(CURSES_INSTANCE)"
+        "// #define erase() curses_erase(CURSES_INSTANCE)  /* Disabled - conflicts with STL erase */\n#define curses_erase_screen() __curses_erase(CURSES_INSTANCE)"
+        CURSES_CONTENT 
+        "${CURSES_CONTENT}")
 
-# Patch sync macro conflict with std::ios::sync
-apply_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h"
-    "curses-sync-macro-fix"
-    "#define sync()"
-    "// #define sync()  /* Disabled - conflicts with STL sync */\n#define curses_sync()"
-    "#define curses_sync()"
-)
+    # Patch sync macro conflict with std::ios::sync
+    string(REPLACE 
+        "#define sync()"
+        "// #define sync()  /* Disabled - conflicts with STL sync */\n#define curses_sync()"
+        CURSES_CONTENT 
+        "${CURSES_CONTENT}")
 
-# Patch refresh macro conflict with JUCE and other GUI frameworks
-apply_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h"
-    "curses-refresh-macro-fix"
-    "#define refresh()"
-    "// #define refresh()  /* Disabled - conflicts with GUI refresh() methods */\n#define curses_refresh()"
-    "#define curses_refresh()"
-)
+    # Patch refresh macro conflict with JUCE and other GUI frameworks
+    string(REPLACE 
+        "#define refresh()"
+        "// #define refresh()  /* Disabled - conflicts with GUI refresh() methods */\n#define curses_refresh()"
+        CURSES_CONTENT 
+        "${CURSES_CONTENT}")
 
-# Patch curses source files to use renamed macros
-apply_regex_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
-    "curses-editor-move-calls"
-    "([^a-zA-Z_])move\\("
-    "\\1curses_move("
-    "curses_move("
-)
-
-apply_regex_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
-    "curses-editor-erase-calls"
-    "([^a-zA-Z_])erase\\("
-    "\\1curses_erase_screen("
-    "curses_erase_screen("
-)
-
-apply_regex_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
-    "curses-editor-sync-calls"
-    "([^a-zA-Z_])sync\\("
-    "\\1curses_sync("
-    "curses_sync("
-)
-
-apply_regex_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
-    "curses-editor-refresh-calls"
-    "([^a-zA-Z_])refresh\\("
-    "\\1curses_refresh("
-    "curses_refresh("
-)
-
-apply_regex_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
-    "eel-edit-move-calls"
-    "([^a-zA-Z_])move\\("
-    "\\1curses_move("
-    "curses_move("
-)
-
-# Check if erase pattern exists before applying patch
-file(READ "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp" eel_edit_content)
-if(eel_edit_content MATCHES "([^a-zA-Z_])erase\\(")
-    apply_regex_patch(
-        "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
-        "eel-edit-erase-calls"
-        "([^a-zA-Z_])erase\\("
-        "\\1curses_erase_screen("
-        "curses_erase_screen("
-    )
+    file(WRITE "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses.h" "${CURSES_CONTENT}")
+    message(STATUS "Applied curses.h macro patches")
 else()
-    message(STATUS "[PATCH SKIP] eel-edit-erase-calls: Pattern not found - ${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp")
+    message(STATUS "curses.h already patched, skipping")
 endif()
 
-apply_regex_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
-    "eel-edit-sync-calls"
-    "([^a-zA-Z_])sync\\("
-    "\\1curses_sync("
-    "curses_sync("
-)
-
-apply_regex_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
-    "eel-edit-refresh-calls"
-    "([^a-zA-Z_])refresh\\("
-    "\\1curses_refresh("
-    "curses_refresh("
-)
+# Patch curses source files to use renamed macros
+foreach(CURSES_FILE 
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/curses_editor.cpp"
+    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp")
+    if(EXISTS "${CURSES_FILE}")
+        file(READ "${CURSES_FILE}" FILE_CONTENT)
+        # Only patch if not already patched (check for curses_move in file)
+        string(FIND "${FILE_CONTENT}" "curses_move" FILE_PATCH_FOUND)
+        if(FILE_PATCH_FOUND EQUAL -1)
+            # Replace move() calls with curses_move()
+            string(REGEX REPLACE "([^a-zA-Z_])move\\(" "\\1curses_move(" FILE_CONTENT "${FILE_CONTENT}")
+            # Replace erase() calls with curses_erase_screen() if any exist
+            string(REGEX REPLACE "([^a-zA-Z_])erase\\(" "\\1curses_erase_screen(" FILE_CONTENT "${FILE_CONTENT}")
+            # Replace sync() calls with curses_sync() if any exist  
+            string(REGEX REPLACE "([^a-zA-Z_])sync\\(" "\\1curses_sync(" FILE_CONTENT "${FILE_CONTENT}")
+            # Replace refresh() calls with curses_refresh() if any exist
+            string(REGEX REPLACE "([^a-zA-Z_])refresh\\(" "\\1curses_refresh(" FILE_CONTENT "${FILE_CONTENT}")
+            file(WRITE "${CURSES_FILE}" "${FILE_CONTENT}")
+            message(STATUS "Applied patches to ${CURSES_FILE}")
+        else()
+            message(STATUS "Already patched: ${CURSES_FILE}")
+        endif()
+    endif()
+endforeach()
 
 # Patch gzguts.h to fix missing unistd.h include on macOS/Unix systems
 # This fixes compilation errors with undeclared functions: lseek, read, write, close
-apply_patch(
-    "${jsfx_SOURCE_DIR}/WDL/zlib/gzguts.h"
-    "gzguts-unistd-include"
-    "#ifndef _POSIX_SOURCE\n#  define _POSIX_SOURCE\n#endif\n#include <fcntl.h>"
-    "#ifndef _POSIX_SOURCE\n#  define _POSIX_SOURCE\n#endif\n#include <fcntl.h>\n\n#if !defined(_WIN32)\n#include <unistd.h>\n#endif"
-    "#if !defined(_WIN32)\n#include <unistd.h>\n#endif"
-)
+set(GZGUTS_FILE "${jsfx_SOURCE_DIR}/WDL/zlib/gzguts.h")
+if(EXISTS "${GZGUTS_FILE}")
+    file(READ "${GZGUTS_FILE}" GZGUTS_CONTENT)
+    # Only patch if not already patched (check for unistd.h include after fcntl.h)
+    string(FIND "${GZGUTS_CONTENT}" "#if !defined(_WIN32)\n#include <unistd.h>\n#endif" GZGUTS_PATCH_FOUND)
+    if(GZGUTS_PATCH_FOUND EQUAL -1)
+        message(STATUS "Patching gzguts.h to include unistd.h on non-Windows platforms")
+        # Add unistd.h include for POSIX systems after fcntl.h
+        string(REPLACE 
+            "#ifndef _POSIX_SOURCE\n#define _POSIX_SOURCE\n#endif\n#include <fcntl.h>"
+            "#ifndef _POSIX_SOURCE\n#define _POSIX_SOURCE\n#endif\n#include <fcntl.h>\n\n#if !defined(_WIN32)\n#include <unistd.h>\n#endif"
+            GZGUTS_CONTENT "${GZGUTS_CONTENT}")
+        file(WRITE "${GZGUTS_FILE}" "${GZGUTS_CONTENT}")
+        message(STATUS "gzguts.h patched successfully")
+    else()
+        message(STATUS "gzguts.h already patched, skipping")
+    endif()
+endif()
 
 # Patch pngpriv.h to fix fp.h include issue on modern macOS
 # This prevents the "fp.h file not found" error by using math.h instead
-apply_patch(
-    "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h"
-    "pngpriv-fp-header-fix"
-    "|| defined(TARGET_OS_MAC)"
-    "|| (defined(TARGET_OS_MAC) && !defined(__APPLE__))"
-    "(defined(TARGET_OS_MAC) && !defined(__APPLE__))"
-)
+set(PNGPRIV_FILE "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h")
+if(EXISTS "${PNGPRIV_FILE}")
+    file(READ "${PNGPRIV_FILE}" PNGPRIV_CONTENT)
+    # Only patch if not already patched (check for !defined(__APPLE__) condition)
+    string(FIND "${PNGPRIV_CONTENT}" "(defined(TARGET_OS_MAC) && !defined(__APPLE__))" PNGPRIV_PATCH_FOUND)
+    if(PNGPRIV_PATCH_FOUND EQUAL -1)
+        message(STATUS "Patching pngpriv.h to exclude modern macOS from using fp.h")
+        # Modify the condition to exclude modern macOS (which defines __APPLE__)
+        string(REPLACE 
+            "|| defined(TARGET_OS_MAC)"
+            "|| (defined(TARGET_OS_MAC) && !defined(__APPLE__))"
+            PNGPRIV_CONTENT "${PNGPRIV_CONTENT}")
+        file(WRITE "${PNGPRIV_FILE}" "${PNGPRIV_CONTENT}")
+        message(STATUS "pngpriv.h patched successfully")
+    else()
+        message(STATUS "pngpriv.h already patched, skipping")
+    endif()
+endif()
 
 # Patch pngpriv.h header inclusion order - pngstruct.h must come before pnginfo.h
 # This fixes "unknown type name 'png_colorspace'" error
-apply_patch(
-    "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h"
-    "pngpriv-header-order-fix"
-    "#include \"pnginfo.h\"\n#include \"pngstruct.h\""
-    "#include \"pngstruct.h\"\n#include \"pnginfo.h\""
-    "#include \"pngstruct.h\"\n#include \"pnginfo.h\""
-)
+set(PNGPRIV_HEADER_ORDER_FILE "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h")
+if(EXISTS "${PNGPRIV_HEADER_ORDER_FILE}")
+    file(READ "${PNGPRIV_HEADER_ORDER_FILE}" PNGPRIV_ORDER_CONTENT)
+    # Only patch if not already fixed (check for pngstruct.h before pnginfo.h)
+    string(FIND "${PNGPRIV_ORDER_CONTENT}" "#include \"pnginfo.h\"\n#include \"pngstruct.h\"" HEADER_ORDER_ISSUE)
+    if(NOT HEADER_ORDER_ISSUE EQUAL -1)
+        message(STATUS "Fixing pngpriv.h header inclusion order (pngstruct.h before pnginfo.h)")
+        # Fix the header order - swap the two includes
+        string(REPLACE 
+            "#include \"pnginfo.h\"\n#include \"pngstruct.h\""
+            "#include \"pngstruct.h\"\n#include \"pnginfo.h\""
+            PNGPRIV_ORDER_CONTENT "${PNGPRIV_ORDER_CONTENT}")
+        file(WRITE "${PNGPRIV_HEADER_ORDER_FILE}" "${PNGPRIV_ORDER_CONTENT}")
+        message(STATUS "pngpriv.h header order fixed successfully")
+    else()
+        message(STATUS "pngpriv.h header order already correct, skipping")
+    endif()
+endif()
 
 # Patch jsfx_api.cpp to disable DllMain for standalone builds
 # Apply on all platforms to ensure consistent API
-
-# Remove extern "C" { wrapper
-apply_patch(
-    "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp"
-    "jsfx-api-extern-c-removal"
-    "extern \"C\" {\n\n#ifdef _WIN32"
-    "#ifdef _WIN32"
-    "#ifdef _WIN32"
-)
-
-# Simplify JesusonicAPI declaration - remove platform-specific export declarations
-apply_patch(
-    "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp"
-    "jsfx-api-export-simplification"
-    "#ifdef _WIN32\n__declspec(dllexport) jsfxAPI JesusonicAPI=\n#else\n__attribute__((visibility(\"default\"))) jsfxAPI JesusonicAPI=\n#endif"
-    "jsfxAPI JesusonicAPI="
-    "jsfxAPI JesusonicAPI="
-)
-
-# Comment out the DllMain function for standalone builds (on all platforms)
-apply_patch(
-    "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp"
-    "jsfx-api-dllmain-disable"
-    "BOOL WINAPI DllMain"
-    "#if 0  // Disabled for standalone builds\nBOOL WINAPI DllMain"
-    "#if 0  // Disabled for standalone builds"
-)
-
-# Close the DllMain function disable block
-apply_patch(
-    "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp"
-    "jsfx-api-dllmain-close"
-    "}\n\n};\n\nextern int g_last_srate;"
-    "}\n#endif  // Disabled for standalone builds\n\n\nextern int g_last_srate;"
-    "#endif  // Disabled for standalone builds"
-)
+set(JSFX_API_FILE "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp")
+if(EXISTS "${JSFX_API_FILE}")
+    file(READ "${JSFX_API_FILE}" API_CONTENT)
+    # Only patch if not already patched (check for #if 0 before DllMain)
+    string(FIND "${API_CONTENT}" "#if 0  // Disabled for standalone builds" API_PATCH_FOUND)
+    if(API_PATCH_FOUND EQUAL -1)
+        # Remove extern "C" { wrapper
+        string(REPLACE 
+            "extern \"C\" {\n\n#ifdef _WIN32"
+            "#ifdef _WIN32"
+            API_CONTENT "${API_CONTENT}")
+        
+        # Simplify JesusonicAPI declaration - remove platform-specific export declarations
+        string(REPLACE 
+            "#ifdef _WIN32\n__declspec(dllexport) jsfxAPI JesusonicAPI=\n#else\n__attribute__((visibility(\"default\"))) jsfxAPI JesusonicAPI=\n#endif"
+            "jsfxAPI JesusonicAPI="
+            API_CONTENT "${API_CONTENT}")
+        
+        # Comment out the DllMain function for standalone builds (on all platforms)
+        # Wrap it in #if 0 ... #endif (do this before removing };)
+        string(REPLACE 
+            "BOOL WINAPI DllMain"
+            "#if 0  // Disabled for standalone builds\nBOOL WINAPI DllMain"
+            API_CONTENT "${API_CONTENT}")
+        # Find the closing brace and return statement, add #endif after
+        string(REPLACE 
+            "}\n\n};\n\nextern int g_last_srate;"
+            "}\n#endif  // Disabled for standalone builds\n\n\nextern int g_last_srate;"
+            API_CONTENT "${API_CONTENT}")
+        
+        file(WRITE "${JSFX_API_FILE}" "${API_CONTENT}")
+        message(STATUS "Applied DllMain and extern C patches to jsfx_api.cpp")
+    else()
+        message(STATUS "jsfx_api.cpp already patched, skipping")
+    endif()
+endif()
 
 # Generate SWELL resource files from res.rc (needed for jsfx_api.cpp)
 if(NOT WIN32)
@@ -337,11 +231,9 @@ if(NOT WIN32)
     endif()
 endif()
 
-# TODO: Convert to unified patch system - temporarily disabled to fix CI
 # Patch localize.cpp to use std::min instead of min macro (when NOMINMAX is defined)
 # AND force ANSI dialog creation to match ANSI resources
 # AND disable Windows-specific code on non-Windows platforms
-if(FALSE) # Temporarily disabled
 set(LOCALIZE_FILE "${jsfx_SOURCE_DIR}/WDL/localize/localize.cpp")
 if(EXISTS "${LOCALIZE_FILE}")
     file(READ "${LOCALIZE_FILE}" LOCALIZE_CONTENT)
@@ -380,10 +272,8 @@ if(EXISTS "${LOCALIZE_FILE}")
     endif()
 endif()
 
-# TODO: Convert to unified patch system - temporarily disabled to fix CI
 # Patch slider-control.cpp to fix VertSliderProc undefined reference
 # The function is forward declared but never implemented - change to HorzSliderProc
-if(FALSE) # Temporarily disabled
 set(SLIDER_CONTROL_FILE "${jsfx_SOURCE_DIR}/jsfx/standalone-helpers/slider-control.cpp")
 if(EXISTS "${SLIDER_CONTROL_FILE}")
     file(READ "${SLIDER_CONTROL_FILE}" SLIDER_CONTENT)
@@ -408,7 +298,6 @@ if(EXISTS "${SLIDER_CONTROL_FILE}")
         message(STATUS "slider-control.cpp already patched, skipping")
     endif()
 endif()
-endif() # End temporarily disabled
 
 
 # Create JSFX as a static library
@@ -554,9 +443,7 @@ else()
     endif()
 endif()
 
-# TODO: Convert to unified patch system - temporarily disabled to fix CI
 # Patch slider-control.cpp on all platforms to include <algorithm> and fix DoSize call signature
-if(FALSE) # Temporarily disabled
 set(SLIDER_FILE "${jsfx_SOURCE_DIR}/jsfx/standalone-helpers/slider-control.cpp")
 if(EXISTS "${SLIDER_FILE}")
     file(READ "${SLIDER_FILE}" SLIDER_CONTENT)
@@ -636,11 +523,8 @@ if(EXISTS "${SLIDER_FILE}")
         message(STATUS "Patched slider-control.cpp to recognize REAPERknob class name")
     endif()
 endif()
-endif() # End temporarily disabled slider patches
 
-# TODO: Convert to unified patch system - temporarily disabled to fix CI
 # Patch meter-control.cpp on all platforms to include <algorithm> and SWELL headers
-if(FALSE) # Temporarily disabled
 set(METER_FILE "${jsfx_SOURCE_DIR}/jsfx/standalone-helpers/meter-control.cpp")
 if(EXISTS "${METER_FILE}")
     file(READ "${METER_FILE}" METER_CONTENT)
@@ -664,7 +548,6 @@ if(EXISTS "${METER_FILE}")
         message(STATUS "meter-control.cpp already patched, skipping")
     endif()
 endif()
-endif() # End temporarily disabled meter patches
 
 # Add x86_64 assembly optimization if available
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
