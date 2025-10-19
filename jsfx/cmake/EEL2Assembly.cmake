@@ -16,6 +16,7 @@ message(STATUS "========================================")
 # Cache variables
 set(EEL2_HAS_ASM FALSE CACHE INTERNAL "Whether assembly optimizations are available")
 set(EEL2_ASM_SOURCE "" CACHE INTERNAL "Assembly source file to compile")
+set(EEL2_USE_GCC_ASM FALSE CACHE INTERNAL "Whether using GCC inline assembly")
 set(NASM_EXECUTABLE "" CACHE INTERNAL "NASM executable path")
 
 # Validate architecture
@@ -75,10 +76,11 @@ elseif(IS_ARM64 AND WIN32)
     set(EEL2_USE_PRECOMPILED TRUE)
     message(STATUS "EEL2: Using pre-compiled ARM64 object for Windows")
 elseif(IS_ARM64)
-    # ARM64 on Linux - compile from source
-    set(EEL2_ASM_SOURCE "${jsfx_SOURCE_DIR}/WDL/eel2/asm-nseel-aarch64-msvc.asm")
+    # ARM64 on Linux - use GCC inline assembly (C file, not NASM)
+    set(EEL2_ASM_SOURCE "${jsfx_SOURCE_DIR}/WDL/eel2/asm-nseel-aarch64-gcc.c")
     set(EEL2_USE_PRECOMPILED FALSE)
-    message(STATUS "EEL2: Using ARM64 assembly for ${CMAKE_SYSTEM_NAME}")
+    set(EEL2_USE_GCC_ASM TRUE)
+    message(STATUS "EEL2: Using ARM64 GCC inline assembly for ${CMAKE_SYSTEM_NAME}")
 else()
     # x64 Windows/Linux - compile from source
     set(EEL2_ASM_SOURCE "${jsfx_SOURCE_DIR}/WDL/eel2/asm-nseel-x64-sse.asm")
@@ -207,6 +209,11 @@ if(EEL2_USE_PRECOMPILED)
     message(STATUS "EEL2: Using pre-compiled assembly object - no assembler needed")
     set(EEL2_HAS_ASM TRUE CACHE INTERNAL "Assembly available")
     
+elseif(EEL2_USE_GCC_ASM)
+    # GCC inline assembly (Linux ARM64) - C file, no assembler needed
+    message(STATUS "EEL2: Using GCC inline assembly - no assembler needed")
+    set(EEL2_HAS_ASM TRUE CACHE INTERNAL "Assembly available")
+    
 elseif(WIN32)
     # Windows x64 - download NASM for consistent build environment
     message(STATUS "EEL2: Windows x64 - downloading NASM for consistent build environment")
@@ -306,6 +313,10 @@ function(eel2_add_assembly_to_target target)
                 GENERATED TRUE
         )
         message(STATUS "EEL2: Pre-compiled assembly object added to target '${target}'")
+    elseif(EEL2_USE_GCC_ASM)
+        # GCC inline assembly (C file with asm blocks)
+        # Treat as regular C file - no special properties needed
+        message(STATUS "EEL2: GCC inline assembly source (C file) added to target '${target}'")
     else()
         # Source assembly file - compile with NASM
         set_source_files_properties(${EEL2_ASM_SOURCE}
