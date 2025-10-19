@@ -698,12 +698,33 @@ void AudioPluginAudioProcessorEditor::resized()
 
 bool AudioPluginAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 {
+    // Global keyboard shortcuts:
+    // - Shift + / : Focus search field
+    // - Ctrl + F  : Focus search field
+    // - F         : Toggle button bar visibility
+    // - F11       : Toggle fullscreen mode
+
+    // Shift + / or Ctrl + F - Focus search field
+    if ((key.getKeyCode() == '/' && key.getModifiers().isShiftDown())
+        || (key.getKeyCode() == 'F' && key.getModifiers().isCtrlDown()))
+    {
+        if (buttonBarVisible && presetWindow.isVisible())
+        {
+            presetWindow.getTreeView().moveFocusToSearchField();
+            return true;
+        }
+    }
+
     // F key - Toggle button bar visibility
     if (key.getTextCharacter() == 'f' || key.getTextCharacter() == 'F')
     {
-        buttonBarVisible = !buttonBarVisible;
-        resized(); // Trigger layout update
-        return true;
+        // Only toggle if no modifiers are pressed (to avoid conflict with Ctrl+F)
+        if (!key.getModifiers().isAnyModifierKeyDown())
+        {
+            buttonBarVisible = !buttonBarVisible;
+            resized(); // Trigger layout update
+            return true;
+        }
     }
 
     // F11 - Toggle LICE fullscreen
@@ -711,6 +732,12 @@ bool AudioPluginAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
     {
         if (jsfxLiceRenderer && jsfxLiceRenderer->isVisible())
         {
+            toggleLiceFullscreen();
+            return true;
+        }
+        else
+        {
+            // If no LICE renderer is visible, still toggle fullscreen for the main window
             toggleLiceFullscreen();
             return true;
         }
