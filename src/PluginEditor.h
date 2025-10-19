@@ -12,7 +12,6 @@
 #include "VersionChecker.h"
 
 class PersistentFileChooser;
-class RepositoryManager;
 
 //==============================================================================
 // Custom DocumentWindow that handles close button properly
@@ -220,8 +219,6 @@ private:
     void unloadJSFXFile();
     void rebuildParameterSliders();
     void updatePresetList();
-    void onPresetSelected(const juce::String& category, const juce::String& label, const juce::String& itemData);
-    void onPresetTreeItemSelected(juce::TreeViewItem* item);
 
     // ValueTree::Listener
     void valueTreeChildAdded(juce::ValueTree& parent, juce::ValueTree& child) override;
@@ -268,13 +265,6 @@ private:
     std::unique_ptr<IOMatrixWindow> ioMatrixWindow;
     std::unique_ptr<JsfxEditorWindow> jsfxEditorWindow;
     std::unique_ptr<JsfxLiceFullscreenWindow> jsfxLiceFullscreenWindow;
-
-    // Repository manager (shared across plugin)
-    std::unique_ptr<RepositoryManager> repositoryManager;
-
-    // Track currently selected preset for delete operations
-    juce::String currentPresetBankName;
-    juce::String currentPresetName;
 
     // Version checker
     std::unique_ptr<VersionChecker> versionChecker;

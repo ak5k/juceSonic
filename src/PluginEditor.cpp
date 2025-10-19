@@ -1,13 +1,13 @@
 #include "PluginEditor.h"
 
 #include "AboutWindow.h"
+#include "Config.h"
 #include "IOMatrixComponent.h"
 #include "PersistentFileChooser.h"
 #include "PluginConstants.h"
 #include "PluginProcessor.h"
 #include "PresetWindow.h"
 #include "RepositoryWindow.h"
-#include "RepositoryManager.h"
 #include "ReaperPresetConverter.h"
 
 #include <jsfx.h>
@@ -176,12 +176,12 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     );                            // Show hint line when no search, expand to show results
     presetBrowser.toFront(false); // Ensure it's on top of LICE component
 
-    // Handle preset selection
-    presetBrowser.getTreeView().onCommand = [this](const juce::Array<juce::TreeViewItem*>& selectedItems)
+    // Handle preset selection via callback
+    presetBrowser.onPresetSelected =
+        [this](const juce::String& bank, const juce::String& name, const juce::String& data)
     {
-        if (!selectedItems.isEmpty())
-            if (auto* firstItem = selectedItems[0])
-                onPresetTreeItemSelected(firstItem);
+        // Preset loading is already handled by PresetWindow, callback is for tracking only
+        // (could be used for additional UI updates if needed)
     };
 
     // Handle tree expansion for adaptive sizing
@@ -966,46 +966,6 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
     presetBrowser.refreshPresetList();
 }
 
-void AudioPluginAudioProcessorEditor::onPresetSelected(
-    const juce::String& category,
-    const juce::String& label,
-    const juce::String& itemData
-)
-{
-    // Track the currently selected preset for delete operations
-    currentPresetBankName = category;
-    currentPresetName = label;
-
-    // Delegate to processor for preset loading
-    // This ensures presets can be loaded from anywhere (MIDI, automation, editor, etc.)
-    processorRef.loadPresetFromBase64(itemData);
-}
-
-void AudioPluginAudioProcessorEditor::onPresetTreeItemSelected(juce::TreeViewItem* item)
-{
-    if (!item)
-        return;
-
-    // Cast to PresetTreeItem to access preset data
-    if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
-    {
-        // Only load if it's an actual preset (not a directory/file/bank)
-        if (presetItem->getType() == PresetTreeItem::ItemType::Preset)
-        {
-            juce::String bankName = presetItem->getBankName();
-            juce::String presetName = presetItem->getPresetName();
-            juce::String presetData = presetItem->getPresetData();
-
-            // Track for delete operations
-            currentPresetBankName = bankName;
-            currentPresetName = presetName;
-
-            // Load the preset
-            processorRef.loadPresetFromBase64(presetData);
-        }
-    }
-}
-
 //==============================================================================
 // Preset Management
 
@@ -1081,12 +1041,8 @@ void AudioPluginAudioProcessorEditor::checkForUpdatesIfNeeded()
     // Update last check time
     setGlobalProperty("lastUpdateCheckTime", now);
 
-    // Get repository URL from CMake configuration
-#ifdef JUCESONIC_REPO_URL
+    // Get repository URL from Config.h
     juce::String repoUrl = JUCESONIC_REPO_URL;
-#else
-    juce::String repoUrl = "https://github.com/ak5k/jucesonic";
-#endif
 
     // Start async version check
     if (!versionChecker)
@@ -1155,11 +1111,7 @@ void AudioPluginAudioProcessorEditor::showPresetBrowser()
 
 void AudioPluginAudioProcessorEditor::showRepositoryBrowser()
 {
-    // Create repository manager if it doesn't exist
-    if (!repositoryManager)
-        repositoryManager = std::make_unique<RepositoryManager>(processorRef);
-
-    auto* repoWindow = new RepositoryWindow(*repositoryManager);
+    auto* repoWindow = new RepositoryWindow(processorRef);
 
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(repoWindow);

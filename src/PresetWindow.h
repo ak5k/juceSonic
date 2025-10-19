@@ -46,12 +46,19 @@ public:
      */
     void refreshPresetList();
 
+    /**
+     * @brief Callback invoked when a preset is selected/loaded
+     * Parameters: (bankName, presetName, presetData)
+     */
+    std::function<void(const juce::String&, const juce::String&, const juce::String&)> onPresetSelected;
+
 private:
     void importPresetFile();
     void exportSelectedPresets();
     void deleteSelectedPresets();
     void showDirectoryEditor();
     void updateButtonsForSelection();
+    void handlePresetTreeItemSelected(juce::TreeViewItem* item);
 
     // Load/save directory paths from persistent storage
     juce::StringArray getPresetDirectories() const;
@@ -71,6 +78,10 @@ private:
     juce::Label statusLabel;
 
     bool showManagementButtons = true;
+
+    // Track currently selected preset for delete operations
+    juce::String currentPresetBankName;
+    juce::String currentPresetName;
 
     juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
 

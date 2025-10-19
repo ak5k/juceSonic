@@ -1,9 +1,11 @@
 #include "RepositoryWindow.h"
+#include "PluginProcessor.h"
 #include "ReaperPresetConverter.h"
 
-RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
-    : repositoryManager(repoManager)
-    , repositoryTreeView(repoManager)
+RepositoryWindow::RepositoryWindow(AudioPluginAudioProcessor& proc)
+    : processor(proc)
+    , repositoryManager(std::make_unique<RepositoryManager>(proc))
+    , repositoryTreeView(*repositoryManager)
 {
     setLookAndFeel(&sharedLookAndFeel->lf);
 
@@ -12,6 +14,10 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     repositoryTreeView.onInstallPackage = [this](const RepositoryManager::JSFXPackage& pkg) { installPackage(pkg); };
     repositoryTreeView.onUninstallPackage = [this](const RepositoryManager::JSFXPackage& pkg)
     { uninstallPackage(pkg); };
+    repositoryTreeView.onBatchInstallPackages = [this](const std::vector<RepositoryManager::JSFXPackage>& pkgs)
+    { batchInstallPackages(pkgs); };
+    repositoryTreeView.onBatchUninstallPackages = [this](const std::vector<RepositoryManager::JSFXPackage>& pkgs)
+    { batchUninstallPackages(pkgs); };
     repositoryTreeView.onSelectionChangedCallback = [this]() { updateButtonsForSelection(); };
 
     // Setup command callback for Enter key
@@ -31,7 +37,7 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
         {
             if (firstItem->getType() == RepositoryTreeItem::ItemType::Package && firstItem->getPackage())
             {
-                bool shouldInstall = !repositoryManager.isPackageInstalled(*firstItem->getPackage());
+                bool shouldInstall = !repositoryManager->isPackageInstalled(*firstItem->getPackage());
 
                 if (shouldInstall)
                     repositoryTreeView.installFromTreeItems(selectedItems);
@@ -65,7 +71,7 @@ RepositoryWindow::RepositoryWindow(RepositoryManager& repoManager)
     cancelButton.setEnabled(false);
     cancelButton.onClick = [this]()
     {
-        repositoryManager.cancelInstallation();
+        repositoryManager->cancelInstallation();
         statusLabel.setText("Cancelling...", juce::dontSendNotification);
         cancelButton.setEnabled(false);
     };
@@ -91,10 +97,8 @@ void RepositoryWindow::visibilityChanged()
 {
     // Refresh installation status when window becomes visible
     if (isVisible() && !allPackages.empty())
-    {
 
         repositoryTreeView.getTreeView().repaint();
-    }
 }
 
 void RepositoryWindow::paint(juce::Graphics& g)
@@ -169,7 +173,7 @@ void RepositoryWindow::refreshRepositoryList()
     repositories.clear();
     allPackages.clear();
 
-    auto urls = repositoryManager.getRepositoryUrls();
+    auto urls = repositoryManager->getRepositoryUrls();
     if (urls.isEmpty())
     {
         isLoading = false;
@@ -190,7 +194,7 @@ void RepositoryWindow::refreshRepositoryList()
 
     for (const auto& url : urls)
     {
-        repositoryManager.fetchRepository(
+        repositoryManager->fetchRepository(
             url,
             [this, remaining](RepositoryManager::Repository repo, juce::String error)
             {
@@ -253,14 +257,14 @@ void RepositoryWindow::checkForVersionMismatches()
     for (const auto& pkg : allPackages)
     {
         // Only check installed packages (including pinned ones)
-        if (!repositoryManager.isPackageInstalled(pkg))
+        if (!repositoryManager->isPackageInstalled(pkg))
             continue;
 
         // Skip ignored packages
-        if (repositoryManager.isPackageIgnored(pkg))
+        if (repositoryManager->isPackageIgnored(pkg))
             continue;
 
-        juce::String installedVersion = repositoryManager.getInstalledVersion(pkg);
+        juce::String installedVersion = repositoryManager->getInstalledVersion(pkg);
         juce::String availableVersion = pkg.version;
 
         // Simple string comparison - any difference is a mismatch
@@ -298,7 +302,7 @@ void RepositoryWindow::checkForVersionMismatches()
                 // Install all packages with mismatches (except pinned ones)
                 int totalToUpdate = 0;
                 for (const auto& m : mismatches)
-                    if (!repositoryManager.isPackagePinned(*m.package))
+                    if (!repositoryManager->isPackagePinned(*m.package))
                         totalToUpdate++;
 
                 if (totalToUpdate == 0)
@@ -309,7 +313,7 @@ void RepositoryWindow::checkForVersionMismatches()
 
                 auto packagesToUpdate = std::make_shared<std::vector<RepositoryManager::JSFXPackage>>();
                 for (const auto& m : mismatches)
-                    if (!repositoryManager.isPackagePinned(*m.package))
+                    if (!repositoryManager->isPackagePinned(*m.package))
                         packagesToUpdate->push_back(*m.package);
 
                 auto updated = std::make_shared<std::atomic<int>>(0);
@@ -321,7 +325,7 @@ void RepositoryWindow::checkForVersionMismatches()
 
                 for (const auto& package : *packagesToUpdate)
                 {
-                    repositoryManager.installPackage(
+                    repositoryManager->installPackage(
                         package,
                         [this, updated, failed, totalToUpdate](bool success, juce::String message)
                         {
@@ -426,7 +430,7 @@ void RepositoryWindow::installSelectedPackage()
     for (size_t i = 0; i < packagesToInstall->size(); ++i)
     {
         const auto& package = (*packagesToInstall)[i];
-        repositoryManager.installPackage(
+        repositoryManager->installPackage(
             package,
             [this, package, installed, failed, totalToInstall, i](bool success, juce::String message)
             {
@@ -466,10 +470,8 @@ void RepositoryWindow::installSelectedPackage()
 void RepositoryWindow::installAllPackages()
 {
     if (allPackages.empty())
-    {
 
         return;
-    }
 
     // Check if button says "Uninstall All"
     if (installAllButton.getButtonText() == "Uninstall All")
@@ -480,13 +482,9 @@ void RepositoryWindow::installAllPackages()
 
     int toInstall = static_cast<int>(allPackages.size());
 
-
-
     // Confirm installation - using async version to avoid blocking
     // Get the top-level window to ensure dialog appears in front
     auto* topLevel = getTopLevelComponent();
-
-
 
     // Use async message box with proper modal callback
     juce::MessageBoxOptions options = juce::MessageBoxOptions()
@@ -502,15 +500,9 @@ void RepositoryWindow::installAllPackages()
         options,
         [this, toInstall](int result)
         {
-
-
             if (result != 0) // Not the OK button (first button = 0)
-            {
 
                 return;
-            }
-
-
 
             // Proceed with installation
             proceedWithInstallation();
@@ -527,8 +519,6 @@ void RepositoryWindow::proceedWithInstallation()
 
     int toInstall = static_cast<int>(packagesToInstall->size());
 
-
-
     // Disable buttons during installation
     installButton.setEnabled(false);
     installAllButton.setEnabled(false);
@@ -540,11 +530,8 @@ void RepositoryWindow::proceedWithInstallation()
     auto installed = std::make_shared<std::atomic<int>>(0);
     auto failed = std::make_shared<std::atomic<int>>(0);
 
-
-
     if (totalToInstall == 0)
     {
-
         installButton.setEnabled(true);
         installAllButton.setEnabled(true);
         refreshButton.setEnabled(true);
@@ -555,23 +542,14 @@ void RepositoryWindow::proceedWithInstallation()
     {
         const auto& package = (*packagesToInstall)[i];
 
-
-        repositoryManager.installPackage(
+        repositoryManager->installPackage(
             package,
             [this, package, installed, failed, totalToInstall, i](bool success, juce::String message)
             {
-
-
                 if (success)
-                {
                     (*installed)++;
-
-                }
                 else
-                {
                     (*failed)++;
-
-                }
 
                 int completed = (*installed) + (*failed);
 
@@ -592,8 +570,6 @@ void RepositoryWindow::proceedWithInstallation()
 
                 if (completed >= static_cast<int>(totalToInstall))
                 {
-
-
                     // All done
                     juce::String resultMessage =
                         "Installed: " + juce::String(*installed) + "\n" + "Failed: " + juce::String(*failed);
@@ -625,8 +601,6 @@ void RepositoryWindow::proceedWithInstallation()
             }
         );
     }
-
-
 }
 
 void RepositoryWindow::uninstallSelectedPackage()
@@ -691,7 +665,7 @@ void RepositoryWindow::uninstallSelectedPackage()
             int uninstalled = 0, failed = 0;
             for (auto* pkg : toUninstall)
             {
-                auto installDir = repositoryManager.getPackageInstallDirectory(*pkg);
+                auto installDir = repositoryManager->getPackageInstallDirectory(*pkg);
                 if (installDir.exists() && installDir.deleteRecursively())
                     uninstalled++;
                 else
@@ -719,7 +693,7 @@ void RepositoryWindow::uninstallAllPackages()
 
     int installedCount = 0;
     for (const auto& package : allPackages)
-        if (repositoryManager.isPackageInstalled(package))
+        if (repositoryManager->isPackageInstalled(package))
             installedCount++;
 
     if (installedCount == 0)
@@ -757,9 +731,9 @@ void RepositoryWindow::uninstallAllPackages()
 
             for (const auto& package : allPackages)
             {
-                if (repositoryManager.isPackageInstalled(package))
+                if (repositoryManager->isPackageInstalled(package))
                 {
-                    auto installDir = repositoryManager.getPackageInstallDirectory(package);
+                    auto installDir = repositoryManager->getPackageInstallDirectory(package);
                     if (installDir.exists() && installDir.deleteRecursively())
                         uninstalled++;
                     else
@@ -798,7 +772,7 @@ void RepositoryWindow::updateInstallAllButtonText()
 
     int installedCount = 0;
     for (const auto& package : allPackages)
-        if (repositoryManager.isPackageInstalled(package))
+        if (repositoryManager->isPackageInstalled(package))
             installedCount++;
 
     if (installedCount == static_cast<int>(allPackages.size()))
@@ -831,7 +805,7 @@ void RepositoryWindow::updateButtonsForSelection()
         {
             if (auto* pkg = item->getPackage())
             {
-                if (repositoryManager.isPackageInstalled(*pkg))
+                if (repositoryManager->isPackageInstalled(*pkg))
                 {
                     hasInstalledPackage = true;
                     return;
@@ -899,21 +873,21 @@ RepositoryWindow::collectPackagesFromTreeItem(RepositoryTreeItem* item, bool ins
         {
             if (auto* pkg = treeItem->getPackage())
             {
-                bool isInstalled = repositoryManager.isPackageInstalled(*pkg);
+                bool isInstalled = repositoryManager->isPackageInstalled(*pkg);
 
                 // Skip based on operation type
                 if (installedOnly ? !isInstalled : isInstalled)
                     return;
 
                 // Skip pinned packages
-                if (repositoryManager.isPackagePinned(*pkg))
+                if (repositoryManager->isPackagePinned(*pkg))
                 {
                     result.skippedPinned++;
                     return;
                 }
 
                 // Skip ignored packages
-                if (repositoryManager.isPackageIgnored(*pkg))
+                if (repositoryManager->isPackageIgnored(*pkg))
                 {
                     result.skippedIgnored++;
                     return;
@@ -976,7 +950,7 @@ void RepositoryWindow::executeBatchOperation(
         return;
 
     // Reset cancellation flag before starting
-    repositoryManager.shouldCancelInstallation.store(false);
+    repositoryManager->shouldCancelInstallation.store(false);
 
     setButtonsEnabled(false);
 
@@ -1051,9 +1025,9 @@ void RepositoryWindow::executeBatchOperation(
         };
 
         if (isInstall)
-            repositoryManager.installPackage(package, callback);
+            repositoryManager->installPackage(package, callback);
         else
-            repositoryManager.uninstallPackage(package, callback);
+            repositoryManager->uninstallPackage(package, callback);
     };
 
     // Start processing first package
@@ -1090,10 +1064,42 @@ void RepositoryWindow::uninstallPackage(const RepositoryManager::JSFXPackage& pa
     );
 }
 
+void RepositoryWindow::batchInstallPackages(const std::vector<RepositoryManager::JSFXPackage>& packages)
+{
+    if (packages.empty())
+        return;
+
+    // Single confirmation for all packages
+    juce::String message = packages.size() == 1 ? "Install " + packages[0].name + "?"
+                                                : "Install " + juce::String(packages.size()) + " packages?";
+
+    showConfirmationDialog(
+        "Install Packages",
+        message,
+        [this, packages]() { executeBatchOperation(packages, "", true); }
+    );
+}
+
+void RepositoryWindow::batchUninstallPackages(const std::vector<RepositoryManager::JSFXPackage>& packages)
+{
+    if (packages.empty())
+        return;
+
+    // Single confirmation for all packages
+    juce::String message = packages.size() == 1 ? "Uninstall " + packages[0].name + "?"
+                                                : "Uninstall " + juce::String(packages.size()) + " packages?";
+
+    showConfirmationDialog(
+        "Uninstall Packages",
+        message,
+        [this, packages]() { executeBatchOperation(packages, "", false); }
+    );
+}
+
 void RepositoryWindow::showRepositoryEditor()
 {
     auto* editor = new RepositoryEditorDialog(
-        repositoryManager,
+        *repositoryManager,
         [this]()
         {
             // Refresh after editing

@@ -31,6 +31,13 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     addAndMakeVisible(presetTreeView);
     presetTreeView.onSelectionChangedCallback = [this]() { updateButtonsForSelection(); };
 
+    // Setup tree view command callback (for Enter key / double-click)
+    presetTreeView.onCommand = [this](const juce::Array<juce::TreeViewItem*>& selectedItems)
+    {
+        if (!selectedItems.isEmpty())
+            handlePresetTreeItemSelected(selectedItems[0]);
+    };
+
     // Setup status label
     addAndMakeVisible(statusLabel);
     statusLabel.setJustificationType(juce::Justification::centred);
@@ -568,6 +575,35 @@ void PresetDirectoryEditor::saveAndClose()
 
     if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
         window->exitModalState(1);
+}
+
+void PresetWindow::handlePresetTreeItemSelected(juce::TreeViewItem* item)
+{
+    if (!item)
+        return;
+
+    // Cast to PresetTreeItem to access preset data
+    if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
+    {
+        // Only load if it's an actual preset (not a directory/file/bank)
+        if (presetItem->getType() == PresetTreeItem::ItemType::Preset)
+        {
+            juce::String bankName = presetItem->getBankName();
+            juce::String presetName = presetItem->getPresetName();
+            juce::String presetData = presetItem->getPresetData();
+
+            // Track for delete operations
+            currentPresetBankName = bankName;
+            currentPresetName = presetName;
+
+            // Notify callback if set
+            if (onPresetSelected)
+                onPresetSelected(bankName, presetName, presetData);
+
+            // Also load directly via processor
+            processor.loadPresetFromBase64(presetData);
+        }
+    }
 }
 
 void PresetDirectoryEditor::cancel()

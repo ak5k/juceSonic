@@ -92,6 +92,8 @@ public:
     // Callbacks for install/uninstall operations (set by RepositoryWindow)
     std::function<void(const RepositoryManager::JSFXPackage&)> onInstallPackage;
     std::function<void(const RepositoryManager::JSFXPackage&)> onUninstallPackage;
+    std::function<void(const std::vector<RepositoryManager::JSFXPackage>&)> onBatchInstallPackages;
+    std::function<void(const std::vector<RepositoryManager::JSFXPackage>&)> onBatchUninstallPackages;
     std::function<void()> onSelectionChangedCallback;
 
     // Refresh repository data

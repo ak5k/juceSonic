@@ -20,6 +20,28 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 project(juceSonic VERSION 0.1.0 LANGUAGES CXX C)
 
 # ==============================================================================
+# Configure Config.h from Config.h.in
+# ==============================================================================
+
+# Set build target variables for Config.h
+set(JUCESONIC_VST3_BUILD ON)
+set(JUCESONIC_AU_BUILD ON)
+set(JUCESONIC_STANDALONE_BUILD ON)
+
+# Default repository URL for JSFX package index
+set(JUCESONIC_DEFAULT_REPO_URL "https://raw.githubusercontent.com/ak5k/jsfx-index/main/index.json")
+
+# Generate Config.h from Config.h.in
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Config.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/Config.h"
+    @ONLY
+)
+
+# Add generated directory to include path (will be set for targets later)
+set(GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+# ==============================================================================
 # Submodule and Dependency Initialization (runs only on first successful configure)
 # ==============================================================================
 
@@ -156,6 +178,12 @@ file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/*.h)
 # Exclude StandaloneApp.cpp from the main source files - it's only for standalone builds
 target_sources(${PROJECT_NAME} PRIVATE ${SOURCE_FILES})
 
+# Add generated include directory (for Config.h)
+target_include_directories(${PROJECT_NAME}
+    PRIVATE
+        ${GENERATED_INCLUDE_DIR}
+)
+
 # Add StandaloneApp.cpp only to the Standalone target
 target_sources(${PROJECT_NAME}_Standalone PRIVATE src/StandaloneApp.cpp)
 
@@ -205,6 +233,9 @@ if(NOT DEFINED JUCESONIC_REPO_URL)
     set(JUCESONIC_REPO_URL "${JUCESONIC_REPO_URL}" CACHE STRING "GitHub repository URL for version checking")
 endif()
 
+# Note: JUCESONIC_REPO_URL is now embedded in Config.h via configure_file()
+# No need to pass it as a compile definition
+
 target_compile_definitions(${PROJECT_NAME}
     PUBLIC
         # JUCE_WEB_BROWSER and JUCE_USE_CURL would be on by default, but you might not need them.
@@ -213,7 +244,8 @@ target_compile_definitions(${PROJECT_NAME}
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
     PRIVATE
-        JUCESONIC_REPO_URL="${JUCESONIC_REPO_URL}")
+        # JUCESONIC_REPO_URL is now defined in Config.h via configure_file()
+)
 
 # ==============================================================================
 # Collect and Combine License Files

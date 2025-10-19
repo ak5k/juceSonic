@@ -5,6 +5,9 @@
 #include "RepositoryTreeView.h"
 #include "JuceSonicLookAndFeel.h"
 
+// Forward declaration
+class AudioPluginAudioProcessor;
+
 /**
  * @brief Window for managing JSFX repositories
  *
@@ -12,13 +15,15 @@
  * - Add/remove repository URLs
  * - Browse available JSFX from repositories
  * - Install JSFX packages
+ *
+ * Self-contained component that manages its own RepositoryManager instance
  */
 class RepositoryWindow
     : public juce::Component
     , private juce::Timer
 {
 public:
-    explicit RepositoryWindow(RepositoryManager& repoManager);
+    explicit RepositoryWindow(AudioPluginAudioProcessor& processor);
     ~RepositoryWindow() override;
 
     void paint(juce::Graphics& g) override;
@@ -43,9 +48,12 @@ private:
     // Package operations (delegated to RepositoryTreeView)
     void installPackage(const RepositoryManager::JSFXPackage& package);
     void uninstallPackage(const RepositoryManager::JSFXPackage& package);
+    void batchInstallPackages(const std::vector<RepositoryManager::JSFXPackage>& packages);
+    void batchUninstallPackages(const std::vector<RepositoryManager::JSFXPackage>& packages);
 
 private:
-    RepositoryManager& repositoryManager;
+    AudioPluginAudioProcessor& processor;
+    std::unique_ptr<RepositoryManager> repositoryManager;
 
     // UI Components
     juce::TextButton manageReposButton;

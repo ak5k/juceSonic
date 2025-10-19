@@ -572,9 +572,15 @@ void RepositoryTreeView::installFromTreeItems(const juce::Array<juce::TreeViewIt
     for (auto* item : items)
         collectPackages(item);
 
-    // Install collected packages (this will be called by RepositoryWindow)
-    for (const auto& pkg : packages)
-        installPackage(pkg);
+    // Use batch callback if available (single confirmation for all packages)
+    if (onBatchInstallPackages)
+        onBatchInstallPackages(packages);
+    else
+    {
+        // Fallback to individual callbacks (one confirmation per package)
+        for (const auto& pkg : packages)
+            installPackage(pkg);
+    }
 }
 
 void RepositoryTreeView::uninstallFromTreeItems(const juce::Array<juce::TreeViewItem*>& items)
@@ -598,8 +604,15 @@ void RepositoryTreeView::uninstallFromTreeItems(const juce::Array<juce::TreeView
     for (auto* item : items)
         collectPackages(item);
 
-    for (const auto& pkg : packages)
-        uninstallPackage(pkg);
+    // Use batch callback if available (single confirmation for all packages)
+    if (onBatchUninstallPackages)
+        onBatchUninstallPackages(packages);
+    else
+    {
+        // Fallback to individual callbacks (one confirmation per package)
+        for (const auto& pkg : packages)
+            uninstallPackage(pkg);
+    }
 }
 
 void RepositoryTreeView::pinAllFromTreeItems(const juce::Array<juce::TreeViewItem*>& items)
