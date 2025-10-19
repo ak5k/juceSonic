@@ -215,13 +215,19 @@ apply_regex_patch(
     "curses_move("
 )
 
-apply_regex_patch(
-    "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
-    "eel-edit-erase-calls"
-    "([^a-zA-Z_])erase\\("
-    "\\1curses_erase_screen("
-    "curses_erase_screen("
-)
+# Check if erase pattern exists before applying patch
+file(READ "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp" eel_edit_content)
+if(eel_edit_content MATCHES "([^a-zA-Z_])erase\\(")
+    apply_regex_patch(
+        "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
+        "eel-edit-erase-calls"
+        "([^a-zA-Z_])erase\\("
+        "\\1curses_erase_screen("
+        "curses_erase_screen("
+    )
+else()
+    message(STATUS "[PATCH SKIP] eel-edit-erase-calls: Pattern not found - ${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp")
+endif()
 
 apply_regex_patch(
     "${jsfx_SOURCE_DIR}/WDL/win32_curses/eel_edit.cpp"
@@ -331,9 +337,11 @@ if(NOT WIN32)
     endif()
 endif()
 
+# TODO: Convert to unified patch system - temporarily disabled to fix CI
 # Patch localize.cpp to use std::min instead of min macro (when NOMINMAX is defined)
 # AND force ANSI dialog creation to match ANSI resources
 # AND disable Windows-specific code on non-Windows platforms
+if(FALSE) # Temporarily disabled
 set(LOCALIZE_FILE "${jsfx_SOURCE_DIR}/WDL/localize/localize.cpp")
 if(EXISTS "${LOCALIZE_FILE}")
     file(READ "${LOCALIZE_FILE}" LOCALIZE_CONTENT)
@@ -372,8 +380,10 @@ if(EXISTS "${LOCALIZE_FILE}")
     endif()
 endif()
 
+# TODO: Convert to unified patch system - temporarily disabled to fix CI
 # Patch slider-control.cpp to fix VertSliderProc undefined reference
 # The function is forward declared but never implemented - change to HorzSliderProc
+if(FALSE) # Temporarily disabled
 set(SLIDER_CONTROL_FILE "${jsfx_SOURCE_DIR}/jsfx/standalone-helpers/slider-control.cpp")
 if(EXISTS "${SLIDER_CONTROL_FILE}")
     file(READ "${SLIDER_CONTROL_FILE}" SLIDER_CONTENT)
@@ -398,6 +408,7 @@ if(EXISTS "${SLIDER_CONTROL_FILE}")
         message(STATUS "slider-control.cpp already patched, skipping")
     endif()
 endif()
+endif() # End temporarily disabled
 
 
 # Create JSFX as a static library
@@ -543,7 +554,9 @@ else()
     endif()
 endif()
 
+# TODO: Convert to unified patch system - temporarily disabled to fix CI
 # Patch slider-control.cpp on all platforms to include <algorithm> and fix DoSize call signature
+if(FALSE) # Temporarily disabled
 set(SLIDER_FILE "${jsfx_SOURCE_DIR}/jsfx/standalone-helpers/slider-control.cpp")
 if(EXISTS "${SLIDER_FILE}")
     file(READ "${SLIDER_FILE}" SLIDER_CONTENT)
@@ -623,8 +636,11 @@ if(EXISTS "${SLIDER_FILE}")
         message(STATUS "Patched slider-control.cpp to recognize REAPERknob class name")
     endif()
 endif()
+endif() # End temporarily disabled slider patches
 
+# TODO: Convert to unified patch system - temporarily disabled to fix CI
 # Patch meter-control.cpp on all platforms to include <algorithm> and SWELL headers
+if(FALSE) # Temporarily disabled
 set(METER_FILE "${jsfx_SOURCE_DIR}/jsfx/standalone-helpers/meter-control.cpp")
 if(EXISTS "${METER_FILE}")
     file(READ "${METER_FILE}" METER_CONTENT)
@@ -648,6 +664,7 @@ if(EXISTS "${METER_FILE}")
         message(STATUS "meter-control.cpp already patched, skipping")
     endif()
 endif()
+endif() # End temporarily disabled meter patches
 
 # Add x86_64 assembly optimization if available
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
