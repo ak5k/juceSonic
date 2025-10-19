@@ -237,6 +237,8 @@ else()
         $<$<AND:$<COMPILE_LANGUAGE:C,CXX>,$<PLATFORM_ID:Darwin>>:-Wno-deprecated>
         $<$<AND:$<COMPILE_LANGUAGE:C,CXX>,$<PLATFORM_ID:Darwin>>:-Wno-switch>
         $<$<AND:$<COMPILE_LANGUAGE:C,CXX>,$<PLATFORM_ID:Darwin>>:-Wno-c++11-narrowing>
+        # ARM architectures default to unsigned char, but WDL expects signed char
+        $<$<AND:$<COMPILE_LANGUAGE:C,CXX>,$<OR:$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},aarch64>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm>>>:-fsigned-char>
     )
 endif()
 
