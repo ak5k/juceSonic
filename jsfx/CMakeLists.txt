@@ -195,12 +195,8 @@ endif()
 if(NOT EEL2_USE_GCC_ASM)
     eel2_add_assembly_to_target(jsfx)
 else()
-    # GCC inline assembly is included via nseel-cfunc.c - just add the required defines to that file
-    set_source_files_properties(${jsfx_SOURCE_DIR}/WDL/eel2/nseel-cfunc.c
-        PROPERTIES 
-            COMPILE_DEFINITIONS "NSEEL_RAM_BLOCKS_LOG2=11;NSEEL_RAM_ITEMSPERBLOCK_LOG2=16;NSEEL_RAM_BLOCKS=(1<<11);NSEEL_RAM_ITEMSPERBLOCK=(1<<16);EEL_F_SIZE=8"
-    )
-    message(STATUS "EEL2: GCC inline assembly will be included via nseel-cfunc.c (with required defines)")
+    # GCC inline assembly is included via nseel-cfunc.c - no additional sources or defines needed
+    message(STATUS "EEL2: GCC inline assembly will be included via nseel-cfunc.c")
 endif()
 
 # Set compiler flags based on Makefile
