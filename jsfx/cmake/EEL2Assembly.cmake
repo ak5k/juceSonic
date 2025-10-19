@@ -259,8 +259,8 @@ else()
     endif()
 endif()
 
-# Configure assembler (skip if using pre-compiled object)
-if(NOT EEL2_USE_PRECOMPILED)
+# Configure assembler (skip if using pre-compiled object or GCC inline assembly)
+if(NOT EEL2_USE_PRECOMPILED AND NOT EEL2_USE_GCC_ASM)
     # Configure NASM for source compilation
     if(NOT NASM_EXECUTABLE OR NOT EXISTS "${NASM_EXECUTABLE}")
         message(FATAL_ERROR "EEL2: NASM executable not found")
