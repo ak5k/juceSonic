@@ -106,6 +106,69 @@ foreach(CURSES_FILE
     endif()
 endforeach()
 
+# Patch gzguts.h to fix missing unistd.h include on macOS/Unix systems
+# This fixes compilation errors with undeclared functions: lseek, read, write, close
+set(GZGUTS_FILE "${jsfx_SOURCE_DIR}/WDL/zlib/gzguts.h")
+if(EXISTS "${GZGUTS_FILE}")
+    file(READ "${GZGUTS_FILE}" GZGUTS_CONTENT)
+    # Only patch if not already patched (check for unistd.h include after fcntl.h)
+    string(FIND "${GZGUTS_CONTENT}" "#if !defined(_WIN32)\n#include <unistd.h>\n#endif" GZGUTS_PATCH_FOUND)
+    if(GZGUTS_PATCH_FOUND EQUAL -1)
+        message(STATUS "Patching gzguts.h to include unistd.h on non-Windows platforms")
+        # Add unistd.h include for POSIX systems after fcntl.h
+        string(REPLACE 
+            "#ifndef _POSIX_SOURCE\n#define _POSIX_SOURCE\n#endif\n#include <fcntl.h>"
+            "#ifndef _POSIX_SOURCE\n#define _POSIX_SOURCE\n#endif\n#include <fcntl.h>\n\n#if !defined(_WIN32)\n#include <unistd.h>\n#endif"
+            GZGUTS_CONTENT "${GZGUTS_CONTENT}")
+        file(WRITE "${GZGUTS_FILE}" "${GZGUTS_CONTENT}")
+        message(STATUS "gzguts.h patched successfully")
+    else()
+        message(STATUS "gzguts.h already patched, skipping")
+    endif()
+endif()
+
+# Patch pngpriv.h to fix fp.h include issue on modern macOS
+# This prevents the "fp.h file not found" error by using math.h instead
+set(PNGPRIV_FILE "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h")
+if(EXISTS "${PNGPRIV_FILE}")
+    file(READ "${PNGPRIV_FILE}" PNGPRIV_CONTENT)
+    # Only patch if not already patched (check for !defined(__APPLE__) condition)
+    string(FIND "${PNGPRIV_CONTENT}" "(defined(TARGET_OS_MAC) && !defined(__APPLE__))" PNGPRIV_PATCH_FOUND)
+    if(PNGPRIV_PATCH_FOUND EQUAL -1)
+        message(STATUS "Patching pngpriv.h to exclude modern macOS from using fp.h")
+        # Modify the condition to exclude modern macOS (which defines __APPLE__)
+        string(REPLACE 
+            "|| defined(TARGET_OS_MAC)"
+            "|| (defined(TARGET_OS_MAC) && !defined(__APPLE__))"
+            PNGPRIV_CONTENT "${PNGPRIV_CONTENT}")
+        file(WRITE "${PNGPRIV_FILE}" "${PNGPRIV_CONTENT}")
+        message(STATUS "pngpriv.h patched successfully")
+    else()
+        message(STATUS "pngpriv.h already patched, skipping")
+    endif()
+endif()
+
+# Patch pngpriv.h header inclusion order - pngstruct.h must come before pnginfo.h
+# This fixes "unknown type name 'png_colorspace'" error
+set(PNGPRIV_HEADER_ORDER_FILE "${jsfx_SOURCE_DIR}/WDL/libpng/pngpriv.h")
+if(EXISTS "${PNGPRIV_HEADER_ORDER_FILE}")
+    file(READ "${PNGPRIV_HEADER_ORDER_FILE}" PNGPRIV_ORDER_CONTENT)
+    # Only patch if not already fixed (check for pngstruct.h before pnginfo.h)
+    string(FIND "${PNGPRIV_ORDER_CONTENT}" "#include \"pnginfo.h\"\n#include \"pngstruct.h\"" HEADER_ORDER_ISSUE)
+    if(NOT HEADER_ORDER_ISSUE EQUAL -1)
+        message(STATUS "Fixing pngpriv.h header inclusion order (pngstruct.h before pnginfo.h)")
+        # Fix the header order - swap the two includes
+        string(REPLACE 
+            "#include \"pnginfo.h\"\n#include \"pngstruct.h\""
+            "#include \"pngstruct.h\"\n#include \"pnginfo.h\""
+            PNGPRIV_ORDER_CONTENT "${PNGPRIV_ORDER_CONTENT}")
+        file(WRITE "${PNGPRIV_HEADER_ORDER_FILE}" "${PNGPRIV_ORDER_CONTENT}")
+        message(STATUS "pngpriv.h header order fixed successfully")
+    else()
+        message(STATUS "pngpriv.h header order already correct, skipping")
+    endif()
+endif()
+
 # Patch jsfx_api.cpp to disable DllMain for standalone builds
 # Apply on all platforms to ensure consistent API
 set(JSFX_API_FILE "${jsfx_SOURCE_DIR}/jsfx/jsfx_api.cpp")
@@ -244,6 +307,7 @@ add_library(${PROJECT_NAME} STATIC)
 file(GLOB ZLIB_SOURCES "${jsfx_SOURCE_DIR}/WDL/zlib/*.c")
 file(GLOB LIBPNG_SOURCES "${jsfx_SOURCE_DIR}/WDL/libpng/*.c")
 file(GLOB LIBJPEG_SOURCES "${jsfx_SOURCE_DIR}/WDL/jpeglib/*.c")
+list(REMOVE_ITEM LIBJPEG_SOURCES "${jsfx_SOURCE_DIR}/WDL/jpeglib/example.c")
 file(GLOB GIFLIB_SOURCES "${jsfx_SOURCE_DIR}/WDL/giflib/*.c")
 
 # Add LICE sources (required for all platforms - core graphics library)
