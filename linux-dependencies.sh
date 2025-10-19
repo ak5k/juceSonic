@@ -46,6 +46,9 @@ DEPENDENCIES=(
     # OpenGL/Mesa
     "libglu1-mesa-dev"
     "mesa-common-dev"
+
+    # Assembler for optimized builds
+    nasm
 )
 
 # Export the array so it can be sourced by other scripts

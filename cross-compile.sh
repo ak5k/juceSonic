@@ -39,6 +39,17 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Check if running as root for apt operations
+check_sudo() {
+    if ! sudo -n true 2>/dev/null; then
+        log_warn "This script requires sudo access for installing packages"
+        sudo -v || {
+            log_error "Failed to obtain sudo access"
+            exit 1
+        }
+    fi
+}
+
 # Function to check and fix broken packages
 fix_broken_packages() {
     log_info "Checking for broken packages..."
@@ -278,17 +289,6 @@ TOOLCHAIN_FILE="$PROJECT_ROOT/cmake-toolchain-$TARGET_ARCH.cmake"
 
 log_info "Build directory: $BUILD_DIR"
 log_info "Using system multiarch (no separate sysroot)"
-
-# Check if running as root for apt operations
-check_sudo() {
-    if ! sudo -n true 2>/dev/null; then
-        log_warn "This script requires sudo access for installing packages"
-        sudo -v || {
-            log_error "Failed to obtain sudo access"
-            exit 1
-        }
-    fi
-}
 
 # Setup multiarch and install cross-compilation tools
 setup_cross_tools() {
