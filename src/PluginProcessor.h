@@ -106,6 +106,11 @@ public:
         return sxInstance;
     }
 
+    auto* getSXInstancePtr() const noexcept
+    {
+        return sxInstance;
+    }
+
     bool loadJSFX(const juce::File& jsfxFile);
     void unloadJSFX();
 
@@ -159,6 +164,13 @@ public:
     // - Host automation/preset recall
     // - Any other preset loading scenario
     bool loadPresetFromBase64(const juce::String& base64Data);
+
+    // Get current JSFX state as base64 encoded string
+    juce::String getCurrentStateAsBase64() const;
+
+    // Save current state as a user preset
+    // Returns true on success, false on failure
+    bool saveUserPreset(const juce::String& bankName, const juce::String& presetName);
 
 private:
     // Helper to restore routing from encoded string

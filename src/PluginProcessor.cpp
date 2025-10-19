@@ -180,6 +180,206 @@ bool AudioPluginAudioProcessor::loadPresetFromBase64(const juce::String& base64D
     return true;
 }
 
+juce::String AudioPluginAudioProcessor::getCurrentStateAsBase64() const
+{
+    auto* instance = getSXInstancePtr();
+    if (!instance)
+        return {};
+
+    // Get state from JSFX using sx_saveState
+    int stateLength = 0;
+    const char* stateText = JesusonicAPI.sx_saveState(instance, &stateLength);
+
+    if (!stateText || stateLength <= 0)
+        return {};
+
+    // Convert state text to base64
+    juce::String stateString(stateText, stateLength);
+    juce::MemoryOutputStream outStream;
+    outStream.writeString(stateString);
+
+    return juce::Base64::toBase64(outStream.getData(), outStream.getDataSize());
+}
+
+bool AudioPluginAudioProcessor::saveUserPreset(const juce::String& bankName, const juce::String& presetName)
+{
+    // Get current JSFX path
+    juce::String jsfxPath = getCurrentJSFXPath();
+    if (jsfxPath.isEmpty())
+        return false;
+
+    juce::File jsfxFile(jsfxPath);
+    juce::String jsfxFilename = jsfxFile.getFileNameWithoutExtension();
+
+    // Get current state as base64
+    juce::String presetData = getCurrentStateAsBase64();
+    if (presetData.isEmpty())
+        return false;
+
+    // Build user presets directory: <appdata>/juceSonic/data/user/<jsfx-filename>/
+    auto userPresetsDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                              .getChildFile(PluginConstants::ApplicationName)
+                              .getChildFile(PluginConstants::DataDirectoryName)
+                              .getChildFile(PluginConstants::UserPresetsDirectoryName)
+                              .getChildFile(jsfxFilename);
+
+    // Create directory if it doesn't exist
+    if (!userPresetsDir.exists() && !userPresetsDir.createDirectory())
+        return false;
+
+    // Target file: user/<jsfx-filename>/<bankname>.rpl
+    auto presetFile = userPresetsDir.getChildFile(bankName + ".rpl");
+
+    // Load existing content or create new
+    juce::String fileContent;
+    bool bankExists = false;
+    juce::String beforeBank, bankContent, afterBank;
+
+    if (presetFile.existsAsFile())
+    {
+        fileContent = presetFile.loadFileAsString();
+
+        // Find the bank in the file
+        juce::String bankTag = "<REAPER_PRESET_LIBRARY `" + bankName + "`";
+        int bankStart = fileContent.indexOf(bankTag);
+
+        if (bankStart >= 0)
+        {
+            bankExists = true;
+            beforeBank = fileContent.substring(0, bankStart);
+
+            // Find the end of this bank (matching closing >)
+            int openTagEnd = bankStart + bankTag.length();
+            while (openTagEnd < fileContent.length() && fileContent[openTagEnd] != '>')
+                openTagEnd++;
+
+            if (openTagEnd < fileContent.length())
+            {
+                int depth = 1;
+                int bankEnd = -1;
+                const char* data = fileContent.toRawUTF8();
+
+                for (int i = openTagEnd + 1; i < fileContent.length() && depth > 0; i++)
+                {
+                    char c = data[i];
+                    if (c == '`' || c == '"' || c == '\'')
+                    {
+                        char quote = c;
+                        i++;
+                        while (i < fileContent.length() && data[i] != quote)
+                            i++;
+                        continue;
+                    }
+                    if (c == '<')
+                        depth++;
+                    else if (c == '>')
+                    {
+                        depth--;
+                        if (depth == 0)
+                        {
+                            bankEnd = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (bankEnd >= 0)
+                {
+                    bankContent = fileContent.substring(bankStart, bankEnd + 1);
+                    afterBank = fileContent.substring(bankEnd + 1);
+
+                    // Check if preset already exists in this bank
+                    juce::String presetTag = "<PRESET `" + presetName + "`";
+                    int presetStart = bankContent.indexOf(presetTag);
+
+                    if (presetStart >= 0)
+                    {
+                        // Replace existing preset
+                        int presetTagEnd = presetStart + presetTag.length();
+                        while (presetTagEnd < bankContent.length() && bankContent[presetTagEnd] != '>')
+                            presetTagEnd++;
+
+                        if (presetTagEnd < bankContent.length())
+                        {
+                            int pDepth = 1;
+                            int presetEnd = -1;
+                            const char* bankData = bankContent.toRawUTF8();
+
+                            for (int i = presetTagEnd + 1; i < bankContent.length() && pDepth > 0; i++)
+                            {
+                                char c = bankData[i];
+                                if (c == '`' || c == '"' || c == '\'')
+                                {
+                                    char quote = c;
+                                    i++;
+                                    while (i < bankContent.length() && bankData[i] != quote)
+                                        i++;
+                                    continue;
+                                }
+                                if (c == '<')
+                                    pDepth++;
+                                else if (c == '>')
+                                {
+                                    pDepth--;
+                                    if (pDepth == 0)
+                                    {
+                                        presetEnd = i;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (presetEnd >= 0)
+                            {
+                                // Replace the preset
+                                juce::String newPreset =
+                                    "  <PRESET `" + presetName + "`\n    " + presetData + "\n  >\n";
+                                bankContent = bankContent.substring(0, presetStart)
+                                            + newPreset
+                                            + bankContent.substring(presetEnd + 1);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Add new preset to existing bank (before the closing >)
+                        juce::String newPreset = "  <PRESET `" + presetName + "`\n    " + presetData + "\n  >\n";
+                        bankContent = bankContent.substring(0, bankEnd) + newPreset + ">";
+                    }
+                }
+            }
+        }
+    }
+
+    // Build the final content
+    if (bankExists)
+    {
+        fileContent = beforeBank + bankContent + afterBank;
+    }
+    else
+    {
+        // Create new bank
+        juce::String newBank = "<REAPER_PRESET_LIBRARY `" + bankName + "`\n";
+        newBank += "  <PRESET `" + presetName + "`\n    " + presetData + "\n  >\n";
+        newBank += ">\n";
+
+        if (fileContent.isEmpty())
+            fileContent = newBank;
+        else
+            fileContent += "\n" + newBank;
+    }
+
+    // Write the file
+    if (!presetFile.replaceWithText(fileContent))
+        return false;
+
+    // Trigger preset refresh
+    if (presetLoader)
+        presetLoader->requestRefresh(jsfxPath);
+
+    return true;
+}
+
 void AudioPluginAudioProcessor::timerCallback()
 {
     // Check if latency has changed and update the host

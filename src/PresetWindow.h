@@ -3,6 +3,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PresetTreeView.h"
 #include "JuceSonicLookAndFeel.h"
+#include <Config.h>
 
 // Forward declaration
 class AudioPluginAudioProcessor;
@@ -59,6 +60,7 @@ private:
     void showDirectoryEditor();
     void updateButtonsForSelection();
     void handlePresetTreeItemSelected(juce::TreeViewItem* item);
+    void saveCurrentPreset();
 
     // Load/save directory paths from persistent storage
     juce::StringArray getPresetDirectories() const;
@@ -70,6 +72,7 @@ private:
     juce::TextButton importButton{"Import"};
     juce::TextButton exportButton{"Export"};
     juce::TextButton deleteButton{"Delete"};
+    juce::TextButton saveButton{"Save"};
     juce::TextButton directoriesButton{"Directories"};
     juce::TextButton refreshButton{"Refresh"};
 

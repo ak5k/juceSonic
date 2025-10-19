@@ -62,6 +62,12 @@ static constexpr const char* RepositoryUrlsPreferenceKey = "repositoryUrls";
 
 // Preset directory settings
 static constexpr const char* PresetDirectoriesPreferenceKey = "presetDirectories";
+
+// Data directory structure
+static constexpr const char* DataDirectoryName = "data";
+static constexpr const char* LocalPresetsDirectoryName = "local";
+static constexpr const char* RemotePresetsDirectoryName = "remote";
+static constexpr const char* UserPresetsDirectoryName = "user";
 } // namespace PluginConstants
 
 // ==============================================================================

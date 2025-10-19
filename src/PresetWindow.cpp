@@ -21,6 +21,9 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     addAndMakeVisible(deleteButton);
     deleteButton.onClick = [this]() { deleteSelectedPresets(); };
 
+    addAndMakeVisible(saveButton);
+    saveButton.onClick = [this]() { saveCurrentPreset(); };
+
     addAndMakeVisible(directoriesButton);
     directoriesButton.onClick = [this]() { showDirectoryEditor(); };
 
@@ -69,6 +72,8 @@ void PresetWindow::resized()
         topButtons.removeFromLeft(4);
         deleteButton.setBounds(topButtons.removeFromLeft(80));
         topButtons.removeFromLeft(4);
+        saveButton.setBounds(topButtons.removeFromLeft(80));
+        topButtons.removeFromLeft(4);
         topButtons.removeFromLeft(20); // Spacer
         directoriesButton.setBounds(topButtons.removeFromLeft(100));
         topButtons.removeFromLeft(4);
@@ -94,6 +99,7 @@ void PresetWindow::setShowManagementButtons(bool show)
     importButton.setVisible(show);
     exportButton.setVisible(show);
     deleteButton.setVisible(show);
+    saveButton.setVisible(show);
     directoriesButton.setVisible(show);
     refreshButton.setVisible(show);
     statusLabel.setVisible(show);
@@ -168,9 +174,9 @@ void PresetWindow::importPresetFile()
 
             // Build target directory: <appdata>/juceSonic/data/local/<jsfx-filename>/
             auto targetDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                 .getChildFile("juceSonic")
-                                 .getChildFile("data")
-                                 .getChildFile("local")
+                                 .getChildFile(PluginConstants::ApplicationName)
+                                 .getChildFile(PluginConstants::DataDirectoryName)
+                                 .getChildFile(PluginConstants::LocalPresetsDirectoryName)
                                  .getChildFile(jsfxFilename);
 
             // Create directory structure if needed
@@ -433,6 +439,98 @@ void PresetWindow::deleteSelectedPresets()
     );
 
     refreshPresetList();
+}
+
+void PresetWindow::saveCurrentPreset()
+{
+    // Check if JSFX is loaded
+    juce::String jsfxPath = processor.getCurrentJSFXPath();
+    if (jsfxPath.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "No JSFX Loaded",
+            "Please load a JSFX before saving a preset.",
+            "OK",
+            nullptr
+        );
+        return;
+    }
+
+    // Get default bank name from currently selected preset or use "User"
+    juce::String defaultBankName = "User";
+    juce::String defaultPresetName = "New Preset";
+
+    auto selectedItems = presetTreeView.getSelectedPresetItems();
+    if (!selectedItems.isEmpty())
+    {
+        auto* firstItem = selectedItems[0];
+        if (firstItem->getType() == PresetTreeItem::ItemType::Preset)
+        {
+            defaultBankName = firstItem->getBankName();
+            defaultPresetName = firstItem->getPresetName();
+        }
+        else if (firstItem->getType() == PresetTreeItem::ItemType::Bank)
+        {
+            defaultBankName = firstItem->getBankName();
+        }
+    }
+
+    // Create a dialog to get bank and preset name using AlertWindow async
+    auto* window =
+        new juce::AlertWindow("Save Preset", "Enter bank and preset name:", juce::MessageBoxIconType::QuestionIcon);
+
+    window->addTextEditor("bankName", defaultBankName, "Bank Name:");
+    window->addTextEditor("presetName", defaultPresetName, "Preset Name:");
+    window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    window->enterModalState(
+        true,
+        juce::ModalCallbackFunction::create(
+            [this, window](int result)
+            {
+                if (result == 1)
+                {
+                    juce::String bankName = window->getTextEditorContents("bankName").trim();
+                    juce::String presetName = window->getTextEditorContents("presetName").trim();
+
+                    if (bankName.isEmpty())
+                        bankName = "User";
+
+                    if (presetName.isEmpty())
+                    {
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::MessageBoxIconType::WarningIcon,
+                            "Invalid Name",
+                            "Preset name cannot be empty.",
+                            "OK",
+                            nullptr
+                        );
+                        return;
+                    }
+
+                    // Save the preset
+                    if (processor.saveUserPreset(bankName, presetName))
+                    {
+                        statusLabel.setText("Saved preset: " + presetName, juce::dontSendNotification);
+                        // The preset loader will automatically refresh when saveUserPreset triggers it
+                    }
+                    else
+                    {
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::MessageBoxIconType::WarningIcon,
+                            "Save Failed",
+                            "Failed to save preset. Please check that the JSFX is loaded correctly.",
+                            "OK",
+                            nullptr
+                        );
+                    }
+                }
+            }
+        ),
+        true
+    );
 }
 
 void PresetWindow::showDirectoryEditor()

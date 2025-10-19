@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SearchableTreeView.h"
+#include <Config.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
 // Forward declarations
@@ -182,6 +183,7 @@ private:
         bool isDefaultRoot = false;  // True if this is the default install location
         bool isExternalRoot = false; // True if this is an external JSFX directory
         bool isRemoteRoot = false;   // True if this is from remote/ directory
+        bool isUserRoot = false;     // True if this is from user/ directory
     };
 
     std::vector<DirectoryEntry> presetDirectories;

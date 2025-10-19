@@ -65,25 +65,14 @@ void PresetTreeView::loadPresets(const juce::StringArray& directoryPaths)
 {
     presetDirectories.clear();
 
-    // Determine which directory is the default install root
-    auto defaultInstallRoot = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                  .getChildFile("juceSonic")
-                                  .getChildFile("data")
-                                  .getChildFile("local")
-                                  .getFullPathName();
-
-    // Determine the data directory to identify external directories
+    // Determine directories using constants
     auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                       .getChildFile("juceSonic")
-                       .getChildFile("data")
-                       .getFullPathName();
+                       .getChildFile(PluginConstants::ApplicationName)
+                       .getChildFile(PluginConstants::DataDirectoryName);
 
-    // Determine the remote directory
-    auto remoteDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                         .getChildFile("juceSonic")
-                         .getChildFile("data")
-                         .getChildFile("remote")
-                         .getFullPathName();
+    auto defaultInstallRoot = dataDir.getChildFile(PluginConstants::LocalPresetsDirectoryName).getFullPathName();
+    auto dataDirPath = dataDir.getFullPathName();
+    auto remoteDir = dataDir.getChildFile(PluginConstants::RemotePresetsDirectoryName).getFullPathName();
 
     for (const auto& path : directoryPaths)
     {
@@ -103,7 +92,7 @@ void PresetTreeView::loadPresets(const juce::StringArray& directoryPaths)
         dirEntry.isRemoteRoot = isRemote;
 
         // Check if this is an external directory (outside the data directory)
-        bool isExternal = !isDefaultRoot && !isRemote && !path.startsWith(dataDir);
+        bool isExternal = !isDefaultRoot && !isRemote && !path.startsWith(dataDirPath);
         dirEntry.isExternalRoot = isExternal;
 
         // Scan recursively for default root and remote directories
@@ -139,20 +128,14 @@ void PresetTreeView::loadPresetsFromValueTree(const juce::ValueTree& presetsNode
         return;
     }
 
-    // Determine directory paths for categorization
-    auto defaultInstallRoot = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                  .getChildFile("juceSonic")
-                                  .getChildFile("data")
-                                  .getChildFile("local");
-
+    // Determine directory paths for categorization using constants
     auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                       .getChildFile("juceSonic")
-                       .getChildFile("data");
+                       .getChildFile(PluginConstants::ApplicationName)
+                       .getChildFile(PluginConstants::DataDirectoryName);
 
-    auto remoteDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                         .getChildFile("juceSonic")
-                         .getChildFile("data")
-                         .getChildFile("remote");
+    auto defaultInstallRoot = dataDir.getChildFile(PluginConstants::LocalPresetsDirectoryName);
+    auto remoteDir = dataDir.getChildFile(PluginConstants::RemotePresetsDirectoryName);
+    auto userDir = dataDir.getChildFile(PluginConstants::UserPresetsDirectoryName);
 
     // Group files by their scan root directory
     std::map<juce::File, std::vector<FileEntry>> filesByScanRoot;
@@ -205,16 +188,24 @@ void PresetTreeView::loadPresetsFromValueTree(const juce::ValueTree& presetsNode
 
         if (!fileEntry.banks.empty())
         {
-            // Determine which scan root this file belongs to
+            // For all preset types, group by the JSFX directory (parent of the .rpl file)
+            // This creates hierarchy: category/ -> jsfx-name/ -> file.rpl
             juce::File scanRoot;
 
-            if (fileEntry.file.isAChildOf(defaultInstallRoot))
+            if (fileEntry.file.isAChildOf(userDir))
             {
-                scanRoot = defaultInstallRoot;
+                // User presets: use the immediate parent directory (the JSFX folder)
+                scanRoot = fileEntry.file.getParentDirectory();
+            }
+            else if (fileEntry.file.isAChildOf(defaultInstallRoot))
+            {
+                // Local presets: use the immediate parent directory (the JSFX folder)
+                scanRoot = fileEntry.file.getParentDirectory();
             }
             else if (fileEntry.file.isAChildOf(remoteDir))
             {
-                scanRoot = remoteDir;
+                // Remote presets: use the immediate parent directory (the JSFX folder)
+                scanRoot = fileEntry.file.getParentDirectory();
             }
             else
             {
@@ -238,13 +229,35 @@ void PresetTreeView::loadPresetsFromValueTree(const juce::ValueTree& presetsNode
         auto defaultRootPath = defaultInstallRoot.getFullPathName();
         auto remoteDirPath = remoteDir.getFullPathName();
         auto dataDirPath = dataDir.getFullPathName();
+        auto userDirPath = userDir.getFullPathName();
 
-        dirEntry.isDefaultRoot = (dirPath == defaultRootPath);
-        dirEntry.isRemoteRoot = dirPath.startsWith(remoteDirPath);
-        dirEntry.isExternalRoot = !dirEntry.isDefaultRoot && !dirEntry.isRemoteRoot && !dirPath.startsWith(dataDirPath);
+        // Check if this directory is under the user, local, or remote directory
+        dirEntry.isUserRoot = pair.first.isAChildOf(userDir) || (dirPath == userDirPath);
+        dirEntry.isDefaultRoot = pair.first.isAChildOf(defaultInstallRoot) || (dirPath == defaultRootPath);
+        dirEntry.isRemoteRoot = pair.first.isAChildOf(remoteDir) || dirPath.startsWith(remoteDirPath);
+        dirEntry.isExternalRoot = !dirEntry.isUserRoot
+                               && !dirEntry.isDefaultRoot
+                               && !dirEntry.isRemoteRoot
+                               && !dirPath.startsWith(dataDirPath);
 
         presetDirectories.push_back(dirEntry);
     }
+
+    // Sort directories: user first, then default, then remote, then external
+    std::sort(
+        presetDirectories.begin(),
+        presetDirectories.end(),
+        [](const DirectoryEntry& a, const DirectoryEntry& b)
+        {
+            if (a.isUserRoot != b.isUserRoot)
+                return a.isUserRoot; // User first
+            if (a.isDefaultRoot != b.isDefaultRoot)
+                return a.isDefaultRoot; // Default second
+            if (a.isRemoteRoot != b.isRemoteRoot)
+                return a.isRemoteRoot; // Remote third
+            return false;              // External last, maintain order
+        }
+    );
 
     refreshTree();
 }
@@ -424,116 +437,206 @@ std::unique_ptr<juce::TreeViewItem> PresetTreeView::createRootItem()
 {
     auto root = std::make_unique<PresetTreeItem>("Root", PresetTreeItem::ItemType::Directory);
 
+    // Define category roots
+    auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                       .getChildFile(PluginConstants::ApplicationName)
+                       .getChildFile(PluginConstants::DataDirectoryName);
+
+    std::map<juce::String, juce::File> categoryRoots = {
+        {  "user",   dataDir.getChildFile(PluginConstants::UserPresetsDirectoryName)},
+        { "local",  dataDir.getChildFile(PluginConstants::LocalPresetsDirectoryName)},
+        {"remote", dataDir.getChildFile(PluginConstants::RemotePresetsDirectoryName)}
+    };
+
+    // Group directories by category
+    std::map<juce::String, std::vector<DirectoryEntry>> categorizedDirs;
     for (const auto& dirEntry : presetDirectories)
-    {
-        // Determine display name based on directory type
-        juce::String displayName;
-        if (dirEntry.isDefaultRoot)
-        {
-            // Show relative path from local parent, including "local"
-            auto localParent = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                   .getChildFile("juceSonic")
-                                   .getChildFile("data")
-                                   .getChildFile("local");
-            displayName = "local/" + dirEntry.directory.getRelativePathFrom(localParent);
-        }
+        if (dirEntry.isUserRoot)
+            categorizedDirs["user"].push_back(dirEntry);
+        else if (dirEntry.isDefaultRoot)
+            categorizedDirs["local"].push_back(dirEntry);
         else if (dirEntry.isRemoteRoot)
-        {
-            // Show relative path from remote parent, including "remote"
-            auto remoteParent = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                    .getChildFile("juceSonic")
-                                    .getChildFile("data")
-                                    .getChildFile("remote");
-            displayName = "remote/" + dirEntry.directory.getRelativePathFrom(remoteParent);
-        }
-        else if (dirEntry.isExternalRoot)
-        {
-            // Show full absolute path for external
-            displayName = dirEntry.directory.getFullPathName();
-        }
-        else if (dirEntry.directory == juce::File())
-        {
-            displayName = "local"; // ValueTree-loaded presets with no physical directory
-        }
+            categorizedDirs["remote"].push_back(dirEntry);
         else
-        {
-            displayName = dirEntry.directory.getFullPathName();
-        }
+            categorizedDirs["external"].push_back(dirEntry);
 
-        DBG("  isDefault: "
-            + juce::String(dirEntry.isDefaultRoot ? "true" : "false")
-            + ", isRemote: "
-            + juce::String(dirEntry.isRemoteRoot ? "true" : "false")
-            + ", isExternal: "
-            + juce::String(dirEntry.isExternalRoot ? "true" : "false"));
-
-        auto dirItem = std::make_unique<PresetTreeItem>(
-            displayName,
-            PresetTreeItem::ItemType::Directory,
-            dirEntry.directory,
+    // Helper to add file tree (file -> banks -> presets) to a parent item
+    auto addFileTree = [this](PresetTreeItem* parent, const FileEntry& fileEntry)
+    {
+        auto fileItem = std::make_unique<PresetTreeItem>(
+            fileEntry.file.getFileName(),
+            PresetTreeItem::ItemType::File,
+            fileEntry.file,
             juce::String(),
             juce::String(),
             juce::String(),
             this
         );
 
-        for (const auto& fileEntry : dirEntry.files)
+        for (const auto& bankEntry : fileEntry.banks)
         {
-            auto fileItem = std::make_unique<PresetTreeItem>(
-                fileEntry.file.getFileNameWithoutExtension(),
-                PresetTreeItem::ItemType::File,
+            auto bankItem = std::make_unique<PresetTreeItem>(
+                bankEntry.bankName,
+                PresetTreeItem::ItemType::Bank,
                 fileEntry.file,
+                bankEntry.bankName,
+                juce::String(),
+                juce::String(),
+                this
+            );
+
+            for (const auto& presetEntry : bankEntry.presets)
+            {
+                auto presetItem = std::make_unique<PresetTreeItem>(
+                    presetEntry.preset,
+                    PresetTreeItem::ItemType::Preset,
+                    presetEntry.file,
+                    presetEntry.bank,
+                    presetEntry.preset,
+                    presetEntry.data,
+                    this
+                );
+                bankItem->addSubItem(presetItem.release());
+            }
+            fileItem->addSubItem(bankItem.release());
+        }
+        parent->addSubItem(fileItem.release());
+    };
+
+    // Helper to build full directory tree from files
+    auto buildDirectoryTree = [this, &addFileTree](
+                                  const juce::String& categoryName,
+                                  const std::vector<DirectoryEntry>& entries,
+                                  const juce::File& categoryRoot
+                              ) -> std::unique_ptr<PresetTreeItem>
+    {
+        if (entries.empty())
+            return nullptr;
+
+        auto categoryItem = std::make_unique<PresetTreeItem>(
+            categoryName,
+            PresetTreeItem::ItemType::Directory,
+            juce::File(),
+            juce::String(),
+            juce::String(),
+            juce::String(),
+            this
+        );
+
+        // Map: directory path -> (tree item, files in that directory)
+        struct DirNode
+        {
+            PresetTreeItem* item = nullptr;
+            std::vector<FileEntry> files;
+        };
+        std::map<juce::String, DirNode> dirNodes;
+
+        // Collect all directories and files
+        for (const auto& dirEntry : entries)
+        {
+            for (const auto& fileEntry : dirEntry.files)
+            {
+                juce::File fileDir = fileEntry.file.getParentDirectory();
+                dirNodes[fileDir.getFullPathName()].files.push_back(fileEntry);
+
+                // Create parent directories up to category root
+                for (juce::File dir = fileDir; dir != categoryRoot && dir.exists(); dir = dir.getParentDirectory())
+                {
+                    juce::String path = dir.getFullPathName();
+                    if (!dirNodes.count(path))
+                        dirNodes[path] = DirNode();
+                }
+            }
+        }
+
+        // Create tree items for all directories
+        for (auto& [dirPath, node] : dirNodes)
+            node.item = new PresetTreeItem(
+                juce::File(dirPath).getFileName(),
+                PresetTreeItem::ItemType::Directory,
+                juce::File(dirPath),
                 juce::String(),
                 juce::String(),
                 juce::String(),
                 this
             );
 
-            for (const auto& bankEntry : fileEntry.banks)
-            {
-                auto bankItem = std::make_unique<PresetTreeItem>(
-                    bankEntry.bankName,
-                    PresetTreeItem::ItemType::Bank,
-                    fileEntry.file,
-                    bankEntry.bankName,
-                    juce::String(),
-                    juce::String(),
-                    this
-                );
+        // Build hierarchy and add files
+        for (auto& [dirPath, node] : dirNodes)
+        {
+            juce::File dir(dirPath);
+            juce::File parentDir = dir.getParentDirectory();
 
-                for (const auto& presetEntry : bankEntry.presets)
-                {
-                    auto presetItem = std::make_unique<PresetTreeItem>(
-                        presetEntry.preset,
-                        PresetTreeItem::ItemType::Preset,
-                        presetEntry.file,
-                        presetEntry.bank,
-                        presetEntry.preset,
-                        presetEntry.data,
-                        this
-                    );
+            if (parentDir == categoryRoot || !parentDir.exists())
+                categoryItem->addSubItem(node.item);
+            else if (dirNodes.count(parentDir.getFullPathName()))
+                dirNodes[parentDir.getFullPathName()].item->addSubItem(node.item);
 
-                    bankItem->addSubItem(presetItem.release());
-                }
-
-                fileItem->addSubItem(bankItem.release());
-            }
-
-            dirItem->addSubItem(fileItem.release());
+            // Add files to this directory
+            for (const auto& fileEntry : node.files)
+                addFileTree(node.item, fileEntry);
         }
 
-        root->addSubItem(dirItem.release());
+        return categoryItem;
+    };
+
+    // Helper for external (no common root, show full paths)
+    auto buildExternalTree =
+        [this, &addFileTree](const std::vector<DirectoryEntry>& entries) -> std::unique_ptr<PresetTreeItem>
+    {
+        if (entries.empty())
+            return nullptr;
+
+        auto categoryItem = std::make_unique<PresetTreeItem>(
+            "external",
+            PresetTreeItem::ItemType::Directory,
+            juce::File(),
+            juce::String(),
+            juce::String(),
+            juce::String(),
+            this
+        );
+
+        for (const auto& dirEntry : entries)
+        {
+            auto dirItem = std::make_unique<PresetTreeItem>(
+                dirEntry.directory.getFullPathName(),
+                PresetTreeItem::ItemType::Directory,
+                dirEntry.directory,
+                juce::String(),
+                juce::String(),
+                juce::String(),
+                this
+            );
+
+            for (const auto& fileEntry : dirEntry.files)
+                addFileTree(dirItem.get(), fileEntry);
+
+            categoryItem->addSubItem(dirItem.release());
+        }
+
+        return categoryItem;
+    };
+
+    // Build tree for each category in order
+    for (const auto& category : {"user", "local", "remote", "external"})
+    {
+        if (!categorizedDirs.count(category) || categorizedDirs[category].empty())
+            continue;
+
+        auto categoryTree = (category == std::string("external"))
+                              ? buildExternalTree(categorizedDirs[category])
+                              : buildDirectoryTree(category, categorizedDirs[category], categoryRoots[category]);
+
+        if (categoryTree)
+            root->addSubItem(categoryTree.release());
     }
 
-    // Set root directory items to be open by default AFTER they're added to the tree
-    // This ensures the openness state is properly applied
-    // BUT: If we're in auto-hide mode, keep them collapsed for a cleaner initial appearance
+    // Open top-level categories by default (unless auto-hide is enabled)
     if (!isAutoHideEnabled())
-    {
         for (int i = 0; i < root->getNumSubItems(); ++i)
             if (auto* item = root->getSubItem(i))
                 item->setOpen(true);
-    }
 
     return root;
 }
