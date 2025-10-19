@@ -335,6 +335,9 @@ endif()
 # Create JSFX as a static library
 add_library(${PROJECT_NAME} STATIC)
 
+# Configure EEL2 Assembly Optimizations (REQUIRED)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/EEL2Assembly.cmake)
+
 # Add WDL image library dependencies (required for LICE image loading)
 file(GLOB ZLIB_SOURCES "${jsfx_SOURCE_DIR}/WDL/zlib/*.c")
 file(GLOB LIBPNG_SOURCES "${jsfx_SOURCE_DIR}/WDL/libpng/*.c")
@@ -475,6 +478,9 @@ else()
     endif()
 endif()
 
+# Add EEL2 assembly optimizations to the jsfx target
+eel2_add_assembly_to_target(jsfx)
+
 # Patch slider-control.cpp on all platforms to include <algorithm> and fix DoSize call signature
 set(SLIDER_FILE "${jsfx_SOURCE_DIR}/jsfx/standalone-helpers/slider-control.cpp")
 if(EXISTS "${SLIDER_FILE}")
@@ -581,40 +587,33 @@ if(EXISTS "${METER_FILE}")
     endif()
 endif()
 
-# Add x86_64 assembly optimization if available
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    if(EXISTS "${jsfx_SOURCE_DIR}/WDL/eel2/asm-nseel-x64-sse.asm")
-        # Note: This would require NASM to be available
-        # For now, we'll skip the assembly optimization
-        message(STATUS "x86_64 detected, but skipping assembly optimization (requires NASM)")
-    endif()
-endif()
-
 # Set compiler flags based on Makefile
 target_compile_definitions(jsfx PUBLIC
     WDL_FFT_REALSIZE=8
     FORCE_WIN32_CURSES        # Required for curses emulation
     WDL_NO_DEFINE_MINMAX      # Prevent SWELL from defining min/max macros
     NOMINMAX                  # Windows equivalent
-    EEL_TARGET_PORTABLE       # Use portable EEL2 (no assembly)
+    LICE_FAVOR_SPEED
     $<$<CONFIG:Debug>:_DEBUG;WDL_CHECK_FOR_NON_UTF8_FOPEN>
     $<$<CONFIG:Release>:NDEBUG>
 )
 
 # Note: _FILE_OFFSET_BITS=64 is not set as INTERFACE to avoid conflicts with JUCE's internal zlib
 # JSFX sources will compile with whatever the consuming project uses
+# Note: EEL2 assembly optimizations are configured via cmake/EEL2Assembly.cmake
 
 # Set compile flags similar to Makefile
 if(MSVC)
+    # Apply warning suppressions only to C/CXX, not to assembly files
     target_compile_options(jsfx PRIVATE
-        /wd4100
-        /wd4244
-        /wd4245
-        /wd4505
-        /wd4456
-        /wd4457
-        /wd4458
-        /wd4996  # deprecated functions
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4100>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4244>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4245>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4505>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4456>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4457>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4458>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4996>  # deprecated functions
     )
 else()
     target_compile_options(jsfx PRIVATE

@@ -86,7 +86,18 @@ jobs:
             libxrender-dev \
             libwebkit2gtk-4.1-dev \
             libglu1-mesa-dev \
-            mesa-common-dev
+            mesa-common-dev \
+            nasm
+
+      - name: Install NASM (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v nasm &> /dev/null; then
+            brew install nasm
+          fi
+          nasm --version
+
+      # Note: Windows automatically downloads NASM via CMake (see jsfx/cmake/EEL2Assembly.cmake)
 
       - name: Cross-compile for Linux
         if: runner.os == 'Linux' && matrix.cross_compile
