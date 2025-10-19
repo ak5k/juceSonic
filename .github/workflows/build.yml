@@ -54,11 +54,11 @@ jobs:
             arch: x86_64
             cmake_args: ""
           
-          # # Linux ARM64 (cross-compiled)
-          # - name: Linux-ARM64
-          #   os: ubuntu-latest
-          #   arch: arm64
-          #   cross_compile: true
+          # Linux ARM64 (cross-compiled)
+          - name: Linux-ARM64
+            os: ubuntu-latest
+            arch: arm64
+            cross_compile: true
 
     steps:
       - name: Checkout code
@@ -70,24 +70,35 @@ jobs:
       - name: Install Linux dependencies (x86_64)
         if: runner.os == 'Linux' && matrix.arch == 'x86_64'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev \
-            libjack-jackd2-dev \
-            ladspa-sdk \
-            libcurl4-openssl-dev \
-            libfreetype6-dev \
-            libx11-dev \
-            libxcomposite-dev \
-            libxcursor-dev \
-            libxext-dev \
-            libxinerama-dev \
-            libxrandr-dev \
-            libxrender-dev \
-            libwebkit2gtk-4.1-dev \
-            libglu1-mesa-dev \
-            mesa-common-dev \
-            nasm
+          # Source dependencies from linux-dependencies.sh
+          if [ -f linux-dependencies.sh ]; then
+            source linux-dependencies.sh
+            
+            # Install dependencies
+            sudo apt-get update
+            sudo apt-get install -y "${DEPENDENCIES[@]}" nasm
+          else
+            # Fallback to hardcoded list if file doesn't exist
+            echo "Warning: linux-dependencies.sh not found, using fallback dependencies"
+            sudo apt-get update
+            sudo apt-get install -y \
+              libasound2-dev \
+              libjack-jackd2-dev \
+              ladspa-sdk \
+              libcurl4-openssl-dev \
+              libfreetype6-dev \
+              libx11-dev \
+              libxcomposite-dev \
+              libxcursor-dev \
+              libxext-dev \
+              libxinerama-dev \
+              libxrandr-dev \
+              libxrender-dev \
+              libwebkit2gtk-4.1-dev \
+              libglu1-mesa-dev \
+              mesa-common-dev \
+              nasm
+          fi
 
       - name: Install NASM (macOS)
         if: runner.os == 'macOS'

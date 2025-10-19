@@ -114,6 +114,17 @@ endif()
 
 # find_package(JUCE CONFIG REQUIRED)        # If you've installed JUCE to your system
 # or
+
+# When cross-compiling, we need to handle juceaide specially
+# It needs to be built for the host system, not the target
+if(CMAKE_CROSSCOMPILING OR (UNIX AND NOT APPLE AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"))
+    # Disable building helper tools during cross-compilation
+    # They need to be pre-built for the host system
+    set(JUCE_BUILD_HELPER_TOOLS OFF CACHE BOOL "Don't build helper tools when cross-compiling" FORCE)
+    message(STATUS "Cross-compilation detected - JUCE helper tools will not be built")
+    message(STATUS "You may need to pre-build juceaide for the host system")
+endif()
+
 add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory called JUCE
 
 # If you are building a VST2 or AAX plugin, CMake needs to be told where to find these SDKs on your
@@ -128,13 +139,6 @@ add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory
 # the formats specified by the FORMATS arguments. This function accepts many optional arguments.
 # Check the readme at `docs/CMake API.md` in the JUCE repo for the full list.
 
-# Disable VST3 auto manifest when cross-compiling (can't run ARM64 helper on x64 host)
-if(CMAKE_CROSSCOMPILING)
-    set(VST3_AUTO_MANIFEST_OPTION VST3_AUTO_MANIFEST FALSE)
-else()
-    set(VST3_AUTO_MANIFEST_OPTION)
-endif()
-
 juce_add_plugin(${PROJECT_NAME}
     COMPANY_NAME "ak5k"
     COMPANY_WEBSITE "https://github.com/ak5k"
@@ -147,7 +151,6 @@ juce_add_plugin(${PROJECT_NAME}
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     
     COPY_PLUGIN_AFTER_BUILD TRUE
-    ${VST3_AUTO_MANIFEST_OPTION}
     PLUGIN_MANUFACTURER_CODE Ak5k               # A four-character manufacturer id with at least one upper-case character
     PLUGIN_CODE Jsfx                            # A unique four-character plugin id with exactly one upper-case character
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
