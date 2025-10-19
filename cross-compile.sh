@@ -5,20 +5,16 @@ set -e
 # ==============================================================================
 # Cross-compilation script for Ubuntu
 # ==============================================================================
-# 
-# This script handles cross-compilation for ARM64/ARMHF/i386 architectures on
-# Ubuntu/Debian systems. It automatically handles common issues:
 #
-# - Configures Ubuntu Ports repository for ARM packages
-# - Fixes architecture restrictions in both old and new (DEB822) apt formats
-# - Protects critical system packages (Python) from cross-arch conflicts
-# - Handles file conflicts (e.g., Pango GIR files) with --force-overwrite
-# - Automatically fixes broken package dependencies
-# - Builds host tools (juceaide) before cross-compiling
-# - Creates proper sysroot with target architecture libraries
+# Usage: 
+#   ./cross-compile.sh <architecture>       - Cross-compile for architecture
+#   ./cross-compile.sh clean <architecture> - Remove cross-arch packages
 #
-# Usage: ./cross-compile.sh <architecture>
 # Supported architectures: arm64, armhf, i386
+#
+# Examples:
+#   ./cross-compile.sh arm64        - Cross-compile for ARM64
+#   ./cross-compile.sh clean arm64  - Remove all ARM64 packages and cleanup
 #
 # ==============================================================================
 
@@ -62,10 +58,168 @@ fix_broken_packages() {
     }
 }
 
+# Function to clean up cross-architecture packages and restore system
+cleanup_cross_arch() {
+    local ARCH="$1"
+    local FULL_CLEANUP="${2:-false}"  # Optional parameter: true for full cleanup
+    
+    log_info "========================================"
+    log_info "Cleaning up cross-architecture: $ARCH"
+    log_info "========================================"
+    
+    # Clean up build artifacts (always done)
+    local BUILD_DIR="$PROJECT_ROOT/build-${ARCH}"
+    local SYSROOT_DIR="$PROJECT_ROOT/sysroot-${ARCH}"
+    local TOOLCHAIN_FILE="$PROJECT_ROOT/cmake-toolchain-${ARCH}.cmake"
+    local HOST_BUILD_DIR="$PROJECT_ROOT/build-host-tools"
+    
+    if [ -d "$BUILD_DIR" ]; then
+        log_info "Removing build directory: $BUILD_DIR"
+        rm -rf "$BUILD_DIR"
+    fi
+    
+    if [ -d "$SYSROOT_DIR" ]; then
+        log_info "Removing sysroot directory: $SYSROOT_DIR"
+        rm -rf "$SYSROOT_DIR"
+    fi
+    
+    if [ -f "$TOOLCHAIN_FILE" ]; then
+        log_info "Removing toolchain file: $TOOLCHAIN_FILE"
+        rm -f "$TOOLCHAIN_FILE"
+    fi
+    
+    if [ -d "$HOST_BUILD_DIR" ]; then
+        log_info "Removing host tools directory: $HOST_BUILD_DIR"
+        rm -rf "$HOST_BUILD_DIR"
+    fi
+    
+    # Full cleanup (packages and system configuration) - optional
+    if [ "$FULL_CLEANUP" = "true" ]; then
+        log_info ""
+        log_info "Performing FULL cleanup (removing packages and architecture)..."
+        log_info ""
+        
+        check_sudo
+        
+        log_info "Removing all $ARCH packages..."
+        
+        # Get list of all installed packages for this architecture
+        local packages=$(dpkg -l | grep ":${ARCH}" | awk '{print $2}')
+        
+        if [ -z "$packages" ]; then
+            log_info "No $ARCH packages found"
+        else
+            log_info "Found $(echo "$packages" | wc -l) $ARCH packages to remove"
+            
+            # Remove packages
+            for pkg in $packages; do
+                log_info "Removing $pkg..."
+                sudo apt-get remove --purge -y "$pkg" 2>/dev/null || sudo dpkg --remove --force-all "$pkg" 2>/dev/null || true
+            done
+            
+            # Autoremove orphaned packages
+            log_info "Removing orphaned packages..."
+            sudo apt-get autoremove -y
+        fi
+        
+        # Remove foreign architecture
+        if dpkg --print-foreign-architectures | grep -q "^${ARCH}$"; then
+            log_info "Removing foreign architecture: $ARCH"
+            sudo dpkg --remove-architecture "$ARCH" || log_warn "Could not remove architecture (packages may still be installed)"
+        fi
+        
+        # Restore sources files if backups exist
+        if [ -f "/etc/apt/sources.list.d/ubuntu.sources.bak" ]; then
+            log_info "Restoring ubuntu.sources from backup..."
+            sudo mv /etc/apt/sources.list.d/ubuntu.sources.bak /etc/apt/sources.list.d/ubuntu.sources
+        fi
+        
+        if [ -f "/etc/apt/sources.list.backup-cross-compile" ]; then
+            log_info "Restoring sources.list from backup..."
+            sudo mv /etc/apt/sources.list.backup-cross-compile /etc/apt/sources.list
+        fi
+        
+        # Remove ports repository
+        if [ -f "/etc/apt/sources.list.d/ubuntu-ports.list" ]; then
+            log_info "Removing Ubuntu Ports repository..."
+            sudo rm -f /etc/apt/sources.list.d/ubuntu-ports.list
+        fi
+        
+        # Unhold Python packages
+        log_info "Removing holds on Python packages..."
+        sudo apt-mark unhold python3:$ARCH python3-minimal:$ARCH python3.12:$ARCH python3.12-minimal:$ARCH 2>/dev/null || true
+        
+        # Update package lists
+        log_info "Updating package lists..."
+        sudo apt-get update
+        
+        log_info "========================================"
+        log_info "FULL cleanup complete!"
+        log_info "========================================"
+        log_info "Note: Cross-compilation toolchains (gcc/g++) for $ARCH were NOT removed."
+        log_info "To remove them manually, run:"
+        log_info "  sudo apt-get remove --purge crossbuild-essential-${ARCH}"
+        log_info "  sudo apt-get autoremove"
+    else
+        log_info "========================================"
+        log_info "Build cleanup complete!"
+        log_info "========================================"
+        log_info ""
+        log_info "Installed packages and architecture configuration were NOT removed."
+        log_info "To perform a full cleanup (remove packages and architecture), run:"
+        log_info "  $0 clean $ARCH --full"
+    fi
+}
+
+# Check for special commands
+if [ "$1" = "clean" ] || [ "$1" = "cleanup" ]; then
+    if [ -z "$2" ]; then
+        log_error "No architecture specified for cleanup"
+        echo "Usage: $0 clean <architecture> [--full]"
+        echo "Supported architectures: arm64, armhf, i386"
+        echo ""
+        echo "Options:"
+        echo "  --full    Also remove installed packages and architecture (requires sudo)"
+        echo ""
+        echo "Without --full, only build artifacts are removed."
+        exit 1
+    fi
+    
+    # Check for --full flag
+    FULL_CLEANUP="false"
+    if [ "$3" = "--full" ] || [ "$3" = "-f" ]; then
+        FULL_CLEANUP="true"
+    fi
+    
+    # Validate and normalize architecture
+    case "$2" in
+        arm64|aarch64)
+            DEBIAN_ARCH="arm64"
+            ;;
+        armhf|armv7)
+            DEBIAN_ARCH="armhf"
+            ;;
+        i386|x86)
+            DEBIAN_ARCH="i386"
+            ;;
+        *)
+            log_error "Unsupported architecture: $2"
+            echo "Supported architectures: arm64, armhf, i386"
+            exit 1
+            ;;
+    esac
+    
+    cleanup_cross_arch "$DEBIAN_ARCH" "$FULL_CLEANUP"
+    exit 0
+fi
+
 # Check if architecture is provided
 if [ -z "$1" ]; then
     log_error "No architecture specified"
-    echo "Usage: $0 <architecture>"
+    echo "Usage: $0 <architecture>           - Cross-compile for architecture"
+    echo "       $0 clean <architecture>      - Remove build artifacts only"
+    echo "       $0 clean <architecture> --full - Remove build artifacts AND packages"
+    echo ""
     echo "Supported architectures: arm64, armhf, i386"
     exit 1
 fi
@@ -117,12 +271,13 @@ if [ -z "${DEPENDENCIES+x}" ] || [ ${#DEPENDENCIES[@]} -eq 0 ]; then
 fi
 
 # Setup directories
-SYSROOT_DIR="$PROJECT_ROOT/sysroot-$TARGET_ARCH"
+# Note: SYSROOT_DIR kept for backwards compatibility in cleanup, but not used for building
+SYSROOT_DIR="$PROJECT_ROOT/sysroot-$TARGET_ARCH"  
 BUILD_DIR="$PROJECT_ROOT/build-$TARGET_ARCH"
-TOOLCHAIN_FILE="$PROJECT_ROOT/toolchain-$TARGET_ARCH.cmake"
+TOOLCHAIN_FILE="$PROJECT_ROOT/cmake-toolchain-$TARGET_ARCH.cmake"
 
-log_info "Sysroot directory: $SYSROOT_DIR"
 log_info "Build directory: $BUILD_DIR"
+log_info "Using system multiarch (no separate sysroot)"
 
 # Check if running as root for apt operations
 check_sudo() {
@@ -319,50 +474,81 @@ install_dependencies() {
     fi
 }
 
-# Create sysroot
+# Create sysroot (DISABLED - using system multiarch instead)
+# Ubuntu's multiarch support means we don't need a separate sysroot
+# The cross-compiler toolchain already knows to look in:
+#   /usr/lib/aarch64-linux-gnu/
+#   /usr/include/aarch64-linux-gnu/
+# And the system headers in /usr/aarch64-linux-gnu/include/
 create_sysroot() {
+    log_info "Sysroot creation skipped - using system multiarch directories"
+    log_info "Cross-compiler will use:"
+    log_info "  Libraries: /usr/lib/${CROSS_COMPILE_PREFIX}/"
+    log_info "  Headers: /usr/include/${CROSS_COMPILE_PREFIX}/"
+    log_info "  System headers: /usr/${CROSS_COMPILE_PREFIX}/include/"
+    
+    # Verify the directories exist
+    if [ ! -d "/usr/lib/${CROSS_COMPILE_PREFIX}" ]; then
+        log_warn "Target library directory not found: /usr/lib/${CROSS_COMPILE_PREFIX}"
+        log_warn "Make sure target architecture packages are installed"
+    fi
+}
+
+# OLD SYSROOT CREATION (kept for reference, not used)
+create_sysroot_old() {
     log_info "Creating sysroot..."
     
     mkdir -p "$SYSROOT_DIR/usr/lib"
     mkdir -p "$SYSROOT_DIR/usr/include"
     
-    # Copy system libraries and headers
+    # IMPORTANT: Do NOT copy base system headers like /usr/include/bits, /usr/include/sys, etc.
+    # The cross-compiler has its own architecture-appropriate versions
+    # We only copy library-specific headers and the actual libraries
+    
+    # Copy architecture-specific libraries
     if [ -d "/usr/lib/${CROSS_COMPILE_PREFIX}" ]; then
-        log_info "Copying cross-compilation libraries..."
-        rsync -av "/usr/lib/${CROSS_COMPILE_PREFIX}/" "$SYSROOT_DIR/usr/lib/" || true
-    fi
-    
-    if [ -d "/usr/include/${CROSS_COMPILE_PREFIX}" ]; then
-        log_info "Copying cross-compilation headers..."
-        rsync -av "/usr/include/${CROSS_COMPILE_PREFIX}/" "$SYSROOT_DIR/usr/include/" || true
-    fi
-    
-    # Copy arch-specific libraries (e.g., /usr/lib/aarch64-linux-gnu)
-    local arch_lib_dir="/usr/${CROSS_COMPILE_PREFIX}/lib"
-    if [ -d "$arch_lib_dir" ]; then
         log_info "Copying ${CROSS_COMPILE_PREFIX} libraries..."
-        rsync -av "$arch_lib_dir/" "$SYSROOT_DIR/usr/lib/" || true
+        rsync -av "/usr/lib/${CROSS_COMPILE_PREFIX}/" "$SYSROOT_DIR/usr/lib/${CROSS_COMPILE_PREFIX}/" || true
     fi
     
-    # Copy arch-specific includes
-    local arch_inc_dir="/usr/${CROSS_COMPILE_PREFIX}/include"
-    if [ -d "$arch_inc_dir" ]; then
-        log_info "Copying ${CROSS_COMPILE_PREFIX} headers..."
-        rsync -av "$arch_inc_dir/" "$SYSROOT_DIR/usr/include/" || true
+    # Copy from alternative lib location if it exists
+    if [ -d "/usr/${CROSS_COMPILE_PREFIX}/lib" ]; then
+        log_info "Copying libraries from /usr/${CROSS_COMPILE_PREFIX}/lib..."
+        rsync -av "/usr/${CROSS_COMPILE_PREFIX}/lib/" "$SYSROOT_DIR/usr/lib/" || true
     fi
     
-    # Also check alternative locations
+    # Copy library-specific headers (pkg-config, etc.) but NOT base system headers
+    # Only copy headers from /usr/include/<arch>/ which are library-specific
+    if [ -d "/usr/include/${CROSS_COMPILE_PREFIX}" ]; then
+        log_info "Copying architecture-specific library headers..."
+        rsync -av "/usr/include/${CROSS_COMPILE_PREFIX}/" "$SYSROOT_DIR/usr/include/${CROSS_COMPILE_PREFIX}/" || true
+    fi
+    
+    # Copy pkg-config files
+    if [ -d "/usr/lib/${CROSS_COMPILE_PREFIX}/pkgconfig" ]; then
+        log_info "Copying pkg-config files..."
+        mkdir -p "$SYSROOT_DIR/usr/lib/pkgconfig"
+        rsync -av "/usr/lib/${CROSS_COMPILE_PREFIX}/pkgconfig/" "$SYSROOT_DIR/usr/lib/pkgconfig/" || true
+    fi
+    
+    # Copy library .so files and development files
     if [ -d "/usr/lib/${DEBIAN_ARCH}-linux-gnu" ]; then
-        log_info "Copying architecture-specific libraries from alt location..."
-        rsync -av "/usr/lib/${DEBIAN_ARCH}-linux-gnu/" "$SYSROOT_DIR/usr/lib/${DEBIAN_ARCH}-linux-gnu/" || true
+        log_info "Copying ${DEBIAN_ARCH} libraries..."
+        mkdir -p "$SYSROOT_DIR/usr/lib/${DEBIAN_ARCH}-linux-gnu"
+        rsync -av "/usr/lib/${DEBIAN_ARCH}-linux-gnu/" "$SYSROOT_DIR/usr/lib/${DEBIAN_ARCH}-linux-gnu/" \
+            --exclude '*.py' --exclude '__pycache__' || true
     fi
     
+    # Copy architecture-specific headers from the multiarch include directory
+    # These are library-specific headers, not base system headers
     if [ -d "/usr/include/${DEBIAN_ARCH}-linux-gnu" ]; then
-        log_info "Copying architecture-specific headers from alt location..."
+        log_info "Copying ${DEBIAN_ARCH} library-specific headers..."
+        mkdir -p "$SYSROOT_DIR/usr/include/${DEBIAN_ARCH}-linux-gnu"
         rsync -av "/usr/include/${DEBIAN_ARCH}-linux-gnu/" "$SYSROOT_DIR/usr/include/${DEBIAN_ARCH}-linux-gnu/" || true
     fi
     
     log_info "Sysroot created at $SYSROOT_DIR"
+    log_info "Note: Base system headers are provided by the cross-compiler toolchain"
 }
 
 # Generate CMake toolchain file
@@ -382,9 +568,11 @@ set(CMAKE_SYSTEM_PROCESSOR $CMAKE_SYSTEM_PROCESSOR)
 set(CMAKE_C_COMPILER ${CROSS_COMPILE_PREFIX}-gcc)
 set(CMAKE_CXX_COMPILER ${CROSS_COMPILE_PREFIX}-g++)
 
-# Sysroot
-set(CMAKE_SYSROOT $SYSROOT_DIR)
-set(CMAKE_FIND_ROOT_PATH $SYSROOT_DIR)
+# Use system's multiarch directories - no separate sysroot needed
+# The cross-compiler toolchain already knows about:
+#   /usr/lib/${CROSS_COMPILE_PREFIX}/
+#   /usr/include/${CROSS_COMPILE_PREFIX}/
+# Ubuntu's multiarch support handles everything
 
 # Search for programs in the build host directories
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
@@ -403,17 +591,15 @@ if(EXISTS "$JUCEAIDE_PATH")
     message(STATUS "Using pre-built juceaide: $JUCEAIDE_PATH")
 endif()
 
-# Compiler flags
-set(CMAKE_C_FLAGS "\${CMAKE_C_FLAGS} --sysroot=$SYSROOT_DIR")
-set(CMAKE_CXX_FLAGS "\${CMAKE_CXX_FLAGS} --sysroot=$SYSROOT_DIR")
-set(CMAKE_EXE_LINKER_FLAGS "\${CMAKE_EXE_LINKER_FLAGS} --sysroot=$SYSROOT_DIR")
-set(CMAKE_SHARED_LINKER_FLAGS "\${CMAKE_SHARED_LINKER_FLAGS} --sysroot=$SYSROOT_DIR")
-
-# pkg-config configuration
-set(PKG_CONFIG_EXECUTABLE /usr/bin/pkg-config)
-set(ENV{PKG_CONFIG_PATH} "$SYSROOT_DIR/usr/lib/pkgconfig:$SYSROOT_DIR/usr/share/pkgconfig")
-set(ENV{PKG_CONFIG_LIBDIR} "$SYSROOT_DIR/usr/lib/pkgconfig:$SYSROOT_DIR/usr/share/pkgconfig")
-set(ENV{PKG_CONFIG_SYSROOT_DIR} "$SYSROOT_DIR")
+# pkg-config configuration for cross-compilation
+set(PKG_CONFIG_EXECUTABLE /usr/bin/${CROSS_COMPILE_PREFIX}-pkg-config)
+if(NOT EXISTS "\${PKG_CONFIG_EXECUTABLE}")
+    # Fallback to regular pkg-config with environment variables
+    set(PKG_CONFIG_EXECUTABLE /usr/bin/pkg-config)
+    set(ENV{PKG_CONFIG_PATH} "")
+    set(ENV{PKG_CONFIG_LIBDIR} "/usr/lib/${CROSS_COMPILE_PREFIX}/pkgconfig:/usr/share/pkgconfig")
+    set(ENV{PKG_CONFIG_SYSROOT_DIR} "/")
+endif()
 EOF
 
     log_info "Toolchain file created at $TOOLCHAIN_FILE"
