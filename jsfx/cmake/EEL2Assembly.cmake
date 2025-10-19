@@ -17,6 +17,7 @@ message(STATUS "========================================")
 set(EEL2_HAS_ASM FALSE CACHE INTERNAL "Whether assembly optimizations are available")
 set(EEL2_ASM_SOURCE "" CACHE INTERNAL "Assembly source file to compile")
 set(EEL2_USE_GCC_ASM FALSE CACHE INTERNAL "Whether using GCC inline assembly")
+set(EEL2_USE_PRECOMPILED FALSE CACHE INTERNAL "Whether using pre-compiled assembly object")
 set(NASM_EXECUTABLE "" CACHE INTERNAL "NASM executable path")
 
 # Validate architecture
