@@ -125,6 +125,18 @@ if(EXISTS "${GZGUTS_FILE}")
     else()
         message(STATUS "gzguts.h already patched, skipping")
     endif()
+    
+    # Ensure unistd.h is also included more broadly for all POSIX systems
+    string(FIND "${GZGUTS_CONTENT}" "#include <stdio.h>" STDIO_FOUND)
+    string(FIND "${GZGUTS_CONTENT}" "#if defined(__unix__) || defined(__APPLE__)\n#include <unistd.h>\n#endif" BROAD_UNISTD_FOUND)
+    if(STDIO_FOUND GREATER -1 AND BROAD_UNISTD_FOUND EQUAL -1)
+        message(STATUS "Adding broader unistd.h include for POSIX systems")
+        string(REPLACE 
+            "#include <stdio.h>"
+            "#include <stdio.h>\n\n#if defined(__unix__) || defined(__APPLE__)\n#include <unistd.h>\n#endif"
+            GZGUTS_CONTENT "${GZGUTS_CONTENT}")
+        file(WRITE "${GZGUTS_FILE}" "${GZGUTS_CONTENT}")
+    endif()
 endif()
 
 # Patch pngpriv.h to fix fp.h include issue on modern macOS
