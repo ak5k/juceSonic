@@ -81,13 +81,16 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
     // Fill background with black
     g.fillAll(juce::Colours::black);
 
-    // Create JUCE image from LICE framebuffer
-    juce::Image liceImage(juce::Image::ARGB, width, height, false);
+    // Resize cached image if dimensions changed
+    if (!cachedLiceImage.isValid() || cachedLiceImage.getWidth() != width || cachedLiceImage.getHeight() != height)
+    {
+        cachedLiceImage = juce::Image(juce::Image::ARGB, width, height, false);
+    }
 
     // Copy LICE bitmap data to JUCE image
     // Use explicit scope to ensure BitmapData is destroyed before we draw the image
     {
-        juce::Image::BitmapData destData(liceImage, juce::Image::BitmapData::writeOnly);
+        juce::Image::BitmapData destData(cachedLiceImage, juce::Image::BitmapData::writeOnly);
 
         for (int y = 0; y < height; ++y)
         {
@@ -116,7 +119,7 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
     } // BitmapData is destroyed here
 
     // Draw the LICE framebuffer
-    g.drawImageAt(liceImage, 0, 0);
+    g.drawImageAt(cachedLiceImage, 0, 0);
 
     // Update cached dimensions
     lastFramebufferWidth = width;

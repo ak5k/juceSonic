@@ -60,4 +60,7 @@ private:
     // For future use when we implement LICE rendering
     int lastFramebufferWidth = 0;
     int lastFramebufferHeight = 0;
+    
+    // Cached JUCE image to avoid allocating on every paint call
+    juce::Image cachedLiceImage;
 };
