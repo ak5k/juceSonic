@@ -568,6 +568,11 @@ SearchableTreeView::SearchableTreeView()
     searchField.setWantsKeyboardFocus(true);
     searchField.setSearchableTreeView(this);
 
+    // Setup browse button
+    addAndMakeVisible(browseButton);
+    browseButton.setButtonText("Browse...");
+    browseButton.onClick = [this] { showBrowseMenu(); };
+
     // Setup tree view
     addAndMakeVisible(treeView);
     treeView.setMultiSelectEnabled(true);
@@ -605,6 +610,19 @@ void SearchableTreeView::resized()
     {
         auto searchArea = bounds.removeFromTop(25); // Half the previous height (50 -> 25)
         searchLabel.setBounds(searchArea.removeFromLeft(60));
+
+        // Show browse button only in auto-hide mode
+        if (autoHideTreeWithoutResults)
+        {
+            browseButton.setBounds(searchArea.removeFromRight(80));
+            searchArea.removeFromRight(5); // Spacing between search field and button
+            browseButton.setVisible(true);
+        }
+        else
+        {
+            browseButton.setVisible(false);
+        }
+
         searchField.setBounds(searchArea);
 
         // Add some spacing between search and tree
@@ -1198,4 +1216,188 @@ bool SearchableTreeView::hitTest(int x, int y)
         "SearchableTreeView::hitTest(" << x << ", " << y << ") - normal mode, returning " << (result ? "true" : "false")
     );
     return result;
+}
+
+// ============================================================================
+// Browse Menu Implementation
+// ============================================================================
+
+juce::Array<juce::TreeViewItem*> SearchableTreeView::getDeepestLevelItems()
+{
+    juce::Array<juce::TreeViewItem*> items;
+
+    std::function<void(juce::TreeViewItem*)> collectLeafItems = [&](juce::TreeViewItem* item)
+    {
+        if (!item)
+            return;
+
+        int numChildren = item->getNumSubItems();
+        if (numChildren == 0)
+        {
+            // Leaf item
+            items.add(item);
+        }
+        else
+        {
+            // Recurse into children
+            for (int i = 0; i < numChildren; ++i)
+                collectLeafItems(item->getSubItem(i));
+        }
+    };
+
+    if (rootItem)
+        collectLeafItems(rootItem.get());
+
+    return items;
+}
+
+juce::String SearchableTreeView::getParentCategoryForItem(juce::TreeViewItem* item)
+{
+    if (!item)
+        return {};
+
+    // Default: use parent item's name, or "Uncategorized" if no parent
+    auto* parent = item->getParentItem();
+    if (parent)
+    {
+        if (auto* searchableParent = dynamic_cast<SearchableTreeItem*>(parent))
+            return searchableParent->getName();
+    }
+
+    return "Uncategorized";
+}
+
+void SearchableTreeView::showBrowseMenu()
+{
+    auto deepestItems = getDeepestLevelItems();
+
+    if (deepestItems.isEmpty())
+        return;
+
+    // Organize items by parent category
+    juce::HashMap<juce::String, juce::Array<juce::TreeViewItem*>> itemsByCategory;
+
+    for (auto* item : deepestItems)
+    {
+        juce::String category = getParentCategoryForItem(item);
+        if (!itemsByCategory.contains(category))
+            itemsByCategory.set(category, {});
+        itemsByCategory.getReference(category).add(item);
+    }
+
+    // Build sorted list of categories
+    juce::StringArray categories;
+    for (auto it = itemsByCategory.begin(); it != itemsByCategory.end(); ++it)
+        categories.add(it.getKey());
+    categories.sort(true); // Case-insensitive sort
+
+    // Build the popup menu
+    juce::PopupMenu menu;
+    int itemId = 1;
+    buildBrowseMenu(menu, categories, itemsByCategory, itemId, 0);
+
+    // Show menu below the browse button
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(&browseButton).withMaximumNumColumns(4),
+        [this, deepestItems](int result)
+        {
+            if (result > 0 && result <= deepestItems.size())
+            {
+                auto* selectedItem = deepestItems[result - 1];
+                if (selectedItem)
+                {
+                    // Deselect all items first
+                    if (rootItem)
+                    {
+                        std::function<void(juce::TreeViewItem*)> deselectAll = [&](juce::TreeViewItem* item)
+                        {
+                            item->setSelected(false, false);
+                            for (int i = 0; i < item->getNumSubItems(); ++i)
+                                deselectAll(item->getSubItem(i));
+                        };
+                        deselectAll(rootItem.get());
+                    }
+
+                    // Select the chosen item
+                    selectedItem->setSelected(true, true);
+
+                    // Call virtual method for derived class to handle selection
+                    onBrowseMenuItemSelected(selectedItem);
+
+                    // Trigger the command callback
+                    if (onCommand)
+                    {
+                        juce::Array<juce::TreeViewItem*> selection;
+                        selection.add(selectedItem);
+                        onCommand(selection);
+                    }
+                }
+            }
+        }
+    );
+}
+
+void SearchableTreeView::buildBrowseMenu(
+    juce::PopupMenu& menu,
+    const juce::StringArray& categories,
+    const juce::HashMap<juce::String, juce::Array<juce::TreeViewItem*>>& itemsByCategory,
+    int& itemId,
+    int categoryIndex
+)
+{
+    // Maximum items per column in multi-column menu
+    const int maxItemsPerColumn = 25;
+    // Maximum columns per submenu (4 columns = 100 items max per submenu)
+    const int maxColumns = 4;
+    const int maxItemsPerSubmenu = maxItemsPerColumn * maxColumns;
+
+    if (categoryIndex >= categories.size())
+        return;
+
+    juce::String category = categories[categoryIndex];
+    auto items = itemsByCategory[category];
+
+    if (items.size() <= maxItemsPerSubmenu)
+    {
+        // Single multi-column submenu for this category
+        juce::PopupMenu categoryMenu;
+
+        // Calculate optimal number of columns
+        int numColumns = (items.size() + maxItemsPerColumn - 1) / maxItemsPerColumn;
+        numColumns = juce::jmin(numColumns, maxColumns);
+
+        for (auto* item : items)
+            if (auto* searchableItem = dynamic_cast<SearchableTreeItem*>(item))
+                categoryMenu.addItem(itemId++, searchableItem->getName());
+
+        menu.addSubMenu(category, categoryMenu, true, nullptr, false, numColumns);
+    }
+    else
+    {
+        // Split into multiple numbered submenus, each with up to 4 columns
+        int numSplits = (items.size() + maxItemsPerSubmenu - 1) / maxItemsPerSubmenu;
+
+        for (int split = 0; split < numSplits; ++split)
+        {
+            juce::PopupMenu splitMenu;
+
+            int startIdx = split * maxItemsPerSubmenu;
+            int endIdx = juce::jmin(startIdx + maxItemsPerSubmenu, items.size());
+            int splitSize = endIdx - startIdx;
+
+            // Calculate optimal number of columns for this split
+            int numColumns = (splitSize + maxItemsPerColumn - 1) / maxItemsPerColumn;
+            numColumns = juce::jmin(numColumns, maxColumns);
+
+            for (int i = startIdx; i < endIdx; ++i)
+                if (auto* searchableItem = dynamic_cast<SearchableTreeItem*>(items[i]))
+                    splitMenu.addItem(itemId++, searchableItem->getName());
+
+            juce::String splitName = category + " (" + juce::String(split + 1) + ")";
+            menu.addSubMenu(splitName, splitMenu, true, nullptr, false, numColumns);
+        }
+    }
+
+    // Recursively add remaining categories
+    buildBrowseMenu(menu, categories, itemsByCategory, itemId, categoryIndex + 1);
 }

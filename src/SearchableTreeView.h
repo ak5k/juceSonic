@@ -225,6 +225,17 @@ public:
     }
 
     /**
+     * @brief Called when an item is selected from the browse menu
+     * Override to perform action on the selected item (e.g., load preset)
+     * Default implementation does nothing - the item is already selected
+     *
+     * @param selectedItem The item that was chosen from the browse menu
+     */
+    virtual void onBrowseMenuItemSelected(juce::TreeViewItem* selectedItem)
+    {
+    }
+
+    /**
      * @brief Get minimum search term length before filtering activates
      * Default is 3 characters
      */
@@ -407,10 +418,26 @@ public:
     // Current search term
     juce::String currentSearchTerm;
 
+protected:
+    /**
+     * @brief Get the deepest level items in the tree hierarchy
+     * Override in derived classes to define what constitutes the "deepest" items
+     * (e.g., for presets: Preset items; for repositories: Package items)
+     */
+    virtual juce::Array<juce::TreeViewItem*> getDeepestLevelItems();
+
+    /**
+     * @brief Get the parent category name for a deepest level item
+     * Override to define how items are grouped in the browse menu
+     * (e.g., for presets: return bank/file name; for repositories: return category)
+     */
+    virtual juce::String getParentCategoryForItem(juce::TreeViewItem* item);
+
 private:
     // UI Components
     juce::Label searchLabel;
     SearchTextEditor searchField;
+    juce::TextButton browseButton;
     FilteredTreeView treeView;
     juce::Label metadataLabel;
     std::unique_ptr<juce::TreeViewItem> rootItem;
@@ -421,6 +448,16 @@ private:
     bool autoHideTreeWithoutResults = false;
     bool isTreeManuallyExpanded = false; // User clicked to expand/collapse
     int matchCount = 0;
+
+    // Browse menu helpers
+    void showBrowseMenu();
+    void buildBrowseMenu(
+        juce::PopupMenu& menu,
+        const juce::StringArray& categories,
+        const juce::HashMap<juce::String, juce::Array<juce::TreeViewItem*>>& itemsByCategory,
+        int& itemId,
+        int categoryIndex = 0
+    );
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SearchableTreeView)
 };

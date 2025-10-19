@@ -118,6 +118,7 @@ public:
     std::unique_ptr<juce::TreeViewItem> createRootItem() override;
     void onSelectionChanged() override;
     void onEnterKeyPressed(juce::TreeViewItem* selectedItem) override;
+    void onBrowseMenuItemSelected(juce::TreeViewItem* selectedItem) override;
 
     juce::String getSearchPlaceholder() const override
     {
@@ -139,6 +140,10 @@ public:
             return presetItem->getType() == PresetTreeItem::ItemType::Preset;
         return false;
     }
+
+    // Browse menu support - collect all presets organized by bank/file
+    juce::Array<juce::TreeViewItem*> getDeepestLevelItems() override;
+    juce::String getParentCategoryForItem(juce::TreeViewItem* item) override;
 
     // Get processor reference
     AudioPluginAudioProcessor& getProcessor()

@@ -550,6 +550,16 @@ void PresetTreeView::onEnterKeyPressed(juce::TreeViewItem* selectedItem)
     }
 }
 
+void PresetTreeView::onBrowseMenuItemSelected(juce::TreeViewItem* selectedItem)
+{
+    // Apply preset when selected from browse menu
+    if (auto* presetItem = dynamic_cast<PresetTreeItem*>(selectedItem))
+    {
+        if (presetItem->getType() == PresetTreeItem::ItemType::Preset)
+            applyPreset(presetItem->getPresetData());
+    }
+}
+
 bool PresetTreeView::shouldIncludeInSearch(juce::TreeViewItem* item)
 {
     // Include all items in search
@@ -582,4 +592,67 @@ void PresetTreeView::applyPreset(const juce::String& base64Data)
         return;
 
     processor.loadPresetFromBase64(base64Data);
+}
+
+// ============================================================================
+// Browse Menu Support
+// ============================================================================
+
+juce::Array<juce::TreeViewItem*> PresetTreeView::getDeepestLevelItems()
+{
+    juce::Array<juce::TreeViewItem*> presets;
+
+    std::function<void(juce::TreeViewItem*)> collectPresets = [&](juce::TreeViewItem* item)
+    {
+        if (!item)
+            return;
+
+        if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
+        {
+            if (presetItem->getType() == PresetTreeItem::ItemType::Preset)
+            {
+                presets.add(item);
+                return; // Don't recurse into preset items
+            }
+        }
+
+        // Recurse into children
+        for (int i = 0; i < item->getNumSubItems(); ++i)
+            collectPresets(item->getSubItem(i));
+    };
+
+    if (auto* root = getRootItem())
+        collectPresets(root);
+
+    return presets;
+}
+
+juce::String PresetTreeView::getParentCategoryForItem(juce::TreeViewItem* item)
+{
+    if (!item)
+        return "Uncategorized";
+
+    auto* presetItem = dynamic_cast<PresetTreeItem*>(item);
+    if (!presetItem || presetItem->getType() != PresetTreeItem::ItemType::Preset)
+        return "Uncategorized";
+
+    // Get the parent (should be Bank or File)
+    auto* parent = item->getParentItem();
+    if (!parent)
+        return "Uncategorized";
+
+    auto* parentPresetItem = dynamic_cast<PresetTreeItem*>(parent);
+    if (!parentPresetItem)
+        return "Uncategorized";
+
+    // If parent is a Bank, use bank name
+    if (parentPresetItem->getType() == PresetTreeItem::ItemType::Bank)
+        return parentPresetItem->getName();
+
+    // If parent is a File, use file name (without extension)
+    if (parentPresetItem->getType() == PresetTreeItem::ItemType::File)
+        return parentPresetItem->getFile().getFileNameWithoutExtension();
+
+    // Fallback to parent name
+    return parentPresetItem->getName();
 }
