@@ -254,7 +254,8 @@ private:
     juce::Label wetLabel;
     juce::Viewport viewport;
     juce::Component parameterContainer;
-    juce::Label statusLabel;
+    juce::Label titleLabel;
+    juce::Label presetLabel;
 
     juce::OwnedArray<ParameterSlider> parameterSliders;
     std::unique_ptr<PersistentFileChooser> fileChooser;
@@ -290,6 +291,7 @@ private:
     bool needsSizeRestoration = false;
     int restoredWidth = 700;
     int restoredHeight = 500;
+    bool buttonBarVisible = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

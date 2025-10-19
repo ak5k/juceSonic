@@ -16,16 +16,19 @@ void JsfxLiceFullscreenWindow::closeButtonPressed()
 
 bool JsfxLiceFullscreenWindow::keyPressed(const juce::KeyPress& key)
 {
-    if (key == juce::KeyPress::F11Key)
+    // F11 or ESC - Exit fullscreen
+    if (key == juce::KeyPress::F11Key || key == juce::KeyPress::escapeKey)
     {
         if (onWindowClosed)
             juce::MessageManager::callAsync([callback = onWindowClosed]() { callback(); });
         return true;
     }
 
-    if (key == juce::KeyPress::escapeKey && isFullScreen())
+    // F key - Toggle button bar in main editor
+    if (key.getTextCharacter() == 'f' || key.getTextCharacter() == 'F')
     {
-        setFullScreen(false);
+        if (onToggleButtonBar)
+            onToggleButtonBar();
         return true;
     }
 

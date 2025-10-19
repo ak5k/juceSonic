@@ -20,6 +20,7 @@ public:
     void showWithComponent(JsfxLiceComponent* component);
 
     std::function<void()> onWindowClosed;
+    std::function<void()> onToggleButtonBar;
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxLiceFullscreenWindow)

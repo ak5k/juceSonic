@@ -84,6 +84,13 @@ bool SearchTextEditor::keyPressed(const juce::KeyPress& key)
         return true;
     }
 
+    // Handle ESC key - collapse tree and clear search
+    if (key == juce::KeyPress::escapeKey && treeView)
+    {
+        treeView->handleEscapeKey();
+        return true;
+    }
+
     // Let TextEditor handle all other keys (including up arrow for cursor movement)
     return juce::TextEditor::keyPressed(key);
 }
@@ -162,6 +169,13 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
 {
     auto keyCode = key.getKeyCode();
 
+    // Handle ESC key - collapse tree and clear search
+    if (key == juce::KeyPress::escapeKey && searchView)
+    {
+        searchView->handleEscapeKey();
+        return true;
+    }
+
     // Helper lambda to collect items based on filter state
     auto collectItems = [this](juce::Array<juce::TreeViewItem*>& items)
     {
@@ -231,17 +245,7 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
 
         if (!selectedItems.isEmpty())
         {
-            // Call the command callback if set, otherwise call virtual method
-            if (searchView->onCommand)
-            {
-                searchView->onCommand(selectedItems);
-            }
-            else if (selectedItems.size() == 1)
-            {
-                // Fallback to virtual method for single item (backward compatibility)
-                searchView->onEnterKeyPressed(selectedItems[0]);
-            }
-
+            searchView->executeCommand(selectedItems);
             return true;
         }
     }
@@ -563,7 +567,7 @@ SearchableTreeView::SearchableTreeView()
     searchLabel.setJustificationType(juce::Justification::centredRight);
 
     addAndMakeVisible(searchField);
-    searchField.setTextToShowWhenEmpty(getSearchPlaceholder(), juce::Colours::grey);
+    searchField.setTextToShowWhenEmpty("Type to search...", juce::Colours::grey);
     searchField.addListener(this);
     searchField.setWantsKeyboardFocus(true);
     searchField.setSearchableTreeView(this);
@@ -687,14 +691,17 @@ void SearchableTreeView::textEditorReturnKeyPressed(juce::TextEditor& editor)
         // Get all selected items
         auto selectedItems = getSelectedItems();
 
-        // Only call command callback if enabled for search field
-        if (triggerCommandFromSearchField && onCommand)
-            onCommand(selectedItems);
-
-        // Call the virtual method for single item (backward compatibility)
-        // Only if command wasn't already triggered
-        if (!triggerCommandFromSearchField && selectedItems.size() == 1)
+        // Only execute command if enabled for search field
+        if (triggerCommandFromSearchField)
+        {
+            executeCommand(selectedItems);
+        }
+        else if (selectedItems.size() == 1)
+        {
+            // Call the virtual method for single item (backward compatibility)
+            // Only if command wasn't already triggered
             onEnterKeyPressed(selectedItems[0]);
+        }
     }
 }
 
@@ -717,6 +724,20 @@ void SearchableTreeView::moveFocusToTree()
 void SearchableTreeView::moveFocusToSearchField()
 {
     searchField.grabKeyboardFocus();
+}
+
+void SearchableTreeView::executeCommand(const juce::Array<juce::TreeViewItem*>& selectedItems)
+{
+    if (selectedItems.isEmpty())
+        return;
+
+    // Call the command callback if set
+    if (onCommand)
+        onCommand(selectedItems);
+
+    // Also call virtual method for single item (for actual action handling)
+    if (selectedItems.size() == 1)
+        onEnterKeyPressed(selectedItems[0]);
 }
 
 juce::Array<juce::TreeViewItem*> SearchableTreeView::getSelectedItems()
@@ -1106,6 +1127,20 @@ void SearchableTreeView::toggleManualExpansion()
     }
 }
 
+void SearchableTreeView::handleEscapeKey()
+{
+    // Clear the search field
+    searchField.setText("", true); // true = send notification to trigger filtering/collapse
+    currentSearchTerm = "";
+
+    // Move focus away from search field immediately
+    if (searchField.hasKeyboardFocus(true))
+        searchField.giveAwayKeyboardFocus();
+
+    if (auto* parent = getParentComponent())
+        parent->grabKeyboardFocus();
+}
+
 void SearchableTreeView::mouseDown(const juce::MouseEvent& e)
 {
     DBG("SearchableTreeView::mouseDown at ("
@@ -1291,19 +1326,20 @@ void SearchableTreeView::showBrowseMenu()
         categories.add(it.getKey());
     categories.sort(true); // Case-insensitive sort
 
-    // Build the popup menu
+    // Build the popup menu and create itemId -> TreeViewItem mapping
     juce::PopupMenu menu;
     int itemId = 1;
-    buildBrowseMenu(menu, categories, itemsByCategory, itemId, 0);
+    auto itemIdToTreeItem = std::make_shared<juce::HashMap<int, juce::TreeViewItem*>>();
+    buildBrowseMenu(menu, categories, itemsByCategory, itemId, 0, *itemIdToTreeItem);
 
     // Show menu below the browse button
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetComponent(&browseButton).withMaximumNumColumns(4),
-        [this, deepestItems](int result)
+        [this, itemIdToTreeItem](int result)
         {
-            if (result > 0 && result <= deepestItems.size())
+            if (result > 0 && itemIdToTreeItem->contains(result))
             {
-                auto* selectedItem = deepestItems[result - 1];
+                auto* selectedItem = (*itemIdToTreeItem)[result];
                 if (selectedItem)
                 {
                     // Deselect all items first
@@ -1321,16 +1357,10 @@ void SearchableTreeView::showBrowseMenu()
                     // Select the chosen item
                     selectedItem->setSelected(true, true);
 
-                    // Call virtual method for derived class to handle selection
-                    onBrowseMenuItemSelected(selectedItem);
-
-                    // Trigger the command callback
-                    if (onCommand)
-                    {
-                        juce::Array<juce::TreeViewItem*> selection;
-                        selection.add(selectedItem);
-                        onCommand(selection);
-                    }
+                    // Execute command on the selected item
+                    juce::Array<juce::TreeViewItem*> selection;
+                    selection.add(selectedItem);
+                    executeCommand(selection);
                 }
             }
         }
@@ -1342,7 +1372,8 @@ void SearchableTreeView::buildBrowseMenu(
     const juce::StringArray& categories,
     const juce::HashMap<juce::String, juce::Array<juce::TreeViewItem*>>& itemsByCategory,
     int& itemId,
-    int categoryIndex
+    int categoryIndex,
+    juce::HashMap<int, juce::TreeViewItem*>& itemIdToTreeItem
 )
 {
     // Maximum items per column in multi-column menu
@@ -1367,8 +1398,14 @@ void SearchableTreeView::buildBrowseMenu(
         numColumns = juce::jmin(numColumns, maxColumns);
 
         for (auto* item : items)
+        {
             if (auto* searchableItem = dynamic_cast<SearchableTreeItem*>(item))
-                categoryMenu.addItem(itemId++, searchableItem->getName());
+            {
+                categoryMenu.addItem(itemId, searchableItem->getName());
+                itemIdToTreeItem.set(itemId, item);
+                itemId++;
+            }
+        }
 
         menu.addSubMenu(category, categoryMenu, true, nullptr, false, numColumns);
     }
@@ -1390,8 +1427,14 @@ void SearchableTreeView::buildBrowseMenu(
             numColumns = juce::jmin(numColumns, maxColumns);
 
             for (int i = startIdx; i < endIdx; ++i)
+            {
                 if (auto* searchableItem = dynamic_cast<SearchableTreeItem*>(items[i]))
-                    splitMenu.addItem(itemId++, searchableItem->getName());
+                {
+                    splitMenu.addItem(itemId, searchableItem->getName());
+                    itemIdToTreeItem.set(itemId, items[i]);
+                    itemId++;
+                }
+            }
 
             juce::String splitName = category + " (" + juce::String(split + 1) + ")";
             menu.addSubMenu(splitName, splitMenu, true, nullptr, false, numColumns);
@@ -1399,5 +1442,5 @@ void SearchableTreeView::buildBrowseMenu(
     }
 
     // Recursively add remaining categories
-    buildBrowseMenu(menu, categories, itemsByCategory, itemId, categoryIndex + 1);
+    buildBrowseMenu(menu, categories, itemsByCategory, itemId, categoryIndex + 1, itemIdToTreeItem);
 }

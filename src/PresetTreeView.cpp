@@ -36,9 +36,13 @@ bool PresetTreeItem::canBeSelected() const
 
 void PresetTreeItem::itemDoubleClicked(const juce::MouseEvent&)
 {
-    // Apply preset on double-click if this is a preset item
+    // Execute command (same as Enter key) - this will trigger onCommand callback
     if (type == ItemType::Preset && presetTreeView && !data.isEmpty())
-        presetTreeView->applyPreset(data);
+    {
+        juce::Array<juce::TreeViewItem*> items;
+        items.add(this);
+        presetTreeView->executeCommand(items);
+    }
 }
 
 void PresetTreeItem::itemSelectionChanged(bool isNowSelected)
@@ -552,11 +556,15 @@ void PresetTreeView::onEnterKeyPressed(juce::TreeViewItem* selectedItem)
 
 void PresetTreeView::onBrowseMenuItemSelected(juce::TreeViewItem* selectedItem)
 {
-    // Apply preset when selected from browse menu
+    // Execute command (same as Enter key / double-click) - this will trigger onCommand callback
     if (auto* presetItem = dynamic_cast<PresetTreeItem*>(selectedItem))
     {
         if (presetItem->getType() == PresetTreeItem::ItemType::Preset)
-            applyPreset(presetItem->getPresetData());
+        {
+            juce::Array<juce::TreeViewItem*> items;
+            items.add(selectedItem);
+            executeCommand(items);
+        }
     }
 }
 

@@ -180,6 +180,25 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     {
         // Trigger layout update when tree height changes
         resized();
+        // Ensure preset window stays on top when expanded
+        if (isExpanded)
+            presetWindow.toFront(false);
+    };
+
+    // Update preset label when preset is selected
+    presetWindow.getTreeView().onCommand = [this](const juce::Array<juce::TreeViewItem*>& items)
+    {
+        if (items.size() > 0 && items[0] != nullptr)
+        {
+            auto* searchableItem = dynamic_cast<SearchableTreeItem*>(items[0]);
+            if (searchableItem != nullptr)
+            {
+                auto presetName = searchableItem->getName();
+                presetLabel.setText(presetName, juce::dontSendNotification);
+                // Save preset name for persistence (per-JSFX)
+                setStateProperty("lastPresetName", presetName);
+            }
+        }
     };
 
     // Wet amount slider
@@ -195,10 +214,16 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     wetSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); // No text box
     wetSlider.onValueChange = [this]() { processorRef.setWetAmount(wetSlider.getValue()); };
 
-    addAndMakeVisible(statusLabel);
-    statusLabel.setJustificationType(juce::Justification::centred);
-    statusLabel.setFont(juce::FontOptions(18.0f).withStyle("Bold"));
-    statusLabel.setText("No JSFX loaded", juce::dontSendNotification);
+    addAndMakeVisible(titleLabel);
+    titleLabel.setJustificationType(juce::Justification::centred);
+    titleLabel.setFont(juce::FontOptions(18.0f).withStyle("Bold"));
+    titleLabel.setText("No JSFX loaded", juce::dontSendNotification);
+
+    addAndMakeVisible(presetLabel);
+    presetLabel.setJustificationType(juce::Justification::centred);
+    presetLabel.setFont(juce::FontOptions(16.0f)); // Almost as big as title (18pt)
+    presetLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+    presetLabel.setText("", juce::dontSendNotification);
 
     addAndMakeVisible(viewport);
     viewport.setViewedComponent(&parameterContainer, false);
@@ -231,6 +256,11 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
 
     // Flag that we need to restore size in timer callback
     needsSizeRestoration = true;
+
+    // Restore last preset name (per-JSFX)
+    juce::String lastPresetName = getStateProperty("lastPresetName", juce::String());
+    if (lastPresetName.isNotEmpty())
+        presetLabel.setText(lastPresetName, juce::dontSendNotification);
 
     rebuildParameterSliders();
 
@@ -463,7 +493,7 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     juce::String statusText = "No JSFX loaded";
     if (!processorRef.getCurrentJSFXName().isEmpty())
         statusText = processorRef.getCurrentJSFXName();
-    statusLabel.setText(statusText, juce::dontSendNotification);
+    titleLabel.setText(statusText, juce::dontSendNotification);
 
     // Update wet slider if it changed elsewhere
     if (std::abs(wetSlider.getValue() - processorRef.getWetAmount()) > 0.001)
@@ -514,91 +544,121 @@ void AudioPluginAudioProcessorEditor::resized()
     auto bounds = getLocalBounds();
     auto originalBounds = bounds; // Keep original bounds for tree overlay calculation
 
-    // Reserve space for JSFX title at the very top
-    auto titleArea = bounds.removeFromTop(30);
+    // Reserve space for JSFX title and preset label at the very top
+    auto titleArea = bounds.removeFromTop(50); // Increased from 30 to 50 for both labels
     titleArea.reduce(5, 2);
 
-    // Button area to fit search field (25px) + spacing (5px) + tree line (24px) + extra spacing = 64px total
-    auto buttonArea = bounds.removeFromTop(64);
-
-    // Apply vertical margin
-    buttonArea.removeFromTop(5);
-    buttonArea.removeFromBottom(5);
-
-    // Apply left margin (more distance from left edge) and right margin
-    buttonArea.removeFromLeft(10); // Increased from 5 to 10 for more distance from left edge
-    buttonArea.removeFromRight(5);
-
-    int totalWidth = buttonArea.getWidth();
-    int spacing = 5;
-
-    // Fixed minimum sizes that must fit
-    int buttonWidth = 60;        // Minimum for each button
-    int presetMenuWidth = 40;    // Width for preset management menu (just arrow)
-    int wetLabelWidth = 60;      // Enough for "Dry/Wet" text
-    int wetSliderMinWidth = 100; // Minimum usable slider width
-    int wetSliderMaxWidth = 200; // Maximum to prevent it getting too large
-    int libraryMinWidth = 150;   // Minimum for library browser
-
-    // Calculate minimum required width
-    int minRequired = (buttonWidth * 5)
-                    + (spacing * 4)
-                    + spacing
-                    + presetMenuWidth
-                    + (spacing * 2)
-                    + libraryMinWidth
-                    + (spacing * 2)
-                    + wetLabelWidth
-                    + spacing
-                    + wetSliderMinWidth;
-
-    // If we have extra space, distribute it proportionally
-    int extraSpace = juce::jmax(0, totalWidth - minRequired);
-
-    // Distribute extra space: 70% to library, 30% to wet slider (capped at max)
-    int libraryWidth = libraryMinWidth + (int)(extraSpace * 0.7f);
-
-    // If wet slider hit its max, give remaining space to library
-    if (wetSliderMinWidth + (int)(extraSpace * 0.3f) > wetSliderMaxWidth)
+    // Only allocate button area space if button bar is visible
+    juce::Rectangle<int> buttonArea;
+    if (buttonBarVisible)
     {
-        int wetExcess = (wetSliderMinWidth + (int)(extraSpace * 0.3f)) - wetSliderMaxWidth;
-        libraryWidth += wetExcess;
+        // Button area to fit search field (25px) + spacing (5px) + tree line (24px) + extra spacing = 64px total
+        buttonArea = bounds.removeFromTop(64);
+
+        // Apply vertical margin
+        buttonArea.removeFromTop(5);
+        buttonArea.removeFromBottom(5);
+
+        // Apply left margin (more distance from left edge) and right margin
+        buttonArea.removeFromLeft(10); // Increased from 5 to 10 for more distance from left edge
+        buttonArea.removeFromRight(5);
+
+        int totalWidth = buttonArea.getWidth();
+        int spacing = 5;
+
+        // Fixed minimum sizes that must fit
+        int buttonWidth = 60;        // Minimum for each button
+        int presetMenuWidth = 40;    // Width for preset management menu (just arrow)
+        int wetLabelWidth = 60;      // Enough for "Dry/Wet" text
+        int wetSliderMinWidth = 100; // Minimum usable slider width
+        int wetSliderMaxWidth = 200; // Maximum to prevent it getting too large
+        int libraryMinWidth = 150;   // Minimum for library browser
+
+        // Calculate minimum required width
+        int minRequired = (buttonWidth * 5)
+                        + (spacing * 4)
+                        + spacing
+                        + presetMenuWidth
+                        + (spacing * 2)
+                        + libraryMinWidth
+                        + (spacing * 2)
+                        + wetLabelWidth
+                        + spacing
+                        + wetSliderMinWidth;
+
+        // If we have extra space, distribute it proportionally
+        int extraSpace = juce::jmax(0, totalWidth - minRequired);
+
+        // Distribute extra space: 70% to library, 30% to wet slider (capped at max)
+        int libraryWidth = libraryMinWidth + (int)(extraSpace * 0.7f);
+
+        // If wet slider hit its max, give remaining space to library
+        if (wetSliderMinWidth + (int)(extraSpace * 0.3f) > wetSliderMaxWidth)
+        {
+            int wetExcess = (wetSliderMinWidth + (int)(extraSpace * 0.3f)) - wetSliderMaxWidth;
+            libraryWidth += wetExcess;
+        }
+
+        // Layout buttons and set visibility
+        loadButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+        loadButton.setVisible(true);
+        buttonArea.removeFromLeft(spacing);
+        unloadButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+        unloadButton.setVisible(true);
+        buttonArea.removeFromLeft(spacing);
+        editButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+        editButton.setVisible(true);
+        buttonArea.removeFromLeft(spacing);
+        uiButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+        uiButton.setVisible(true);
+        buttonArea.removeFromLeft(spacing);
+        ioMatrixButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+        ioMatrixButton.setVisible(true);
+
+        buttonArea.removeFromLeft(spacing);
+        presetManagementMenu.setBounds(buttonArea.removeFromLeft(presetMenuWidth));
+        presetManagementMenu.setVisible(true);
+
+        buttonArea.removeFromLeft(spacing * 2);
+
+        // Calculate preset window bounds - search field and tree (title is separate now)
+        auto presetWindowArea = buttonArea.removeFromLeft(libraryWidth);
+
+        // Always use adaptive height - tree resizes based on content/search
+        auto& treeView = presetWindow.getTreeView();
+        int neededHeight = treeView.getNeededHeight();
+        presetWindowArea.setHeight(neededHeight);
+        presetWindow.setBounds(presetWindowArea);
+        presetWindow.setVisible(true); // Ensure visible when button bar is shown
+
+        buttonArea.removeFromLeft(spacing * 2);
+        wetLabel.setBounds(buttonArea.removeFromLeft(wetLabelWidth));
+        wetLabel.setVisible(true);
+        buttonArea.removeFromLeft(spacing);
+
+        // Give remaining space to wet slider (should match wetSliderWidth calculated above)
+        wetSlider.setBounds(buttonArea);
+        wetSlider.setVisible(true);
+    }
+    else
+    {
+        // Hide all button bar components when not visible
+        loadButton.setVisible(false);
+        unloadButton.setVisible(false);
+        editButton.setVisible(false);
+        uiButton.setVisible(false);
+        ioMatrixButton.setVisible(false);
+        presetManagementMenu.setVisible(false);
+        presetWindow.setVisible(false);
+        wetLabel.setVisible(false);
+        wetSlider.setVisible(false);
     }
 
-    // Layout buttons
-    loadButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(spacing);
-    unloadButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(spacing);
-    editButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(spacing);
-    uiButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(spacing);
-    ioMatrixButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
-
-    buttonArea.removeFromLeft(spacing);
-    presetManagementMenu.setBounds(buttonArea.removeFromLeft(presetMenuWidth));
-
-    buttonArea.removeFromLeft(spacing * 2);
-
-    // Calculate preset window bounds - search field and tree (title is separate now)
-    auto presetWindowArea = buttonArea.removeFromLeft(libraryWidth);
-
-    // Always use adaptive height - tree resizes based on content/search
-    auto& treeView = presetWindow.getTreeView();
-    int neededHeight = treeView.getNeededHeight();
-    presetWindowArea.setHeight(neededHeight);
-    presetWindow.setBounds(presetWindowArea);
-
-    buttonArea.removeFromLeft(spacing * 2);
-    wetLabel.setBounds(buttonArea.removeFromLeft(wetLabelWidth));
-    buttonArea.removeFromLeft(spacing);
-
-    // Give remaining space to wet slider (should match wetSliderWidth calculated above)
-    wetSlider.setBounds(buttonArea);
-
-    // Position JSFX title label in the reserved title area
-    statusLabel.setBounds(titleArea);
+    // Position JSFX title and preset labels in the reserved title area with spacing
+    auto titleHeight = titleArea.getHeight() / 2; // Split area in half
+    titleLabel.setBounds(titleArea.removeFromTop(titleHeight));
+    titleArea.removeFromTop(8);       // Add gap between title and preset label
+    presetLabel.setBounds(titleArea); // Remaining space for preset label
 
     // Give remaining space to components - visibility controls which shows
     viewport.setBounds(bounds);
@@ -643,6 +703,14 @@ void AudioPluginAudioProcessorEditor::resized()
 
 bool AudioPluginAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 {
+    // F key - Toggle button bar visibility
+    if (key.getTextCharacter() == 'f' || key.getTextCharacter() == 'F')
+    {
+        buttonBarVisible = !buttonBarVisible;
+        resized(); // Trigger layout update
+        return true;
+    }
+
     // F11 - Toggle LICE fullscreen
     if (key == juce::KeyPress::F11Key)
     {
@@ -667,6 +735,10 @@ void AudioPluginAudioProcessorEditor::toggleLiceFullscreen()
         juce::Desktop::getInstance().setKioskModeComponent(nullptr);
         jsfxLiceFullscreenWindow.reset();
         addAndMakeVisible(jsfxLiceRenderer.get());
+
+        // Ensure preset window is visible when returning from fullscreen
+        presetWindow.setVisible(buttonBarVisible);
+
         resized();
     }
     else
@@ -674,6 +746,11 @@ void AudioPluginAudioProcessorEditor::toggleLiceFullscreen()
         // Enter fullscreen with kiosk mode
         jsfxLiceFullscreenWindow = std::make_unique<JsfxLiceFullscreenWindow>();
         jsfxLiceFullscreenWindow->onWindowClosed = [this]() { toggleLiceFullscreen(); };
+        jsfxLiceFullscreenWindow->onToggleButtonBar = [this]()
+        {
+            buttonBarVisible = !buttonBarVisible;
+            resized();
+        };
 
         removeChildComponent(jsfxLiceRenderer.get());
         jsfxLiceFullscreenWindow->showWithComponent(jsfxLiceRenderer.get());

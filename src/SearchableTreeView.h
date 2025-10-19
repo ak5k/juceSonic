@@ -310,6 +310,13 @@ public:
     void filterTree();
 
     /**
+     * @brief Execute command on selected items
+     * Handles setting search text (if enabled) and calling command callback or virtual method
+     * @param selectedItems The items to execute the command on
+     */
+    void executeCommand(const juce::Array<juce::TreeViewItem*>& selectedItems);
+
+    /**
      * @brief Clear all matched flags in the tree
      */
     void clearMatches(juce::TreeViewItem* item = nullptr);
@@ -373,6 +380,11 @@ public:
      * @brief Toggle manual expansion state (for use by FilteredTreeView)
      */
     void toggleManualExpansion();
+
+    /**
+     * @brief Handle ESC key press - collapse tree and clear search
+     */
+    void handleEscapeKey();
 
     /**
      * @brief Mouse event handling for click-to-expand in collapsed mode and click-away detection
@@ -456,7 +468,8 @@ private:
         const juce::StringArray& categories,
         const juce::HashMap<juce::String, juce::Array<juce::TreeViewItem*>>& itemsByCategory,
         int& itemId,
-        int categoryIndex = 0
+        int categoryIndex,
+        juce::HashMap<int, juce::TreeViewItem*>& itemIdToTreeItem
     );
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SearchableTreeView)
