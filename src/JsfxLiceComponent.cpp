@@ -83,9 +83,7 @@ void JsfxLiceComponent::paint(juce::Graphics& g)
 
     // Resize cached image if dimensions changed
     if (!cachedLiceImage.isValid() || cachedLiceImage.getWidth() != width || cachedLiceImage.getHeight() != height)
-    {
         cachedLiceImage = juce::Image(juce::Image::ARGB, width, height, false);
-    }
 
     // Copy LICE bitmap data to JUCE image
     // Use explicit scope to ensure BitmapData is destroyed before we draw the image
