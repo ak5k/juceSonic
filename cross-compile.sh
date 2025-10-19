@@ -574,10 +574,24 @@ set(CMAKE_CXX_COMPILER ${CROSS_COMPILE_PREFIX}-g++)
 #   /usr/include/${CROSS_COMPILE_PREFIX}/
 # Ubuntu's multiarch support handles everything
 
+# Set root paths for finding libraries - exclude Linuxbrew/Homebrew
+set(CMAKE_FIND_ROOT_PATH 
+    /usr
+    /usr/lib/${CROSS_COMPILE_PREFIX}
+    /usr/include/${CROSS_COMPILE_PREFIX}
+)
+
+# Exclude Linuxbrew/Homebrew paths to prevent architecture mismatches
+set(CMAKE_IGNORE_PATH
+    /home/linuxbrew/.linuxbrew
+    /opt/homebrew
+    /usr/local/Homebrew
+)
+
 # Search for programs in the build host directories
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 
-# Search for libraries and headers in the target directories
+# Search for libraries and headers in the target directories only
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)

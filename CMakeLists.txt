@@ -187,6 +187,14 @@ target_include_directories(${PROJECT_NAME}
         ${GENERATED_INCLUDE_DIR}
 )
 
+# ARM architectures default to unsigned char, but WDL (used by JSFX) expects signed char
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+    target_compile_options(${PROJECT_NAME} PRIVATE -fsigned-char)
+    target_compile_options(${PROJECT_NAME}_Standalone PRIVATE -fsigned-char)
+    target_compile_options(${PROJECT_NAME}_VST3 PRIVATE -fsigned-char)
+    message(STATUS "ARM processor detected (${CMAKE_SYSTEM_PROCESSOR}) - adding -fsigned-char flag")
+endif()
+
 # Add StandaloneApp.cpp only to the Standalone target
 target_sources(${PROJECT_NAME}_Standalone PRIVATE src/StandaloneApp.cpp)
 

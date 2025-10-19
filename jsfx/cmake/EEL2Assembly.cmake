@@ -316,7 +316,11 @@ function(eel2_add_assembly_to_target target)
         message(STATUS "EEL2: Pre-compiled assembly object added to target '${target}'")
     elseif(EEL2_USE_GCC_ASM)
         # GCC inline assembly (C file with asm blocks)
-        # Treat as regular C file - no special properties needed
+        # Treat as regular C file - add required EEL2 defines
+        set_source_files_properties(${EEL2_ASM_SOURCE}
+            PROPERTIES 
+                COMPILE_DEFINITIONS "NSEEL_RAM_BLOCKS_LOG2=11;NSEEL_RAM_ITEMSPERBLOCK_LOG2=16;NSEEL_RAM_BLOCKS=(1<<11);NSEEL_RAM_ITEMSPERBLOCK=(1<<16);EEL_F_SIZE=8"
+        )
         message(STATUS "EEL2: GCC inline assembly source (C file) added to target '${target}'")
     else()
         # Source assembly file - compile with NASM
