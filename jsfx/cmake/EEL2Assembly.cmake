@@ -248,14 +248,34 @@ elseif(WIN32)
     
     set(EEL2_USE_MASM FALSE)
 else()
-    # Non-Windows platforms use system NASM
-    find_program(NASM_EXECUTABLE nasm
-        DOC "NASM assembler executable"
+    # Non-Windows platforms: use 'which' to find NASM
+    message(STATUS "EEL2: Searching for NASM...")
+    
+    execute_process(
+        COMMAND which nasm
+        OUTPUT_VARIABLE NASM_EXECUTABLE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE NASM_WHICH_RESULT
     )
     
-    if(NASM_EXECUTABLE)
-        message(STATUS "EEL2: Found system NASM at ${NASM_EXECUTABLE}")
-        set(NASM_FOUND TRUE)
+    if(NASM_WHICH_RESULT EQUAL 0 AND EXISTS "${NASM_EXECUTABLE}")
+        # Verify NASM works by checking its version
+        execute_process(
+            COMMAND ${NASM_EXECUTABLE} --version
+            OUTPUT_VARIABLE NASM_VERSION_OUTPUT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+            RESULT_VARIABLE NASM_VERSION_RESULT
+        )
+        
+        if(NASM_VERSION_RESULT EQUAL 0)
+            message(STATUS "EEL2: Found system NASM at ${NASM_EXECUTABLE}")
+            message(STATUS "EEL2: NASM version: ${NASM_VERSION_OUTPUT}")
+            set(NASM_FOUND TRUE)
+        else()
+            message(FATAL_ERROR "EEL2: NASM found but doesn't execute properly: ${NASM_EXECUTABLE}")
+        endif()
     else()
         message(FATAL_ERROR "EEL2: NASM is required but not found. Install with:\n  Ubuntu/Debian: sudo apt-get install nasm\n  macOS: brew install nasm\n  Arch: sudo pacman -S nasm")
     endif()
