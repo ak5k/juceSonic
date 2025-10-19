@@ -1,13 +1,12 @@
 #include "PluginEditor.h"
 
 #include "AboutWindow.h"
-#include "Config.h"
 #include "IOMatrixComponent.h"
 #include "PersistentFileChooser.h"
-#include "PluginConstants.h"
 #include "PluginProcessor.h"
 #include "PresetWindow.h"
 #include "RepositoryWindow.h"
+#include "RepositoryManager.h"
 #include "ReaperPresetConverter.h"
 
 #include <jsfx.h>
@@ -176,13 +175,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     );                            // Show hint line when no search, expand to show results
     presetBrowser.toFront(false); // Ensure it's on top of LICE component
 
-    // Handle preset selection via callback
-    presetBrowser.onPresetSelected =
-        [this](const juce::String& bank, const juce::String& name, const juce::String& data)
-    {
-        // Preset loading is already handled by PresetWindow, callback is for tracking only
-        // (could be used for additional UI updates if needed)
-    };
+    // PresetWindow now handles preset selection internally via its own callback
 
     // Handle tree expansion for adaptive sizing
     presetBrowser.getTreeView().onTreeExpansionChanged = [this](bool isExpanded)
@@ -1041,8 +1034,12 @@ void AudioPluginAudioProcessorEditor::checkForUpdatesIfNeeded()
     // Update last check time
     setGlobalProperty("lastUpdateCheckTime", now);
 
-    // Get repository URL from Config.h
+    // Get repository URL from CMake configuration
+#ifdef JUCESONIC_REPO_URL
     juce::String repoUrl = JUCESONIC_REPO_URL;
+#else
+    juce::String repoUrl = "https://github.com/ak5k/jucesonic";
+#endif
 
     // Start async version check
     if (!versionChecker)
@@ -1111,6 +1108,7 @@ void AudioPluginAudioProcessorEditor::showPresetBrowser()
 
 void AudioPluginAudioProcessorEditor::showRepositoryBrowser()
 {
+    // RepositoryWindow now owns its own RepositoryManager
     auto* repoWindow = new RepositoryWindow(processorRef);
 
     juce::DialogWindow::LaunchOptions options;

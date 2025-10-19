@@ -5,7 +5,7 @@
 
 #include "JsfxHelper.h"
 #include "ParameterSyncManager.h"
-#include "PluginConstants.h"
+#include <Config.h>
 #include "PresetLoader.h"
 
 #include <atomic>

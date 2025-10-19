@@ -1,6 +1,6 @@
 #pragma once
 
-#include "PluginConstants.h"
+#include <Config.h>
 
 #include <array>
 #include <atomic>
