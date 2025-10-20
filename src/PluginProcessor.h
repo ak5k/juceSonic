@@ -214,10 +214,10 @@ private:
 
     // Two-way parameter synchronization between APVTS and JSFX
     ParameterSyncManager parameterSync;
-    
+
     // Flag to force push APVTS to JSFX on first processBlock (set by setStateInformation)
     std::atomic<bool> needsForcePushApvtsToJsfx{false};
-    
+
     // Track if prepareToPlay has been called (for state restoration ordering)
     std::atomic<bool> isPrepared{false};
 
