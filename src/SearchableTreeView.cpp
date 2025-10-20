@@ -1056,7 +1056,8 @@ int SearchableTreeView::getIdealTreeHeight() const
     if (autoHideTreeWithoutResults)
     {
         // Just apply a reasonable maximum to prevent absurd heights
-        return juce::jlimit(100, 600, calculatedHeight);
+        // Minimum is 50px (enough for 2-3 items), maximum is 600px
+        return juce::jlimit(50, 600, calculatedHeight);
     }
 
     // In normal mode, return the calculated height (parent will constrain it)

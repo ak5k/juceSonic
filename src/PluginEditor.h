@@ -234,8 +234,6 @@ private:
     // PresetWindow embedded as component (minimal UI mode)
     PresetWindow presetWindow;
 
-    juce::Slider wetSlider;
-    juce::Label wetLabel;
     juce::Viewport viewport;
     juce::Component parameterContainer;
     juce::Label titleLabel;
@@ -265,7 +263,6 @@ private:
     void checkForUpdatesIfNeeded();
     void showUpdateNotification(const juce::String& latestVersion, const juce::String& downloadUrl);
     void openPresetManager();
-    void showRepositoryBrowser();
     void openJsfxPluginBrowser();
 
     // JSFX lifecycle management (internal constructor/destructor pattern)

@@ -17,7 +17,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # `project()` command. `project()` sets up some helpful variables that describe source/binary
 # directories, and the current project version. This is a standard CMake command.
 
-project(juceSonic VERSION 0.1.0 LANGUAGES CXX C)
+project(juceSonic VERSION 0.3.1 LANGUAGES CXX C)
 
 # ==============================================================================
 # Configure Config.h from Config.h.in
@@ -272,78 +272,10 @@ target_compile_definitions(${PROJECT_NAME}
         # JUCESONIC_REPO_URL is now defined in Config.h via configure_file()
 )
 
-# ==============================================================================
-# Collect and Combine License Files
-# ==============================================================================
-
-# Search for license files recursively with common patterns
-file(GLOB_RECURSE LICENSE_FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/COPYING*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*/LICENSE*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*/COPYING*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*/*/LICENSE*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*/*/COPYING*"
-)
-
-# Sort licenses: root LICENSE first, then others alphabetically
-set(ROOT_LICENSE "")
-set(OTHER_LICENSES "")
-
-foreach(LICENSE_FILE ${LICENSE_FILES})
-    file(RELATIVE_PATH REL_PATH "${CMAKE_CURRENT_SOURCE_DIR}" "${LICENSE_FILE}")
-    
-    # Check if this is the root LICENSE
-    if(REL_PATH MATCHES "^LICENSE")
-        set(ROOT_LICENSE "${LICENSE_FILE}")
-    else()
-        list(APPEND OTHER_LICENSES "${LICENSE_FILE}")
-    endif()
-endforeach()
-
-# Sort other licenses alphabetically
-list(SORT OTHER_LICENSES)
-
-# Combine all licenses into one text file
-set(COMBINED_LICENSES_FILE "${CMAKE_CURRENT_BINARY_DIR}/LicensesBinaryData.txt")
-file(WRITE "${COMBINED_LICENSES_FILE}" "")
-
-# Function to append license with header
-function(append_license LICENSE_PATH)
-    file(RELATIVE_PATH REL_DIR "${CMAKE_CURRENT_SOURCE_DIR}" "${LICENSE_PATH}")
-    get_filename_component(LICENSE_DIR "${REL_DIR}" DIRECTORY)
-    
-    # If license is in root, use "juceSonic" as title
-    if(LICENSE_DIR STREQUAL "")
-        set(LICENSE_DIR "juceSonic")
-    endif()
-    
-    file(APPEND "${COMBINED_LICENSES_FILE}" 
-        "================================================================================\n")
-    file(APPEND "${COMBINED_LICENSES_FILE}" 
-        "${LICENSE_DIR}\n")
-    file(APPEND "${COMBINED_LICENSES_FILE}" 
-        "================================================================================\n\n")
-    
-    file(READ "${LICENSE_PATH}" LICENSE_CONTENT)
-    file(APPEND "${COMBINED_LICENSES_FILE}" "${LICENSE_CONTENT}\n\n")
-endfunction()
-
-# Append root license first
-if(ROOT_LICENSE)
-    message(STATUS "Adding root license: ${ROOT_LICENSE}")
-    append_license("${ROOT_LICENSE}")
-endif()
-
-# Append other licenses
-foreach(LICENSE_FILE ${OTHER_LICENSES})
-    message(STATUS "Adding license: ${LICENSE_FILE}")
-    append_license("${LICENSE_FILE}")
-endforeach()
 
 # Create binary data from the combined licenses
 juce_add_binary_data(LicensesBinaryData
-    SOURCES "${COMBINED_LICENSES_FILE}")
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 
 # If your target needs extra binary assets, you can add them here. The first argument is the name of
 # a new static library target that will include all the binary resources. There is an optional

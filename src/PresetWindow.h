@@ -41,6 +41,14 @@ public:
     }
 
     /**
+     * @brief Hide or show the status label
+     */
+    void setStatusLabelVisible(bool visible)
+    {
+        getStatusLabel().setVisible(visible);
+    }
+
+    /**
      * @brief Refresh preset list from APVTS data
      */
     void refreshPresetList();

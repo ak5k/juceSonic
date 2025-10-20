@@ -73,9 +73,8 @@ void JsfxPluginTreeItem::itemClicked(const juce::MouseEvent& e)
 
 void JsfxPluginTreeItem::paintItem(juce::Graphics& g, int width, int height)
 {
-    // Default background
-    if (isSelected())
-        g.fillAll(juce::Colours::lightblue.withAlpha(0.3f));
+    // Draw match highlight (handles selection, focus, and match states)
+    paintMatchHighlight(g, width, height);
 
     // Metadata items are styled differently (grey and smaller font)
     g.setColour(type == ItemType::Metadata ? juce::Colours::grey : juce::Colours::white);

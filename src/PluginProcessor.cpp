@@ -798,13 +798,10 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         playState,
         playPositionSeconds,
         playPositionBeats,
-        lastWet,
-        currentWet,
+        1.0, // lastWet (always 100% wet)
+        1.0, // currentWet (always 100% wet)
         0
     );
-
-    // Update lastWet for next block
-    lastWet = currentWet;
 
     // Update latency atomically for the timer to read (some JSFX can have dynamic latency)
     currentJSFXLatency.store(JesusonicAPI.sx_getCurrentLatency(sxInstance), std::memory_order_relaxed);
@@ -885,10 +882,6 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
         {
             // Restore the state tree (parameters and properties)
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
-
-            // Restore wet amount
-            currentWet = apvts.state.getProperty("wetAmount", 1.0);
-            lastWet = currentWet;
 
             // Load JSFX from stored path (loadJSFX will handle all initialization)
             auto jsfxPath = getCurrentJSFXPath();

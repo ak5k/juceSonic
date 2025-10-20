@@ -150,17 +150,6 @@ public:
         return presetCache;
     }
 
-    void setWetAmount(double wet)
-    {
-        currentWet = juce::jlimit(0.0, 1.0, wet);
-        apvts.state.setProperty("wetAmount", currentWet, nullptr);
-    }
-
-    double getWetAmount() const
-    {
-        return currentWet;
-    }
-
     // Update routing configuration from UI (called from message thread)
     void updateRoutingConfig(const RoutingConfig& newConfig);
 
@@ -219,9 +208,6 @@ private:
     juce::String jsfxRootDir;
     int numActiveParams = 0;
     double lastSampleRate = 44100.0;
-
-    double lastWet = 1.0;
-    double currentWet = 1.0;
 
     std::atomic<int> currentJSFXLatency{0};
     juce::dsp::DelayLine<float> bypassDelayLine;

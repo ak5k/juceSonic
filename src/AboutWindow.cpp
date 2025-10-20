@@ -68,10 +68,7 @@ AboutWindow::ContentComponent::ContentComponent()
     licenseTextEditor.setFont(juce::Font(juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
 
     // Load licenses from binary data (UTF-8 encoded)
-    juce::String licenseText(
-        juce::CharPointer_UTF8(BinaryData::LicensesBinaryData_txt),
-        BinaryData::LicensesBinaryData_txtSize
-    );
+    juce::String licenseText(juce::CharPointer_UTF8(BinaryData::LICENSE), BinaryData::LICENSESize);
     licenseTextEditor.setText(licenseText, false);
 
     // Close button
