@@ -567,6 +567,7 @@ PresetDirectoryEditor::PresetDirectoryEditor(
     directoryEditor.setReturnKeyStartsNewLine(true);
     directoryEditor.setScrollbarsShown(true);
     directoryEditor.setFont(juce::FontOptions(12.0f));
+    directoryEditor.setTextToShowWhenEmpty("C:\\PELIT\\FF7", juce::Colours::grey);
     directoryEditor.setText(currentDirectories.joinIntoString("\n"));
 
     addAndMakeVisible(saveButton);
