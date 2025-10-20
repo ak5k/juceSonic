@@ -616,8 +616,7 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     int juceSidechains = (getBusCount(true) > 1) ? getBus(true, 1)->getNumberOfChannels() : 0;
 
     // Check if routing needs initialization (channel counts are 0)
-    bool needsInit = (routingConfigs[0].numJuceInputs == 0 || 
-                      routingConfigs[0].numJuceOutputs == 0);
+    bool needsInit = (routingConfigs[0].numJuceInputs == 0 || routingConfigs[0].numJuceOutputs == 0);
 
     if (needsInit)
     {
@@ -634,10 +633,16 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
         }
 
         DBG("Routing matrix initialized with diagonal (1:1) routing: "
-            << juceInputs << " JUCE inputs + " << juceSidechains << " sidechains -> "
-            << routingConfigs[0].numJsfxInputs << " JSFX channels -> "
-            << routingConfigs[0].numJsfxOutputs << " JSFX outputs -> "
-            << routingConfigs[0].numJuceOutputs << " JUCE outputs");
+            << juceInputs
+            << " JUCE inputs + "
+            << juceSidechains
+            << " sidechains -> "
+            << routingConfigs[0].numJsfxInputs
+            << " JSFX channels -> "
+            << routingConfigs[0].numJsfxOutputs
+            << " JSFX outputs -> "
+            << routingConfigs[0].numJuceOutputs
+            << " JUCE outputs");
     }
 }
 
@@ -828,7 +833,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sxInstance,
         tempBuffer.getWritePointer(0),
         buffer.getNumSamples(),
-        totalJsfxChannels, // Use total JSFX channels including sidechain
+        totalJsfxChannels,            // Use total JSFX channels including sidechain
         (int)(getSampleRate() + 0.5), // Cast to int, matching vstframe.cpp
         tempo,
         timeSigNumerator,
@@ -1074,13 +1079,13 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     // Setup new instance with proper initialization sequence (matching vstframe.cpp):
     // 1. Set up host context (for slider automation)
     sx_set_host_ctx(newInstance, this, JsfxSliderAutomateThunk);
-    
+
     // 2. Set sample rate
     JesusonicAPI.sx_extended(newInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
-    
+
     // 3. Set up MIDI context
     sx_set_midi_ctx(newInstance, &midiSendRecvCallback, this);
-    
+
     // 4. Update host channel count (-1 = use current bus layout)
     JesusonicAPI.sx_updateHostNch(newInstance, getTotalNumInputChannels());
 

@@ -762,7 +762,7 @@ void PresetWindow::setAsDefaultPreset()
 void PresetWindow::setWASDMode(bool enabled)
 {
     wasdModeEnabled = enabled;
-    
+
     if (wasdButton)
     {
         // Update button appearance to show toggle state
@@ -785,7 +785,7 @@ void PresetWindow::navigatePresetJump(int count)
 {
     // Get all preset items in order
     auto allPresets = presetTreeView.getDeepestLevelItems();
-    
+
     if (allPresets.isEmpty())
         return;
 
@@ -815,7 +815,7 @@ void PresetWindow::navigatePresetJump(int count)
     else
     {
         newIndex = currentIndex + count;
-        
+
         // Wrap around
         if (newIndex < 0)
             newIndex = allPresets.size() + (newIndex % allPresets.size());
@@ -827,9 +827,7 @@ void PresetWindow::navigatePresetJump(int count)
     if (newIndex >= 0 && newIndex < allPresets.size())
     {
         if (auto* presetItem = dynamic_cast<PresetTreeItem*>(allPresets[newIndex]))
-        {
             selectAndLoadPresetItem(presetItem);
-        }
     }
 }
 
@@ -840,10 +838,10 @@ void PresetWindow::selectAndLoadPresetItem(PresetTreeItem* item)
 
     // Deselect all other items
     presetTreeView.getTreeView().clearSelectedItems();
-    
+
     // Select the new item
     item->setSelected(true, true);
-    
+
     // Ensure the item is visible by expanding parent items
     auto* parent = item->getParentItem();
     while (parent)
@@ -851,10 +849,10 @@ void PresetWindow::selectAndLoadPresetItem(PresetTreeItem* item)
         parent->setOpen(true);
         parent = parent->getParentItem();
     }
-    
+
     // Scroll to make the item visible
     presetTreeView.getTreeView().scrollToKeepItemVisible(item);
-    
+
     // Load the preset
     handlePresetTreeItemSelected(item);
 }

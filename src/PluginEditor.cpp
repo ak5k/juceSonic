@@ -772,7 +772,7 @@ bool AudioPluginAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
     if (presetWindow.isWASDModeEnabled() && !key.getModifiers().isAnyModifierKeyDown())
     {
         auto keyChar = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
-        
+
         if (keyChar == 'a')
         {
             // A = Previous preset

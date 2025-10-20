@@ -62,7 +62,11 @@ public:
     /**
      * @brief Get/Set WASD mode state
      */
-    bool isWASDModeEnabled() const { return wasdModeEnabled; }
+    bool isWASDModeEnabled() const
+    {
+        return wasdModeEnabled;
+    }
+
     void setWASDMode(bool enabled);
 
     /**
