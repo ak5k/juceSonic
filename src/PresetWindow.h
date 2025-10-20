@@ -13,7 +13,6 @@ class AudioPluginAudioProcessor;
  *
  * Features:
  * - Browse presets in hierarchical tree view (Directory > File > Bank > Preset)
- * - Import .rpl preset files
  * - Export selected presets
  * - Delete selected presets
  * - Configure preset search directories
@@ -27,7 +26,7 @@ public:
     void visibilityChanged() override;
 
     /**
-     * @brief Configure whether to show management buttons (Import, Export, etc.)
+     * @brief Configure whether to show management buttons (Export, Delete, etc.)
      * Set to false when embedding in editor for minimal UI
      */
     void setShowManagementButtons(bool show);
@@ -67,7 +66,6 @@ protected:
     }
 
 private:
-    void importPresetFile();
     void exportSelectedPresets();
     void deleteSelectedPresets();
     void showDirectoryEditor();
@@ -88,7 +86,6 @@ private:
     AudioPluginAudioProcessor& processor;
 
     // UI Components - button pointers managed by base class ButtonRowComponent
-    juce::TextButton* importButton = nullptr;
     juce::TextButton* exportButton = nullptr;
     juce::TextButton* deleteButton = nullptr;
     juce::TextButton* saveButton = nullptr;

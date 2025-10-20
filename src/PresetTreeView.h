@@ -180,10 +180,10 @@ private:
     {
         juce::File directory;
         std::vector<FileEntry> files;
-        bool isDefaultRoot = false;  // True if this is the default install location
-        bool isExternalRoot = false; // True if this is an external JSFX directory
-        bool isRemoteRoot = false;   // True if this is from remote/ directory
-        bool isUserRoot = false;     // True if this is from user/ directory
+        juce::String displayName;      // Display name for the category
+        bool isCurrentJsfxDir = false; // True if this is the current JSFX plugin's directory
+        bool isCustomDir = false;      // True if this is a custom directory
+        bool isReaperDir = false;      // True if this is the REAPER directory
     };
 
     std::vector<DirectoryEntry> presetDirectories;

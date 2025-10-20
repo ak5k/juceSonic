@@ -334,26 +334,18 @@ void JsfxPluginTreeView::loadPlugins(const juce::StringArray& directoryPaths)
 {
     categories.clear();
 
-    // Define standard categories
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
 
-    // REAPER category: <appdata>/REAPER/Effects
-    CategoryEntry reaperCategory;
-    reaperCategory.displayName = "REAPER";
-    reaperCategory.directory = appDataDir.getChildFile("REAPER").getChildFile("Effects");
-
-    // Add REAPER category
-    categories.add(reaperCategory);
-
-    // Add additional custom directories from user preferences
+    // 1. Add custom directories from user preferences
     for (const auto& path : directoryPaths)
     {
-        // Use JUCE to sanitize and parse the path (remove quotes, trim whitespace)
         auto sanitizedPath = path.trim().unquoted();
         juce::File dir(sanitizedPath);
 
         if (!dir.exists() || !dir.isDirectory())
-            continue; // Check if this directory is already in our standard categories
+            continue;
+
+        // Check if this directory is already in our categories
         bool isDuplicate = false;
         for (const auto& cat : categories)
         {
@@ -373,6 +365,16 @@ void JsfxPluginTreeView::loadPlugins(const juce::StringArray& directoryPaths)
             categories.add(customCategory);
         }
     }
+
+    // 3. Repositories are added separately via loadRemoteRepositories()
+    // They appear after custom directories in refreshTree()
+
+    // 4. Add REAPER category last
+    CategoryEntry reaperCategory;
+    reaperCategory.displayName = "REAPER";
+    reaperCategory.directory = appDataDir.getChildFile("REAPER").getChildFile("Effects");
+    reaperCategory.isStandardCategory = true;
+    categories.add(reaperCategory);
 
     // Rebuild tree
     refreshTree();

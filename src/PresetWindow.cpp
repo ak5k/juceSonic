@@ -13,7 +13,6 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     setButtonMenuTitle("Presets");
 
     // Add buttons to the button row (from base class)
-    importButton = &getButtonRow().addButton("Import", [this]() { importPresetFile(); });
     exportButton = &getButtonRow().addButton("Export", [this]() { exportSelectedPresets(); });
     deleteButton = &getButtonRow().addButton("Delete", [this]() { deleteSelectedPresets(); });
     saveButton = &getButtonRow().addButton("Save", [this]() { saveCurrentPreset(); });
@@ -81,99 +80,6 @@ void PresetWindow::refreshPresetList()
     );
 
     updateButtonsForSelection();
-}
-
-void PresetWindow::importPresetFile()
-{
-    auto chooser = std::make_shared<juce::FileChooser>("Import Preset File", juce::File(), "*.rpl");
-
-    chooser->launchAsync(
-        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [this, chooser](const juce::FileChooser& fc)
-        {
-            auto file = fc.getResult();
-            if (!file.existsAsFile())
-                return;
-
-            // Get current JSFX filename (without extension)
-            juce::String jsfxPath = processor.getCurrentJSFXPath();
-            if (jsfxPath.isEmpty())
-            {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon,
-                    "Import Failed",
-                    "No JSFX loaded. Please load a JSFX before importing presets.",
-                    "OK",
-                    nullptr
-                );
-                return;
-            }
-
-            juce::File jsfxFile(jsfxPath);
-            juce::String jsfxFilename = jsfxFile.getFileNameWithoutExtension();
-
-            // Build target directory: <appdata>/juceSonic/data/local/<jsfx-filename>/
-            auto targetDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                 .getChildFile(PluginConstants::ApplicationName)
-                                 .getChildFile(PluginConstants::DataDirectoryName)
-                                 .getChildFile(PluginConstants::LocalPresetsDirectoryName)
-                                 .getChildFile(jsfxFilename);
-
-            // Create directory structure if needed
-            if (!targetDir.exists() && !targetDir.createDirectory())
-            {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon,
-                    "Import Failed",
-                    "Failed to create preset directory: " + targetDir.getFullPathName(),
-                    "OK",
-                    nullptr
-                );
-                return;
-            }
-
-            // Target file path
-            auto targetFile = targetDir.getChildFile(file.getFileName());
-
-            // Check if file exists and ask to overwrite
-            if (targetFile.existsAsFile())
-            {
-                auto result = juce::AlertWindow::showOkCancelBox(
-                    juce::MessageBoxIconType::QuestionIcon,
-                    "File Exists",
-                    "A preset file with this name already exists:\n" + targetFile.getFullPathName() + "\n\nOverwrite?",
-                    "Overwrite",
-                    "Cancel",
-                    nullptr,
-                    nullptr
-                );
-
-                if (result == 0) // User clicked Cancel
-                    return;
-            }
-
-            // Copy file to target directory
-            if (file.copyFileTo(targetFile))
-            {
-                getStatusLabel().setText(
-                    "Imported: " + file.getFileName() + " to " + jsfxFilename,
-                    juce::dontSendNotification
-                );
-
-                refreshPresetList();
-            }
-            else
-            {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon,
-                    "Import Failed",
-                    "Failed to copy file from:\n" + file.getFullPathName() + "\n\nto:\n" + targetFile.getFullPathName(),
-                    "OK",
-                    nullptr
-                );
-            }
-        }
-    );
 }
 
 void PresetWindow::exportSelectedPresets()
@@ -593,15 +499,21 @@ void PresetWindow::updateButtonsForSelection()
 
 juce::StringArray PresetWindow::getPresetDirectories() const
 {
-    // Load from processor's APVTS
+    // Get current JSFX filename (without extension) for per-JSFX storage
+    juce::String jsfxPath = processor.getCurrentJSFXPath();
+    if (jsfxPath.isEmpty())
+        return juce::StringArray();
+
+    juce::File jsfxFile(jsfxPath);
+    juce::String jsfxName = jsfxFile.getFileNameWithoutExtension();
+
+    // Load from global storage using JSFX name as key
     auto& state = processor.getAPVTS().state;
-    auto dirString = state.getProperty("presetDirectories", "").toString();
+    auto propKey = "presetDirectories_" + jsfxName;
+    auto dirString = state.getProperty(propKey, "").toString();
 
     if (dirString.isEmpty())
-    {
-        // Return empty array - the default install root will be added automatically
         return juce::StringArray();
-    }
 
     juce::StringArray directories;
     directories.addLines(dirString);
@@ -610,8 +522,18 @@ juce::StringArray PresetWindow::getPresetDirectories() const
 
 void PresetWindow::setPresetDirectories(const juce::StringArray& directories)
 {
+    // Get current JSFX filename (without extension) for per-JSFX storage
+    juce::String jsfxPath = processor.getCurrentJSFXPath();
+    if (jsfxPath.isEmpty())
+        return;
+
+    juce::File jsfxFile(jsfxPath);
+    juce::String jsfxName = jsfxFile.getFileNameWithoutExtension();
+
+    // Save to global storage using JSFX name as key
     auto& state = processor.getAPVTS().state;
-    state.setProperty("presetDirectories", directories.joinIntoString("\n"), nullptr);
+    auto propKey = "presetDirectories_" + jsfxName;
+    state.setProperty(propKey, directories.joinIntoString("\n"), nullptr);
 }
 
 //==============================================================================
