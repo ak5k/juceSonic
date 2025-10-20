@@ -64,12 +64,23 @@ public:
         return reapackEntry;
     }
 
+    void setDownloading(bool downloading)
+    {
+        isDownloading = downloading;
+    }
+
+    bool getDownloading() const
+    {
+        return isDownloading;
+    }
+
 private:
     juce::String itemName;
     ItemType type;
     juce::File pluginFile;                      // For Plugin items
     ReaPackIndexParser::JsfxEntry reapackEntry; // For RemotePlugin items
     JsfxPluginTreeView* pluginTreeView = nullptr;
+    bool isDownloading = false;
 };
 
 /**
@@ -83,7 +94,9 @@ private:
  *
  * No metadata display needed.
  */
-class JsfxPluginTreeView : public SearchableTreeView
+class JsfxPluginTreeView
+    : public SearchableTreeView
+    , private juce::Timer
 {
 public:
     explicit JsfxPluginTreeView(AudioPluginAudioProcessor& proc);
@@ -116,11 +129,14 @@ public:
     // Check if update is available for a remote plugin
     bool isUpdateAvailable(const ReaPackIndexParser::JsfxEntry& entry) const;
 
+    // Clear cached files for a package
+    void clearPackageCache(const ReaPackIndexParser::JsfxEntry& entry);
+
     // Load plugin (local file)
     void loadPlugin(const juce::File& pluginFile);
 
-    // Load remote plugin (download if needed, then load)
-    void loadRemotePlugin(const ReaPackIndexParser::JsfxEntry& entry);
+    // Load remote plugin (download if needed, optionally load as JSFX)
+    void loadRemotePlugin(const ReaPackIndexParser::JsfxEntry& entry, bool loadAfterDownload = true);
 
     // Get selected items for operations
     juce::Array<JsfxPluginTreeItem*> getSelectedPluginItems();
@@ -155,6 +171,12 @@ public:
     // Browse menu support
     juce::Array<juce::TreeViewItem*> getDeepestLevelItems() override;
     juce::String getParentCategoryForItem(juce::TreeViewItem* item) override;
+
+    // Find and mark item as downloading/not downloading
+    void setItemDownloading(const juce::String& packageName, bool downloading);
+
+    // Draw glow effects for downloading items (called by FilteredTreeView)
+    void drawDownloadGlowEffects(juce::Graphics& g);
 
 private:
     AudioPluginAudioProcessor& processor;
@@ -193,6 +215,12 @@ private:
 
     juce::Array<CachedPackageInfo> cachedPackages;
 
+    // Animation timer callback
+    void timerCallback() override;
+
+    // Track if any items are downloading (for timer management)
+    int activeDownloads = 0;
+
     // Scan a directory for .jsfx files
     void scanDirectory(JsfxPluginTreeItem* parentItem, const juce::File& directory, bool recursive);
 
@@ -204,6 +232,9 @@ private:
     void saveRepositories();
     void loadPinnedPackages();
     void savePinnedPackages();
+
+    // First-run default repository initialization
+    void fetchAndAddDefaultRepository(const juce::String& url);
 
     // Cached package management
     void updateCachedPackageInfo(

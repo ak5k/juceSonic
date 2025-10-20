@@ -2,6 +2,12 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+// Forward declarations
+namespace juce
+{
+class AudioProcessorEditor;
+}
+
 /**
  * @brief Base class for tree items that support search/match highlighting
  */
@@ -125,14 +131,47 @@ public:
 
     bool hitTest(int x, int y) override;
 
+    void paint(juce::Graphics& g) override;
+
+    void paintOverChildren(juce::Graphics& g) override;
+
+    void resized() override;
+
+    // Overlay management
+    void expandAsOverlay();
+    void collapseFromOverlay();
+    juce::AudioProcessorEditor* findAudioProcessorEditor();
+
     // Set focus highlight on an item (for Ctrl navigation)
     void setFocusedItem(juce::TreeViewItem* item);
+
+    bool isOverlayMode = false; // True when attached to AudioProcessorEditor
 
 private:
     SearchableTreeView* searchView = nullptr;
     bool isFiltered = false;
     juce::TreeViewItem* focusedItem = nullptr;        // Visual focus indicator (Ctrl navigation)
     juce::TreeViewItem* lastNavigationItem = nullptr; // Internal reference for continuing navigation
+
+    // Overlay state
+    juce::Component* originalParent = nullptr;
+    juce::AudioProcessorEditor* overlayParent = nullptr;
+    juce::Rectangle<int> originalBounds;
+
+    // Click-away listener for collapsing when clicking outside tree
+    struct ClickAwayListener : public juce::MouseListener
+    {
+        ClickAwayListener(FilteredTreeView& tree)
+            : treeView(tree)
+        {
+        }
+
+        void mouseDown(const juce::MouseEvent& e) override;
+
+        FilteredTreeView& treeView;
+    };
+
+    ClickAwayListener clickAwayListener{*this};
 
     void collectMatchedItems(juce::Array<juce::TreeViewItem*>& items, juce::TreeViewItem* item);
     void collectVisibleSelectableItems(juce::Array<juce::TreeViewItem*>& items, juce::TreeViewItem* item);
@@ -186,6 +225,23 @@ public:
     void moveFocusToTree();
     void moveFocusToSearchField();
     void insertTextIntoSearchField(const juce::String& text);
+
+    // Search field text access
+    juce::String getSearchText() const
+    {
+        return searchField.getText();
+    }
+
+    void setSearchText(const juce::String& text)
+    {
+        searchField.setText(text, true);
+    }
+
+    // Global Ctrl+F cycling support
+    static juce::Array<SearchableTreeView*>& getAllInstances();
+    static void focusNextSearchField();
+    static void collapseAllExpandedTrees();
+    bool isSearchFieldFocused() const;
 
     // Tree access
     FilteredTreeView& getTreeView()
@@ -373,6 +429,11 @@ public:
     int getIdealTreeHeight() const;
 
     /**
+     * @brief Get ideal tree width based on widest visible item
+     */
+    int getIdealTreeWidth() const;
+
+    /**
      * @brief Check if component is in collapsed preview mode
      */
     bool isInCollapsedMode() const;
@@ -383,14 +444,27 @@ public:
     void toggleManualExpansion();
 
     /**
-     * @brief Handle ESC key press - collapse tree and clear search
+     * @brief Get the search field (for FilteredTreeView overlay positioning)
+     */
+    juce::TextEditor& getSearchField()
+    {
+        return searchField;
+    }
+
+    /**
+     * @brief Collapse the tree (programmatically)
+     */
+    void collapseTree();
+
+    /**
+     * @brief Handle ESC key press from search field - clear search and lose focus
      */
     void handleEscapeKey();
 
     /**
-     * @brief Mouse event handling for click-to-expand in collapsed mode and click-away detection
+     * @brief Handle ESC key press from tree view - collapse tree and move to search field
      */
-    void mouseDown(const juce::MouseEvent& e) override;
+    void handleEscapeFromTree();
 
     /**
      * @brief Handle parent hierarchy changes to set up global mouse listener
@@ -428,6 +502,28 @@ public:
      */
     bool hasMatches() const;
 
+    /**
+     * @brief Check if the tree has any visible selectable items
+     */
+    bool hasVisibleSelectableItems() const;
+
+    /**
+     * @brief Set custom text for the browse button
+     */
+    void setBrowseButtonText(const juce::String& text)
+    {
+        browseButton.setButtonText(text);
+    }
+
+    /**
+     * @brief Set custom callback for the browse button
+     * If set, this overrides the default browse menu functionality
+     */
+    void setBrowseButtonCallback(std::function<void()> callback)
+    {
+        customBrowseCallback = callback;
+    }
+
     // Current search term
     juce::String currentSearchTerm;
 
@@ -448,7 +544,6 @@ protected:
 
 private:
     // UI Components
-    juce::Label searchLabel;
     SearchTextEditor searchField;
     juce::TextButton browseButton;
     FilteredTreeView treeView;
@@ -461,6 +556,9 @@ private:
     bool autoHideTreeWithoutResults = false;
     bool isTreeManuallyExpanded = false; // User clicked to expand/collapse
     int matchCount = 0;
+
+    // Custom browse button callback (if set, overrides default browse menu)
+    std::function<void()> customBrowseCallback;
 
     // Browse menu helpers
     void showBrowseMenu();

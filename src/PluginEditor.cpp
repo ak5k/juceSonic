@@ -16,6 +16,7 @@ extern jsfxAPI JesusonicAPI;
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor& p)
     : AudioProcessorEditor(&p)
     , processorRef(p)
+    , jsfxPluginWindow(p)
     , presetWindow(p)
 {
     setLookAndFeel(&sharedLookAndFeel->lf);
@@ -124,8 +125,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
             int jsfxWidth = recommended.getWidth();
             int jsfxHeight = recommended.getHeight();
 
-            // Calculate total size including buttons and status (with extra pixels for borders/spacing)
-            int totalHeight = 40 + 30 + jsfxHeight + PluginConstants::LiceComponentExtraHeightPixels;
+            // Calculate total editor size to fit JSFX UI plus chrome:
+            // - Title area: 50px, Button area: 92px, JSFX height, Bottom margin: 16px
+            int totalHeight = 50 + 92 + jsfxHeight + PluginConstants::LiceComponentExtraHeightPixels;
             int totalWidth = juce::jmax(700, jsfxWidth);
             totalHeight = juce::jlimit(170, 1080, totalHeight);
             totalWidth = juce::jlimit(600, 1920, totalWidth);
@@ -152,6 +154,50 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Preset management menu
     addAndMakeVisible(presetManagementMenu);
     setupPresetManagementMenu();
+
+    // JSFX Plugin browser (embedded with management buttons)
+    addAndMakeVisible(jsfxPluginWindow);
+    jsfxPluginWindow.setShowManagementButtons(true);                    // Show management buttons
+    jsfxPluginWindow.setStatusLabelVisible(false);                      // Hide status label in embedded mode
+    jsfxPluginWindow.getTreeView().setShowMetadataLabel(false);         // Hide metadata label
+    jsfxPluginWindow.getTreeView().setAutoHideTreeWithoutResults(true); // Show hint line, expand on search
+    jsfxPluginWindow.toFront(false);                                    // Ensure it's on top of LICE component
+
+    // Set up callback for when a plugin is selected from the embedded browser
+    jsfxPluginWindow.onPluginSelected = [this](const juce::String& pluginPath)
+    {
+        juce::ignoreUnused(pluginPath);
+
+        // Call common code path to update UI
+        onJsfxLoaded();
+    };
+
+    // Handle JSFX plugin tree expansion for adaptive sizing
+    jsfxPluginWindow.getTreeView().onTreeExpansionChanged = [this](bool isExpanded)
+    {
+        if (buttonBarVisible && jsfxPluginWindow.isVisible())
+        {
+            auto currentBounds = jsfxPluginWindow.getBounds();
+            int treeViewHeight = jsfxPluginWindow.getTreeView().getNeededHeight();
+
+            // Add WindowWithButtonRow button row (status label is hidden in embedded mode)
+            const int buttonRowHeight = 30;
+            const int buttonRowSpacing = 8;
+            int totalHeight = buttonRowHeight + buttonRowSpacing + treeViewHeight;
+
+            // Constrain to available vertical space in parent (leave some padding at bottom)
+            int maxAvailableHeight = getHeight() - currentBounds.getY() - 10; // 10px bottom padding
+            totalHeight = juce::jmin(totalHeight, maxAvailableHeight);
+
+            // Only update height, preserve x, y, and width
+            jsfxPluginWindow
+                .setBounds(currentBounds.getX(), currentBounds.getY(), currentBounds.getWidth(), totalHeight);
+        }
+
+        // Ensure plugin window stays on top when expanded (only if not in overlay mode)
+        if (isExpanded && !jsfxPluginWindow.getTreeView().getTreeView().isOverlayMode)
+            jsfxPluginWindow.toFront(false);
+    };
 
     // Preset browser (embedded with management buttons)
     addAndMakeVisible(presetWindow);
@@ -180,12 +226,16 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
             const int buttonRowSpacing = 8;
             int totalHeight = buttonRowHeight + buttonRowSpacing + treeViewHeight;
 
+            // Constrain to available vertical space in parent (leave some padding at bottom)
+            int maxAvailableHeight = getHeight() - currentBounds.getY() - 10; // 10px bottom padding
+            totalHeight = juce::jmin(totalHeight, maxAvailableHeight);
+
             // Only update height, preserve x, y, and width
             presetWindow.setBounds(currentBounds.getX(), currentBounds.getY(), currentBounds.getWidth(), totalHeight);
         }
 
-        // Ensure preset window stays on top when expanded
-        if (isExpanded)
+        // Ensure preset window stays on top when expanded (only if not in overlay mode)
+        if (isExpanded && !presetWindow.getTreeView().getTreeView().isOverlayMode)
             presetWindow.toFront(false);
     };
 
@@ -245,9 +295,6 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Set initial size (may be overridden by DAW)
     setSize(restoredWidth, restoredHeight);
 
-    // Flag that we need to restore size in timer callback
-    needsSizeRestoration = true;
-
     // Restore last preset name (per-JSFX)
     juce::String lastPresetName = getStateProperty("lastPresetName", juce::String());
     if (lastPresetName.isNotEmpty())
@@ -258,23 +305,25 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Listen to preset cache updates
     processorRef.getPresetCache().onCacheUpdated = [this]() { updatePresetList(); };
 
-    // If JSFX is already loaded at startup, enable the Edit button and load presets
+    // If JSFX is already loaded at startup (from setStateInformation), restore UI state
     if (processorRef.getSXInstancePtr() != nullptr)
     {
         editButton.setEnabled(true);
         // Load preset list for the currently loaded JSFX
         updatePresetList();
-    }
 
-    // If we should be showing JSFX UI and there's a JSFX loaded, show it
-    if (showingJsfxUI && processorRef.getSXInstancePtr() != nullptr)
-    {
-        // Trigger the UI button to show JSFX (will be created via timer)
-        uiButton.triggerClick();
-    }
+        // Update title label to show loaded JSFX name
+        updateTitleLabel();
 
-    // 30fps = ~33ms interval (also pumps SWELL message loop on Linux)
-    startTimer(33);
+        // Defer JSFX UI state restoration to next event loop cycle (after window is fully initialized)
+        juce::MessageManager::callAsync(
+            [this]()
+            {
+                restoreJsfxUiState();
+                setSize(restoredWidth, restoredHeight);
+            }
+        );
+    }
 
     // Enable keyboard focus for F11 fullscreen toggle
     setWantsKeyboardFocus(true);
@@ -302,9 +351,6 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
 
     // Clear preset cache callback
     processorRef.getPresetCache().onCacheUpdated = nullptr;
-
-    // Stop timer first to prevent callbacks during destruction
-    stopTimer();
 
     // Ensure native JSFX UI is torn down before editor destruction
     destroyJsfxUI(); // This now properly destroys the native window too
@@ -379,9 +425,15 @@ void AudioPluginAudioProcessorEditor::restoreJsfxUiState()
         uiButton.setEnabled(true);
         editButton.setEnabled(true);
 
-        // Calculate default size from JSFX's @gfx dimensions (with extra pixels for borders/spacing)
+        // Calculate default size from JSFX's @gfx dimensions
         auto bounds = jsfxLiceRenderer->getRecommendedBounds();
-        int defaultHeight = 40 + 30 + bounds.getHeight() + PluginConstants::LiceComponentExtraHeightPixels;
+
+        // Calculate editor height to fit JSFX UI plus chrome:
+        // - Title area: 50px (title + preset label)
+        // - Button area: 92px (when visible)
+        // - JSFX bounds: bounds.getHeight()
+        // - Bottom margin: 16px
+        int defaultHeight = 50 + 92 + bounds.getHeight() + PluginConstants::LiceComponentExtraHeightPixels;
         int defaultWidth = bounds.getWidth();
         defaultHeight = juce::jlimit(300, 1080, defaultHeight);
         defaultWidth = juce::jlimit(400, 1920, defaultWidth);
@@ -419,9 +471,6 @@ void AudioPluginAudioProcessorEditor::restoreJsfxUiState()
             restoredWidth = defaultWidth;
             restoredHeight = defaultHeight;
         }
-
-        // Defer resize to next timer tick for DAW compatibility
-        needsSizeRestoration = true;
     }
     else
     {
@@ -451,67 +500,79 @@ void AudioPluginAudioProcessorEditor::restoreJsfxUiState()
             restoredWidth = 700;
             restoredHeight = defaultHeight;
         }
-
-        // Defer resize to next timer tick for DAW compatibility
-        needsSizeRestoration = true;
     }
 }
 
 //==============================================================================
 
-void AudioPluginAudioProcessorEditor::timerCallback()
+void AudioPluginAudioProcessorEditor::onJsfxLoaded()
 {
-    // Apply deferred size restoration (once, after DAW has initialized the window)
-    if (needsSizeRestoration)
-    {
-        setSize(restoredWidth, restoredHeight);
-        needsSizeRestoration = false;
-    }
+    // Common code path after JSFX is loaded (manually or from saved state)
+    // This handles all UI updates and state restoration
 
-#if defined(__linux__) || defined(SWELL_TARGET_GDK)
-    // On Linux with GDK, pump the SWELL message loop to process window events, redraws, and timers
-    // This is needed for JSFX UI to work properly
-    // Note: Not needed on macOS - Cocoa handles the message loop automatically
-    extern void SWELL_RunMessageLoop();
-    SWELL_RunMessageLoop();
-#endif
+    // Save current JSFX state before making changes (if switching from another JSFX)
+    saveJsfxState();
 
+    // Ensure any native window is closed
+    destroyJsfxUI();
+
+    // Rebuild UI for the newly loaded JSFX
+    rebuildParameterSliders();
+
+    // Update preset list
+    updatePresetList();
+
+    // Update title label to show new JSFX name
+    updateTitleLabel();
+
+    // Clear state for new JSFX (fresh start)
+    clearCurrentJsfxState();
+
+    // Defer JSFX UI state restoration to next event loop cycle
+    juce::MessageManager::callAsync(
+        [this]()
+        {
+            restoreJsfxUiState();
+            setSize(restoredWidth, restoredHeight);
+        }
+    );
+}
+
+//==============================================================================
+
+void AudioPluginAudioProcessorEditor::updateTitleLabel()
+{
     juce::String statusText = "No JSFX loaded";
     if (!processorRef.getCurrentJSFXName().isEmpty())
         statusText = processorRef.getCurrentJSFXName();
     titleLabel.setText(statusText, juce::dontSendNotification);
+}
 
-    // Sync Edit button text with editor window state
+void AudioPluginAudioProcessorEditor::updateEditorButtonState()
+{
     if (jsfxEditorWindow)
     {
         if (jsfxEditorWindow->isOpen())
         {
-            if (editButton.getButtonText() != "Close Editor")
-            {
-                editButton.setButtonText("Close Editor");
-                editButton.setToggleState(true, juce::dontSendNotification);
-            }
+            editButton.setButtonText("Close Editor");
+            editButton.setToggleState(true, juce::dontSendNotification);
         }
-        else if (editButton.getButtonText() != "Editor")
+        else
         {
             editButton.setButtonText("Editor");
             editButton.setToggleState(false, juce::dontSendNotification);
         }
     }
+}
 
-    // Sync I/O Matrix button text with window state
+void AudioPluginAudioProcessorEditor::updateIOMatrixButtonState()
+{
     if (ioMatrixWindow)
     {
         if (ioMatrixWindow->isVisible())
-        {
-            if (ioMatrixButton.getButtonText() != "Close I/O Matrix")
-                ioMatrixButton.setButtonText("Close I/O Matrix");
-        }
+            ioMatrixButton.setButtonText("Close I/O Matrix");
         else
-        {
-            if (ioMatrixButton.getButtonText() != "I/O Matrix")
-                ioMatrixButton.setButtonText("I/O Matrix");
-        }
+            ioMatrixButton.setButtonText("I/O Matrix");
     }
 }
 
@@ -523,6 +584,10 @@ void AudioPluginAudioProcessorEditor::paint(juce::Graphics& g)
 
 void AudioPluginAudioProcessorEditor::resized()
 {
+    // Collapse tree views when editor is resized
+    jsfxPluginWindow.getTreeView().collapseTree();
+    presetWindow.getTreeView().collapseTree();
+
     auto bounds = getLocalBounds();
     auto originalBounds = bounds; // Keep original bounds for tree overlay calculation
 
@@ -549,28 +614,68 @@ void AudioPluginAudioProcessorEditor::resized()
         int spacing = 5;
 
         // Fixed minimum sizes that must fit
-        int buttonWidth = 60;      // Minimum for each button
-        int presetMenuWidth = 40;  // Width for preset management menu (just arrow)
-        int libraryMinWidth = 150; // Minimum for library browser
+        int buttonWidth = 60;         // Minimum for each button
+        int presetMenuWidth = 40;     // Width for preset management menu (just arrow)
+        int pluginBrowserWidth = 150; // Width for JSFX plugin browser
+        int presetBrowserWidth = 150; // Width for preset browser
 
         // Calculate minimum required width
-        int minRequired =
-            (buttonWidth * 5) + (spacing * 4) + spacing + presetMenuWidth + (spacing * 2) + libraryMinWidth;
+        int minRequired = pluginBrowserWidth
+                        + spacing
+                        + presetBrowserWidth
+                        + spacing
+                        + presetMenuWidth
+                        + spacing
+                        + (buttonWidth * 5)
+                        + (spacing * 4);
 
-        // If we have extra space, distribute it to library
+        // If we have extra space, distribute it equally to plugin and preset browsers
         int extraSpace = juce::jmax(0, totalWidth - minRequired);
-        int libraryWidth = libraryMinWidth + extraSpace;
+        int extraPerBrowser = extraSpace / 2;
+        pluginBrowserWidth += extraPerBrowser;
+        presetBrowserWidth += extraPerBrowser + (extraSpace % 2); // Add remainder to preset browser
 
-        // Store the original Y position and full height for preset window positioning
+        // Store the original Y position and full height for window positioning
         int originalY = buttonArea.getY();
         int originalHeight = buttonArea.getHeight();
 
-        // Create button row area with 4px top offset to align with PresetWindow's internal margin
-        // PresetWindow uses bounds.reduced(4) which adds 4px top margin before laying out its button row
+        // Create button row area with 4px top offset to align with window button rows
         auto buttonRowArea = buttonArea.removeFromTop(30);             // 30px button height
-        buttonRowArea = buttonRowArea.withY(buttonRowArea.getY() + 4); // Offset by 4px to match PresetWindow
+        buttonRowArea = buttonRowArea.withY(buttonRowArea.getY() + 4); // Offset by 4px to match window margins
 
-        // Layout buttons and set visibility (full 30px height)
+        // Layout JSFX plugin browser on the left
+        auto jsfxPluginWindowArea =
+            juce::Rectangle<int>(buttonRowArea.getX(), originalY, pluginBrowserWidth, originalHeight);
+        jsfxPluginWindow.setBounds(jsfxPluginWindowArea);
+        jsfxPluginWindow.setVisible(true);
+        // Only bring to front if tree is not in overlay mode
+        if (!jsfxPluginWindow.getTreeView().getTreeView().isOverlayMode)
+            jsfxPluginWindow.toFront(false);
+
+        // Move past the plugin browser
+        buttonRowArea.removeFromLeft(pluginBrowserWidth);
+        buttonRowArea.removeFromLeft(spacing);
+
+        // Layout preset browser next
+        auto presetWindowArea =
+            juce::Rectangle<int>(buttonRowArea.getX(), originalY, presetBrowserWidth, originalHeight);
+        presetWindow.setBounds(presetWindowArea);
+        presetWindow.setVisible(true);
+        // Only bring to front if tree is not in overlay mode
+        if (!presetWindow.getTreeView().getTreeView().isOverlayMode)
+            presetWindow.toFront(false);
+
+        // Move past the preset browser
+        buttonRowArea.removeFromLeft(presetBrowserWidth);
+        buttonRowArea.removeFromLeft(spacing);
+
+        // Layout preset management menu
+        presetManagementMenu.setBounds(buttonRowArea.removeFromLeft(presetMenuWidth));
+        presetManagementMenu.setVisible(true);
+
+        buttonRowArea.removeFromLeft(spacing);
+
+        // Layout main buttons on the right (full 30px height)
         loadButton.setBounds(buttonRowArea.removeFromLeft(buttonWidth));
         loadButton.setVisible(true);
         buttonRowArea.removeFromLeft(spacing);
@@ -585,27 +690,11 @@ void AudioPluginAudioProcessorEditor::resized()
         buttonRowArea.removeFromLeft(spacing);
         ioMatrixButton.setBounds(buttonRowArea.removeFromLeft(buttonWidth));
         ioMatrixButton.setVisible(true);
-
-        buttonRowArea.removeFromLeft(spacing);
-        presetManagementMenu.setBounds(buttonRowArea.removeFromLeft(presetMenuWidth));
-        presetManagementMenu.setVisible(true);
-
-        buttonRowArea.removeFromLeft(spacing * 2);
-
-        // Calculate preset window bounds - position at current x location with library width
-        // Use the original buttonArea position and height (before we removed button row)
-        auto presetWindowArea = juce::Rectangle<int>(buttonRowArea.getX(), originalY, libraryWidth, originalHeight);
-
-        presetWindow.setBounds(presetWindowArea);
-        presetWindow.setVisible(true); // Ensure visible when button bar is shown
-
-        // Bring preset window to front so it's visible above button area components
-        // (but it won't overlay main content area when collapsed since it's bounded to buttonArea)
-        presetWindow.toFront(false);
     }
     else
     {
         // Hide all button bar components when not visible
+        jsfxPluginWindow.setVisible(false);
         loadButton.setVisible(false);
         unloadButton.setVisible(false);
         editButton.setVisible(false);
@@ -662,20 +751,26 @@ void AudioPluginAudioProcessorEditor::resized()
 bool AudioPluginAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 {
     // Global keyboard shortcuts:
-    // - Shift + / : Focus search field
-    // - Ctrl + F  : Focus search field
+    // - Shift + / : Focus search field (legacy - cycles through search fields)
+    // - Ctrl + F  : Cycle through search fields
     // - F         : Toggle button bar visibility
     // - F11       : Toggle fullscreen mode
+    // - ESC       : Collapse all expanded trees
 
-    // Shift + / or Ctrl + F - Focus search field
+    // ESC key - Collapse all expanded trees
+    if (key == juce::KeyPress::escapeKey)
+    {
+        SearchableTreeView::collapseAllExpandedTrees();
+        return true;
+    }
+
+    // Shift + / or Ctrl + F - Cycle through search fields
     if ((key.getKeyCode() == '/' && key.getModifiers().isShiftDown())
         || (key.getKeyCode() == 'F' && key.getModifiers().isCtrlDown()))
     {
-        if (buttonBarVisible && presetWindow.isVisible())
-        {
-            presetWindow.getTreeView().moveFocusToSearchField();
-            return true;
-        }
+        // Use global cycling system to move to next SearchableTreeView instance
+        SearchableTreeView::focusNextSearchField();
+        return true;
     }
 
     // F key - Toggle button bar visibility
@@ -767,18 +862,8 @@ void AudioPluginAudioProcessorEditor::loadJSFXFile()
 
                 if (loadSuccess)
                 {
-                    rebuildParameterSliders();
-
-                    // Update preset list after JSFX loads
-                    updatePresetList();
-
-                    // Always clear state when manually loading a JSFX (new session)
-                    // State restoration only preserves state when DAW reopens the plugin
-                    clearCurrentJsfxState();
-
-                    // Restore JSFX state after loading (internal "constructor")
-                    // Since we just cleared state, this will use defaults
-                    restoreJsfxUiState();
+                    // Call common code path to update UI
+                    onJsfxLoaded();
                 }
                 else
                 {
@@ -1173,23 +1258,8 @@ void AudioPluginAudioProcessorEditor::openJsfxPluginBrowser()
     {
         juce::ignoreUnused(pluginPath);
 
-        // Save current JSFX state before loading new one
-        saveJsfxState();
-
-        // Ensure any native window is closed
-        destroyJsfxUI();
-
-        // Rebuild UI for the newly loaded JSFX
-        rebuildParameterSliders();
-
-        // Update preset list
-        updatePresetList();
-
-        // Clear state for new JSFX (fresh start)
-        clearCurrentJsfxState();
-
-        // Restore JSFX state (will use defaults since we just cleared)
-        restoreJsfxUiState();
+        // Call common code path to update UI
+        onJsfxLoaded();
     };
 
     juce::DialogWindow::LaunchOptions options;

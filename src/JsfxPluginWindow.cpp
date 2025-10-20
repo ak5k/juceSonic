@@ -1,5 +1,6 @@
 #include "JsfxPluginWindow.h"
 #include "PluginProcessor.h"
+#include "PersistentFileChooser.h"
 
 //==============================================================================
 // JsfxPluginWindow Implementation
@@ -9,6 +10,13 @@ JsfxPluginWindow::JsfxPluginWindow(AudioPluginAudioProcessor& proc)
     : processor(proc)
     , pluginTreeView(proc)
 {
+    // Set menu title for narrow mode
+    setButtonMenuTitle("Plugins");
+
+    // Customize browse button to open file chooser instead of browse menu
+    pluginTreeView.setBrowseButtonText("Load JSFX File");
+    pluginTreeView.setBrowseButtonCallback([this]() { showJsfxFileChooser(); });
+
     // Add buttons to the button row (from base class)
     // Load button reuses the same handler as Enter key / double-click
     loadButton = &getButtonRow().addButton(
@@ -287,6 +295,28 @@ void JsfxPluginWindow::handlePluginTreeItemSelected(juce::TreeViewItem* item)
             // Status will be updated via onPluginLoadedCallback
         }
     }
+}
+
+void JsfxPluginWindow::showJsfxFileChooser()
+{
+    // Use PersistentFileChooser for consistent directory management
+    // Only show files without extension or with .jsfx extension
+    auto localFileChooser =
+        std::make_unique<PersistentFileChooser>("lastJsfxDirectory", "Select a JSFX file to load...", "*.jsfx;*.");
+
+    localFileChooser->launchAsync(
+        [this](const juce::File& file)
+        {
+            if (file != juce::File{})
+            {
+                // Load the plugin through the tree view's loadPlugin method
+                pluginTreeView.loadPlugin(file);
+            }
+        }
+    );
+
+    // Keep the file chooser alive by storing it as a member (it will auto-delete when done)
+    fileChooser = std::move(localFileChooser);
 }
 
 //==============================================================================

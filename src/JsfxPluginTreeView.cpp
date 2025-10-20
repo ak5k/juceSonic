@@ -1,5 +1,6 @@
 #include "JsfxPluginTreeView.h"
 #include "PluginProcessor.h"
+#include "Config.h"
 
 //==============================================================================
 // JsfxPluginTreeItem Implementation
@@ -49,22 +50,115 @@ void JsfxPluginTreeItem::itemSelectionChanged(bool isNowSelected)
 
 void JsfxPluginTreeItem::itemClicked(const juce::MouseEvent& e)
 {
-    // Show context menu on right-click for RemotePlugin items
-    if (e.mods.isPopupMenu() && type == ItemType::RemotePlugin && pluginTreeView)
+    // Show context menu on right-click for all remote item types
+    if (e.mods.isPopupMenu()
+        && pluginTreeView
+        && (type == ItemType::RemotePlugin || type == ItemType::RemoteRepo || type == ItemType::Category))
     {
+        // Helper to recursively collect all RemotePlugin items under a tree item
+        std::function<void(juce::TreeViewItem*, juce::Array<JsfxPluginTreeItem*>&)> collectRemotePlugins;
+        collectRemotePlugins = [&](juce::TreeViewItem* item, juce::Array<JsfxPluginTreeItem*>& items)
+        {
+            if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(item))
+            {
+                if (pluginItem->getType() == ItemType::RemotePlugin)
+                    items.add(pluginItem);
+            }
+
+            for (int i = 0; i < item->getNumSubItems(); ++i)
+                collectRemotePlugins(item->getSubItem(i), items);
+        };
+
+        // Get all selected items
+        auto selectedItems = pluginTreeView->getSelectedPluginItems();
+
+        // Collect RemotePlugin items recursively from selected items
+        juce::Array<JsfxPluginTreeItem*> remoteItems;
+
+        if (!selectedItems.isEmpty())
+        {
+            // If we have selections, collect from all selected items recursively
+            for (auto* item : selectedItems)
+                collectRemotePlugins(item, remoteItems);
+        }
+
+        // If this item isn't in the selection or no remote items found, use this item's tree
+        if (!isSelected() || remoteItems.isEmpty())
+        {
+            remoteItems.clear();
+            collectRemotePlugins(this, remoteItems);
+        }
+
+        // If still no items (shouldn't happen for RemotePlugin), return
+        if (remoteItems.isEmpty())
+            return;
+
+        int numItems = remoteItems.size();
+        juce::String itemsText = numItems > 1 ? juce::String(numItems) + " packages" : "package";
+
+        // Check pin/cache status for all items
+        bool allPinned = true;
+        bool anyPinned = false;
+        bool anyCached = false;
+
+        for (auto* item : remoteItems)
+        {
+            bool isPinned = pluginTreeView->isPackagePinned(item->getReaPackEntry().name);
+            bool isCached = pluginTreeView->isPackageCached(item->getReaPackEntry());
+
+            if (isPinned)
+                anyPinned = true;
+            else
+                allPinned = false;
+
+            if (isCached)
+                anyCached = true;
+        }
+
         juce::PopupMenu menu;
 
-        bool isPinned = pluginTreeView->isPackagePinned(reapackEntry.name);
-        menu.addItem(1, isPinned ? "Unpin Package" : "Pin Package");
+        // Pin/Unpin option
+        if (allPinned)
+            menu.addItem(1, "Unpin " + itemsText);
+        else if (anyPinned)
+            menu.addItem(1, "Pin/Unpin " + itemsText);
+        else
+            menu.addItem(1, "Pin " + itemsText);
+
+        // Download option
+        menu.addItem(2, "Download " + itemsText);
+
+        // Clear cache option (only if any are cached)
+        if (anyCached)
+            menu.addItem(3, "Clear cache for " + itemsText);
 
         menu.showMenuAsync(
             juce::PopupMenu::Options(),
-            [this, isPinned](int result)
+            [this, remoteItems, allPinned](int result)
             {
-                if (result == 1 && pluginTreeView)
+                if (!pluginTreeView)
+                    return;
+
+                if (result == 1) // Pin/Unpin
                 {
-                    pluginTreeView->setPinned(reapackEntry.name, !isPinned);
-                    repaintItem(); // Update visual indicator if needed
+                    for (auto* item : remoteItems)
+                    {
+                        juce::String packageName = item->getReaPackEntry().name;
+                        pluginTreeView->setPinned(packageName, !allPinned);
+                        item->repaintItem();
+                    }
+                }
+                else if (result == 2) // Download
+                {
+                    // Download multiple items without loading them
+                    bool shouldLoad = (remoteItems.size() == 1);
+                    for (auto* item : remoteItems)
+                        pluginTreeView->loadRemotePlugin(item->getReaPackEntry(), shouldLoad);
+                }
+                else if (result == 3) // Clear cache
+                {
+                    for (auto* item : remoteItems)
+                        pluginTreeView->clearPackageCache(item->getReaPackEntry());
                 }
             }
         );
@@ -73,8 +167,18 @@ void JsfxPluginTreeItem::itemClicked(const juce::MouseEvent& e)
 
 void JsfxPluginTreeItem::paintItem(juce::Graphics& g, int width, int height)
 {
-    // Draw match highlight (handles selection, focus, and match states)
-    paintMatchHighlight(g, width, height);
+    // Draw simple dark background for downloading items (glow effects are drawn in overlay)
+    if (isDownloading)
+    {
+        // Draw dark background
+        g.setColour(juce::Colours::black.withAlpha(0.3f));
+        g.fillAll();
+    }
+    else
+    {
+        // Draw normal match highlight (handles selection, focus, and match states)
+        paintMatchHighlight(g, width, height);
+    }
 
     // Metadata items are styled differently (grey and smaller font)
     g.setColour(type == ItemType::Metadata ? juce::Colours::grey : juce::Colours::white);
@@ -94,9 +198,18 @@ void JsfxPluginTreeItem::paintItem(juce::Graphics& g, int width, int height)
         bool isPinned = pluginTreeView->isPackagePinned(reapackEntry.name);
         bool hasUpdate = pluginTreeView->isUpdateAvailable(reapackEntry);
 
+        // Downloading indicator (highest priority - leftmost)
+        if (isDownloading)
+        {
+            statusText = juce::String(juce::CharPointer_UTF8("\xE2\xAC\x87")) + statusText; // ⬇ down arrow
+            statusWidth += 20;
+        }
+
         // Cached indicator (small x)
         if (isCached)
         {
+            if (statusText.isNotEmpty())
+                statusText = "  " + statusText;
             statusText = juce::String(juce::CharPointer_UTF8("\xC3\x97")) + statusText; // × symbol
             statusWidth += 15;
         }
@@ -133,7 +246,41 @@ void JsfxPluginTreeItem::paintItem(juce::Graphics& g, int width, int height)
         // Draw status indicators on the right
         if (statusText.isNotEmpty())
         {
-            g.setColour(juce::Colours::grey);
+            // Synthwave colors for downloading indicator with glow effect
+            if (isDownloading)
+            {
+                // Create pulsing glow effect for download indicator
+                auto currentTime = juce::Time::getMillisecondCounterHiRes();
+                auto glowPhase = std::fmod(currentTime / 600.0, 1.0);
+                auto glowAlpha =
+                    static_cast<float>(0.6f + 0.4f * std::sin(glowPhase * juce::MathConstants<double>::twoPi));
+
+                auto cyan = juce::Colour(0x00, 0xff, 0xff);
+                auto magenta = juce::Colour(0xff, 0x00, 0xff);
+
+                // Alternate between cyan and magenta for extra retro effect
+                auto primaryColor = (static_cast<int>(currentTime / 400.0) % 2 == 0) ? cyan : magenta;
+
+                // Draw glow halo first (larger, more transparent)
+                g.setColour(primaryColor.withAlpha(glowAlpha * 0.3f));
+                g.drawText(
+                    statusText,
+                    width - statusWidth - rightMargin - 2,
+                    -1,
+                    statusWidth + 4,
+                    height + 2,
+                    juce::Justification::centredRight,
+                    false
+                );
+
+                // Draw main text with bright color
+                g.setColour(primaryColor.withAlpha(glowAlpha));
+            }
+            else
+            {
+                g.setColour(juce::Colours::grey);
+            }
+
             g.drawText(
                 statusText,
                 width - statusWidth - rightMargin,
@@ -154,6 +301,10 @@ void JsfxPluginTreeItem::paintItem(juce::Graphics& g, int width, int height)
 
 int JsfxPluginTreeItem::getItemHeight() const
 {
+    // Check if item is hidden (filtered out) - return 0 if so
+    if (isHidden)
+        return 0;
+
     // Metadata items are shorter
     if (type == ItemType::Metadata)
         return 18;
@@ -328,20 +479,28 @@ void JsfxPluginTreeView::loadPlugin(const juce::File& pluginFile)
         onPluginLoadedCallback(pluginFile.getFullPathName(), success);
 }
 
-void JsfxPluginTreeView::loadRemotePlugin(const ReaPackIndexParser::JsfxEntry& entry)
+void JsfxPluginTreeView::loadRemotePlugin(const ReaPackIndexParser::JsfxEntry& entry, bool loadAfterDownload)
 {
+    // Mark item as downloading
+    setItemDownloading(entry.name, true);
+
     // Always use downloadJsfx - it handles cache internally with proper async callback
     auto expectedFile = downloader->getCachedFile(entry);
     downloader->downloadJsfx(
         entry,
-        [this, entry, expectedFile](const ReaPackDownloader::DownloadResult& result)
+        [this, entry, expectedFile, loadAfterDownload](const ReaPackDownloader::DownloadResult& result)
         {
+            // Clear downloading state
+            setItemDownloading(entry.name, false);
+
             if (result.success)
             {
                 // Update cached package info in reapack.xml
                 updateCachedPackageInfo(entry.name, entry.version, entry.timestamp);
 
-                loadPlugin(result.downloadedFile);
+                // Only load if requested (for single downloads)
+                if (loadAfterDownload)
+                    loadPlugin(result.downloadedFile);
             }
             else
             {
@@ -596,7 +755,9 @@ void JsfxPluginTreeView::loadSavedRepositories()
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
     auto configFile = appDataDir.getChildFile(PluginConstants::ApplicationName).getChildFile("reapack.xml");
 
-    if (configFile.existsAsFile())
+    bool configExists = configFile.existsAsFile();
+
+    if (configExists)
     {
         auto xml = juce::parseXML(configFile);
         if (xml && xml->hasTagName("ReaPack"))
@@ -651,16 +812,56 @@ void JsfxPluginTreeView::loadSavedRepositories()
                 }
             }
         }
+        // Config file exists, respect user's choice (even if repository list is empty)
     }
-
-    // If no repositories loaded, add default
-    if (remoteRepositories.isEmpty())
+    else
     {
-        RemoteRepository reaTeamRepo;
-        reaTeamRepo.name = "ReaTeam JSFX";
-        reaTeamRepo.indexUrl = "https://github.com/ReaTeam/JSFX/raw/master/index.xml";
-        remoteRepositories.add(reaTeamRepo);
+        // No config file exists - this is first run, fetch and add default repositories
+        fetchAndAddDefaultRepository(JUCESONIC_DEFAULT_JSFX_REPO_1_URL);
+        fetchAndAddDefaultRepository(JUCESONIC_DEFAULT_JSFX_REPO_2_URL);
     }
+}
+
+void JsfxPluginTreeView::fetchAndAddDefaultRepository(const juce::String& url)
+{
+    // Download and parse index in background to get repository name
+    juce::Thread::launch(
+        [this, url]()
+        {
+            auto inputStream = juce::URL(url).createInputStream(
+                juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress).withConnectionTimeoutMs(10000)
+            );
+
+            juce::String repoName;
+
+            if (inputStream != nullptr)
+            {
+                juce::String xmlContent = inputStream->readEntireStreamAsString();
+                repoName = ReaPackIndexParser::getRepositoryName(xmlContent);
+            }
+
+            // Add repository on message thread
+            juce::MessageManager::callAsync(
+                [this, url, repoName]()
+                {
+                    if (repoName.isNotEmpty())
+                    {
+                        RemoteRepository repo;
+                        repo.name = repoName;
+                        repo.indexUrl = url;
+                        repo.isLoaded = false;
+                        remoteRepositories.add(repo);
+
+                        // Save to config file so it persists
+                        saveRepositories();
+
+                        // Trigger reload of this repository
+                        loadRemoteRepositories();
+                    }
+                }
+            );
+        }
+    );
 }
 
 void JsfxPluginTreeView::saveRepositories()
@@ -833,6 +1034,50 @@ bool JsfxPluginTreeView::isPackageCached(const ReaPackIndexParser::JsfxEntry& en
     return downloader->isCached(entry);
 }
 
+void JsfxPluginTreeView::clearPackageCache(const ReaPackIndexParser::JsfxEntry& entry)
+{
+    if (!downloader)
+        return;
+
+    // Use the downloader to clear the package cache (deletes all files)
+    bool wasDeleted = downloader->clearPackageCache(entry);
+
+    if (wasDeleted)
+    {
+        // Remove from cached package info
+        for (int i = cachedPackages.size() - 1; i >= 0; --i)
+        {
+            if (cachedPackages[i].packageName == entry.name)
+            {
+                cachedPackages.remove(i);
+                break;
+            }
+        }
+        saveRepositories();
+
+        // Trigger repaint to update visual indicators
+        if (auto* root = getRootItem())
+        {
+            std::function<void(juce::TreeViewItem*)> repaintPackage = [&](juce::TreeViewItem* item)
+            {
+                if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(item))
+                {
+                    if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::RemotePlugin
+                        && pluginItem->getReaPackEntry().name == entry.name)
+                    {
+                        pluginItem->repaintItem();
+                    }
+                }
+
+                for (int i = 0; i < item->getNumSubItems(); ++i)
+                    repaintPackage(item->getSubItem(i));
+            };
+
+            repaintPackage(root);
+        }
+    }
+}
+
 void JsfxPluginTreeView::setPinned(const juce::String& packageName, bool pinned)
 {
     if (pinned)
@@ -917,4 +1162,228 @@ JsfxPluginTreeView::RemoteRepository* JsfxPluginTreeView::findRepositoryByUrl(co
             return &repo;
 
     return nullptr;
+}
+
+void JsfxPluginTreeView::setItemDownloading(const juce::String& packageName, bool downloading)
+{
+    // Helper to recursively search for the item
+    std::function<void(juce::TreeViewItem*)> findAndSetDownloading = [&](juce::TreeViewItem* item)
+    {
+        if (!item)
+            return;
+
+        if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(item))
+        {
+            if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::RemotePlugin
+                && pluginItem->getReaPackEntry().name == packageName)
+            {
+                pluginItem->setDownloading(downloading);
+                pluginItem->repaintItem();
+            }
+        }
+
+        for (int i = 0; i < item->getNumSubItems(); ++i)
+            findAndSetDownloading(item->getSubItem(i));
+    };
+
+    if (auto* root = getRootItem())
+        findAndSetDownloading(root);
+
+    // Manage download counter and timer
+    if (downloading)
+    {
+        activeDownloads++;
+        if (!isTimerRunning())
+            startTimer(16); // 60 fps for smooth synthwave animation
+    }
+    else
+    {
+        activeDownloads = juce::jmax(0, activeDownloads - 1);
+        if (activeDownloads == 0)
+            stopTimer();
+    }
+}
+
+void JsfxPluginTreeView::timerCallback()
+{
+    // Repaint all downloading items for animation
+    std::function<void(juce::TreeViewItem*)> repaintDownloading = [&](juce::TreeViewItem* item)
+    {
+        if (!item)
+            return;
+
+        if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(item))
+        {
+            if (pluginItem->getDownloading())
+                pluginItem->repaintItem();
+        }
+
+        for (int i = 0; i < item->getNumSubItems(); ++i)
+            repaintDownloading(item->getSubItem(i));
+    };
+
+    if (auto* root = getRootItem())
+        repaintDownloading(root);
+
+    // Also repaint the entire tree view for glow overlay
+    repaint();
+}
+
+void JsfxPluginTreeView::drawDownloadGlowEffects(juce::Graphics& g)
+{
+    // Draw glow overlays on top of all items (including the tree view itself)
+    if (activeDownloads == 0)
+        return;
+
+    auto currentTime = juce::Time::getMillisecondCounterHiRes();
+    auto timeOffset = currentTime / 1000.0;
+
+    auto cyan = juce::Colour(0x00, 0xff, 0xff);
+    auto magenta = juce::Colour(0xff, 0x00, 0xff);
+
+    // Find all downloading items and draw glow overlays
+    std::function<void(juce::TreeViewItem*)> drawGlowOverlays = [&](juce::TreeViewItem* item)
+    {
+        if (!item)
+            return;
+
+        if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(item))
+        {
+            if (pluginItem->getDownloading() && item->isOpen())
+            {
+                // Get item bounds in tree view coordinates
+                auto itemBounds = item->getItemPosition(true);
+                auto height = item->getItemHeight();
+                auto width = getTreeView().getWidth();
+
+                if (itemBounds.getY() + height < 0 || itemBounds.getY() > getHeight())
+                {
+                    // Item not visible, skip
+                    for (int i = 0; i < item->getNumSubItems(); ++i)
+                        drawGlowOverlays(item->getSubItem(i));
+                    return;
+                }
+
+                // Calculate waveform with spillover
+                auto centerY = itemBounds.getY() + height * 0.5f;
+                auto amplitude = height * 0.6f; // Larger amplitude for spillover
+
+                // Draw cyan waveform glow layers (spillover effect)
+                for (int layer = 5; layer >= 1; layer--)
+                {
+                    juce::Path waveformPath;
+                    bool firstPoint = true;
+
+                    for (int x = 0; x < width; x += 3)
+                    {
+                        auto xNorm = static_cast<double>(x) / width;
+                        auto xPhase = xNorm * juce::MathConstants<double>::twoPi * 3.0;
+
+                        auto fundamental = std::sin(xPhase - timeOffset * 8.0) * 0.6;
+                        auto harmonic2 = std::sin(xPhase * 2.0 - timeOffset * 12.0) * 0.35;
+                        auto harmonic3 = std::sin(xPhase * 3.0 + std::sin(timeOffset * 4.0)) * 0.2;
+                        auto noise =
+                            (std::sin(xPhase * 17.3 + timeOffset * 23.7) * std::sin(xPhase * 11.7 - timeOffset * 19.3))
+                            * 0.15;
+
+                        auto pulsePhase = std::fmod(timeOffset * 2.0, 1.0);
+                        auto pulseDist = std::abs(xNorm - pulsePhase);
+                        auto pulse = pulseDist < 0.05 ? std::exp(-pulseDist * 100.0) * 0.7 : 0.0;
+
+                        auto waveValue = fundamental + harmonic2 + harmonic3 + noise + pulse;
+                        auto y = centerY + static_cast<float>(waveValue * amplitude);
+
+                        if (firstPoint)
+                        {
+                            waveformPath.startNewSubPath(static_cast<float>(x), y);
+                            firstPoint = false;
+                        }
+                        else
+                        {
+                            waveformPath.lineTo(static_cast<float>(x), y);
+                        }
+                    }
+
+                    // Draw glow layers from outer to inner
+                    float strokeWidth = 4.0f * layer;
+                    float alpha = (0.12f / layer) * (6 - layer);
+
+                    g.setColour(cyan.withAlpha(alpha));
+                    g.strokePath(waveformPath, juce::PathStrokeType(strokeWidth));
+                }
+
+                // Draw magenta accent waveform glow
+                for (int layer = 3; layer >= 1; layer--)
+                {
+                    juce::Path accentPath;
+                    bool firstPoint = true;
+
+                    for (int x = 0; x < width; x += 3)
+                    {
+                        auto xNorm = static_cast<double>(x) / width;
+                        auto xPhase = xNorm * juce::MathConstants<double>::twoPi * 3.0;
+
+                        auto accent = std::sin(xPhase - timeOffset * 8.0 + juce::MathConstants<double>::pi) * 0.4;
+                        auto y = centerY + static_cast<float>(accent * amplitude * 0.7);
+
+                        if (firstPoint)
+                        {
+                            accentPath.startNewSubPath(static_cast<float>(x), y);
+                            firstPoint = false;
+                        }
+                        else
+                        {
+                            accentPath.lineTo(static_cast<float>(x), y);
+                        }
+                    }
+
+                    float strokeWidth = 3.0f * layer;
+                    float alpha = (0.15f / layer) * (4 - layer);
+
+                    g.setColour(magenta.withAlpha(alpha));
+                    g.strokePath(accentPath, juce::PathStrokeType(strokeWidth));
+                }
+
+                // Draw vertical pulse with massive glow
+                auto pulseX = static_cast<float>(std::fmod(timeOffset * 2.0, 1.0) * width);
+
+                for (int i = 6; i >= 1; i--)
+                {
+                    auto glowWidth = 60.0f * i;
+                    auto glowAlpha = 0.06f / i;
+
+                    juce::ColourGradient pulseGlow(
+                        magenta.withAlpha(glowAlpha),
+                        pulseX,
+                        centerY,
+                        magenta.withAlpha(0.0f),
+                        pulseX + glowWidth,
+                        centerY,
+                        true
+                    );
+                    g.setGradientFill(pulseGlow);
+                    g.fillRect(
+                        juce::Rectangle<float>(
+                            pulseX - glowWidth,
+                            centerY - height * 3.0f,
+                            glowWidth * 2,
+                            height * 6.0f
+                        )
+                    );
+                }
+
+                g.setColour(magenta.withAlpha(0.7f));
+                g.drawLine(pulseX, centerY - height * 2.5f, pulseX, centerY + height * 2.5f, 3.0f);
+
+                g.setColour(juce::Colours::white.withAlpha(0.85f));
+                g.drawLine(pulseX, centerY - height * 2.5f, pulseX, centerY + height * 2.5f, 1.5f);
+            }
+        }
+
+        for (int i = 0; i < item->getNumSubItems(); ++i)
+            drawGlowOverlays(item->getSubItem(i));
+    };
+
+    if (auto* root = getRootItem())
+        drawGlowOverlays(root);
 }

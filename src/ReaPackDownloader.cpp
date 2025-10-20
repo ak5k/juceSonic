@@ -205,10 +205,6 @@ void ReaPackDownloader::downloadJsfx(const ReaPackIndexParser::JsfxEntry& entry,
         downloadQueue.push(task);
     }
 
-    // Save timestamp info for cache validation
-    juce::File versionFile = packageDir.getChildFile(".version");
-    FileIO::writeFile(versionFile, entry.timestamp);
-
     notify();
 }
 
@@ -226,9 +222,9 @@ bool ReaPackDownloader::isCached(const ReaPackIndexParser::JsfxEntry& entry) con
     if (!FileIO::exists(packageDir))
         return false;
 
-    // Simple check: if directory exists and has files, it's cached
-    // We don't compare versions/timestamps - cached packages stay cached
-    // User must explicitly update them
+    // Simple check: if directory exists and all source files are present, it's cached
+    // Version tracking is handled by JsfxPluginTreeView in reapack.xml
+    // Cached packages are not auto-updated - user must explicitly update them
 
     // Check if all source files exist
     for (const auto& source : entry.sources)
@@ -265,6 +261,22 @@ void ReaPackDownloader::clearCache()
 {
     FileIO::deleteDirectory(cacheDir);
     FileIO::createDirectory(cacheDir);
+}
+
+bool ReaPackDownloader::clearPackageCache(const ReaPackIndexParser::JsfxEntry& entry)
+{
+    // Get the package directory
+    juce::String packageName = entry.name.upToLastOccurrenceOf(".", false, false);
+    juce::File packageDir = cacheDir.getChildFile(sanitizeFilename(packageName));
+
+    // Delete the package directory recursively (includes all source files)
+    if (packageDir.exists())
+    {
+        bool success = packageDir.deleteRecursively();
+        return success;
+    }
+
+    return false;
 }
 
 void ReaPackDownloader::run()

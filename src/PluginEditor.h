@@ -159,6 +159,7 @@ public:
     void resized() override
     {
         auto bounds = getLocalBounds();
+        bounds.removeFromLeft(10); // Indent parameter name labels
         nameLabel.setBounds(bounds.removeFromLeft(200));
 
         switch (controlType)
@@ -201,7 +202,6 @@ private:
 class AudioPluginAudioProcessorEditor final
     : public juce::AudioProcessorEditor
     , public PersistentState
-    , private juce::Timer
 {
 public:
     explicit AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor&);
@@ -214,11 +214,18 @@ public:
 
     // Public so LookAndFeel can access it
 private:
-    void timerCallback() override;
     void loadJSFXFile();
     void unloadJSFXFile();
     void rebuildParameterSliders();
     void updatePresetList();
+
+    // UI update helpers (event-driven, not timer-based)
+    void updateTitleLabel();
+    void updateEditorButtonState();
+    void updateIOMatrixButtonState();
+
+    // Called after JSFX is loaded to update UI and restore state
+    void onJsfxLoaded();
 
     AudioPluginAudioProcessor& processorRef;
 
@@ -230,6 +237,9 @@ private:
 
     // Preset management dropdown
     juce::ComboBox presetManagementMenu;
+
+    // JsfxPluginWindow embedded as component (minimal UI mode)
+    JsfxPluginWindow jsfxPluginWindow;
 
     // PresetWindow embedded as component (minimal UI mode)
     PresetWindow presetWindow;
@@ -269,8 +279,7 @@ private:
     void saveJsfxState();      // Internal "destructor" - save state before unloading JSFX
     void restoreJsfxUiState(); // Internal "constructor" - restore state after loading JSFX
 
-    // Deferred size restoration for DAW compatibility
-    bool needsSizeRestoration = false;
+    // Size to be restored (set by restoreJsfxUiState, applied by async callback)
     int restoredWidth = 700;
     int restoredHeight = 500;
     bool buttonBarVisible = true;

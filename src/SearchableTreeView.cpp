@@ -1,4 +1,6 @@
 #include "SearchableTreeView.h"
+#include "JsfxPluginTreeView.h"
+#include <juce_audio_processors/juce_audio_processors.h>
 
 // ============================================================================
 // SearchableTreeItem implementation
@@ -99,6 +101,20 @@ bool SearchTextEditor::keyPressed(const juce::KeyPress& key)
 // FilteredTreeView implementation
 // ============================================================================
 
+void FilteredTreeView::ClickAwayListener::mouseDown(const juce::MouseEvent& e)
+{
+    // Get click position relative to the tree viewport
+    auto posRelativeToTree = e.getEventRelativeTo(&treeView).getPosition();
+
+    // If click is outside the tree viewport bounds, collapse it
+    // Use getLocalBounds() which gives us (0,0,width,height) in the tree's coordinate space
+    if (!treeView.getLocalBounds().contains(posRelativeToTree))
+    {
+        if (treeView.searchView)
+            treeView.searchView->toggleManualExpansion();
+    }
+}
+
 void FilteredTreeView::collectMatchedItems(juce::Array<juce::TreeViewItem*>& items, juce::TreeViewItem* item)
 {
     if (!item)
@@ -169,10 +185,10 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
 {
     auto keyCode = key.getKeyCode();
 
-    // Handle ESC key - collapse tree and clear search
+    // Handle ESC key - collapse tree and move to search field
     if (key == juce::KeyPress::escapeKey && searchView)
     {
-        searchView->handleEscapeKey();
+        searchView->handleEscapeFromTree();
         return true;
     }
 
@@ -419,13 +435,6 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
         }
         else // up key
         {
-            // In filtered mode, move focus back to search field at first item
-            if (isFiltered && currentIndex <= 0 && searchView)
-            {
-                searchView->moveFocusToSearchField();
-                return true;
-            }
-
             if (currentIndex < 0)
                 newIndex = items.size() - 1; // Select last if none selected
             else if (currentIndex > 0)
@@ -508,7 +517,7 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
         }
     }
 
-    // Handle alphanumeric keys - move focus to search field and insert the character
+    // Handle alphanumeric keys and backspace - move focus to search field
     if (searchView)
     {
         auto textChar = key.getTextCharacter();
@@ -518,6 +527,17 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
             searchView->insertTextIntoSearchField(juce::String::charToString(textChar));
             return true;
         }
+
+        // Handle backspace key
+        if (key == juce::KeyPress::backspaceKey)
+        {
+            searchView->moveFocusToSearchField();
+            // Simulate backspace in the search field by removing the last character
+            auto currentText = searchView->getSearchText();
+            if (currentText.isNotEmpty())
+                searchView->setSearchText(currentText.dropLastCharacters(1));
+            return true;
+        }
     }
 
     return juce::TreeView::keyPressed(key);
@@ -525,43 +545,233 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
 
 void FilteredTreeView::mouseDown(const juce::MouseEvent& e)
 {
-    // Check if we're in collapsed hint line mode
+    // If in collapsed mode, expand the tree
     if (searchView && searchView->isAutoHideEnabled() && searchView->isInCollapsedMode())
     {
-        // In collapsed mode, any click on the tree view should expand it
-        // Trigger expansion by toggling manual expansion state
         searchView->toggleManualExpansion();
-        return; // Don't pass to base class - we handled it
+        return;
     }
 
-    // Normal mode - let TreeView handle the click
+    // Otherwise, let TreeView handle the click normally
     juce::TreeView::mouseDown(e);
+}
+
+void FilteredTreeView::resized()
+{
+    // In overlay mode, manage viewport ourselves to eliminate padding
+    if (isOverlayMode)
+    {
+        if (auto* viewport = getViewport())
+        {
+            // Don't call base class - manage viewport directly
+            viewport->setBounds(getLocalBounds());
+        }
+    }
+    else
+    {
+        // Normal mode - use base class layout
+        juce::TreeView::resized();
+    }
+}
+
+void FilteredTreeView::paint(juce::Graphics& g)
+{
+    if (isOverlayMode)
+    {
+        // Paint TreeView's own background color
+        g.fillAll(getLookAndFeel().findColour(juce::TreeView::backgroundColourId));
+
+        // Draw border for visibility
+        g.setColour(getLookAndFeel().findColour(juce::ComboBox::outlineColourId));
+        g.drawRect(getLocalBounds(), 1);
+    }
+
+    // Always call parent to paint tree content
+    juce::TreeView::paint(g);
+}
+
+void FilteredTreeView::paintOverChildren(juce::Graphics& g)
+{
+    // Call base class first
+    juce::TreeView::paintOverChildren(g);
+
+    // If this is a JsfxPluginTreeView, draw download glow effects on top
+    if (auto* jsfxTreeView = dynamic_cast<JsfxPluginTreeView*>(searchView))
+        jsfxTreeView->drawDownloadGlowEffects(g);
+}
+
+juce::AudioProcessorEditor* FilteredTreeView::findAudioProcessorEditor()
+{
+    juce::Component* current = getParentComponent();
+    while (current != nullptr)
+    {
+        if (auto* editor = dynamic_cast<juce::AudioProcessorEditor*>(current))
+            return editor;
+        current = current->getParentComponent();
+    }
+    return nullptr;
+}
+
+void FilteredTreeView::expandAsOverlay()
+{
+    // Find the AudioProcessorEditor
+    auto* editor = findAudioProcessorEditor();
+    if (!editor)
+        return;
+
+    // Already in overlay mode
+    if (overlayParent == editor && getParentComponent() == editor)
+        return;
+
+    // Get current position in editor coordinates BEFORE reparenting
+    auto currentPosInEditor = editor->getLocalPoint(this, juce::Point<int>(0, 0));
+
+    // Save original state
+    originalParent = getParentComponent();
+    originalBounds = getBounds();
+    overlayParent = editor;
+
+    // Remove from current parent and add to editor
+    if (originalParent)
+        originalParent->removeChildComponent(this);
+
+    editor->addAndMakeVisible(*this);
+    isOverlayMode = true;
+
+    // Calculate ideal dimensions based on tree content
+    int idealWidth = 400; // Start with reasonable default
+    int idealHeight = 300;
+
+    if (searchView)
+    {
+        // Get ideal dimensions from SearchableTreeView
+        idealHeight = searchView->getIdealTreeHeight();
+        idealWidth = searchView->getIdealTreeWidth();
+    }
+
+    // Add some padding for scrollbar and borders
+    idealWidth += 20;
+    idealHeight += 20;
+
+    // Constrain to available space in editor
+    int margin = 10;
+    int maxWidth = editor->getWidth() - currentPosInEditor.x - margin;
+    int maxHeight = editor->getHeight() - currentPosInEditor.y - margin;
+
+    int finalWidth = juce::jmin(idealWidth, maxWidth);
+    int finalHeight = juce::jmin(idealHeight, maxHeight);
+
+    // Position at exact same location, with ideal size constrained by available space
+    setBounds(currentPosInEditor.x, currentPosInEditor.y, finalWidth, finalHeight);
+
+    // Re-enable viewport mouse clicks for normal tree interaction
+    if (auto* viewport = getViewport())
+    {
+        viewport->setInterceptsMouseClicks(true, true);
+        viewport->setViewPosition(0, 0);
+    }
+
+    // Trigger layout update - our resized() override will ensure viewport fills the space
+    resized();
+
+    // Add click-away listener to editor for collapsing when clicking outside
+    if (editor)
+        editor->addMouseListener(&clickAwayListener, true);
+
+    toFront(false);
+    repaint();
+}
+
+void FilteredTreeView::collapseFromOverlay()
+{
+    // Only collapse if actually in overlay mode
+    if (!overlayParent || !originalParent)
+        return;
+
+    // Check if we're actually a child of the overlay parent
+    if (getParentComponent() != overlayParent)
+        return;
+
+    // Remove click-away listener from editor
+    if (overlayParent)
+        overlayParent->removeMouseListener(&clickAwayListener);
+
+    // Remove from editor
+    overlayParent->removeChildComponent(this);
+    isOverlayMode = false;
+
+    // Restore to original parent
+    originalParent->addAndMakeVisible(*this);
+    setBounds(originalBounds);
+
+    // Clear overlay state
+    overlayParent = nullptr;
+    originalParent = nullptr;
 }
 
 bool FilteredTreeView::hitTest(int x, int y)
 {
     // In collapsed hint line mode, accept all hits so we can handle the click
     if (searchView && searchView->isAutoHideEnabled() && searchView->isInCollapsedMode())
-
         return true; // Accept all mouse events in collapsed mode
 
     // Normal mode - use default TreeView hit testing
-    bool result = juce::TreeView::hitTest(x, y);
-
-    return result;
+    return juce::TreeView::hitTest(x, y);
 }
 
 // ============================================================================
 // SearchableTreeView implementation
 // ============================================================================
 
+// Static registry for global Ctrl+F cycling
+juce::Array<SearchableTreeView*>& SearchableTreeView::getAllInstances()
+{
+    static juce::Array<SearchableTreeView*> instances;
+    return instances;
+}
+
+void SearchableTreeView::focusNextSearchField()
+{
+    auto& instances = getAllInstances();
+    if (instances.isEmpty())
+        return;
+
+    // Find currently focused instance
+    int currentIndex = -1;
+    for (int i = 0; i < instances.size(); ++i)
+    {
+        if (instances[i]->isSearchFieldFocused())
+        {
+            currentIndex = i;
+            break;
+        }
+    }
+
+    // Move to next instance (wrap around)
+    int nextIndex = (currentIndex + 1) % instances.size();
+    if (auto* nextInstance = instances[nextIndex])
+        nextInstance->moveFocusToSearchField();
+}
+
+void SearchableTreeView::collapseAllExpandedTrees()
+{
+    auto& instances = getAllInstances();
+    for (auto* instance : instances)
+        if (instance && instance->isTreeManuallyExpanded)
+            instance->collapseTree();
+}
+
+bool SearchableTreeView::isSearchFieldFocused() const
+{
+    return searchField.hasKeyboardFocus(true);
+}
+
 SearchableTreeView::SearchableTreeView()
 {
-    // Setup search field
-    addAndMakeVisible(searchLabel);
-    searchLabel.setText("Search:", juce::dontSendNotification);
-    searchLabel.setJustificationType(juce::Justification::centredRight);
+    // Register this instance
+    getAllInstances().add(this);
 
+    // Setup search field
     addAndMakeVisible(searchField);
     searchField.setTextToShowWhenEmpty("Type to search...", juce::Colours::grey);
     searchField.addListener(this);
@@ -571,7 +781,14 @@ SearchableTreeView::SearchableTreeView()
     // Setup browse button
     addAndMakeVisible(browseButton);
     browseButton.setButtonText("Browse...");
-    browseButton.onClick = [this] { showBrowseMenu(); };
+    browseButton.onClick = [this]
+    {
+        // Use custom callback if set, otherwise show default browse menu
+        if (customBrowseCallback)
+            customBrowseCallback();
+        else
+            showBrowseMenu();
+    };
 
     // Setup tree view
     addAndMakeVisible(treeView);
@@ -580,7 +797,8 @@ SearchableTreeView::SearchableTreeView()
     treeView.setWantsKeyboardFocus(true);
     treeView.setSearchableTreeView(this);
     treeView.setInterceptsMouseClicks(true, true); // Ensure tree receives all mouse events
-    treeView.addMouseListener(this, true); // Add mouse listener to catch all mouse events including from children
+    // Don't add mouse listener here - let FilteredTreeView handle its own mouse events
+    // treeView.addMouseListener(this, true);
 
     // Setup metadata label
     addAndMakeVisible(metadataLabel);
@@ -593,12 +811,31 @@ SearchableTreeView::SearchableTreeView()
 
 SearchableTreeView::~SearchableTreeView()
 {
+    // Unregister this instance
+    getAllInstances().removeAllInstancesOf(this);
+
     treeView.setRootItem(nullptr);
 }
 
 void SearchableTreeView::paint(juce::Graphics& g)
 {
-    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+    // Don't paint background in tree area when tree is in overlay mode
+    if (autoHideTreeWithoutResults && treeView.isOverlayMode)
+    {
+        // Only paint the search field area background
+        auto bounds = getLocalBounds();
+        if (showSearchField)
+        {
+            auto searchArea = bounds.removeFromTop(30); // Search field + spacing
+            g.setColour(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+            g.fillRect(searchArea);
+        }
+    }
+    else
+    {
+        // Normal mode - paint entire background
+        g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+    }
 }
 
 void SearchableTreeView::resized()
@@ -609,12 +846,13 @@ void SearchableTreeView::resized()
     if (showSearchField)
     {
         auto searchArea = bounds.removeFromTop(25); // Half the previous height (50 -> 25)
-        searchLabel.setBounds(searchArea.removeFromLeft(60));
 
         // Show browse button only in auto-hide mode
         if (autoHideTreeWithoutResults)
         {
-            browseButton.setBounds(searchArea.removeFromRight(80));
+            // Limit button width to ensure text is visible (max width that fits "Browse...")
+            auto buttonWidth = juce::jmin(80, searchArea.getWidth() / 3);
+            browseButton.setBounds(searchArea.removeFromRight(buttonWidth));
             searchArea.removeFromRight(5); // Spacing between search field and button
             browseButton.setVisible(true);
         }
@@ -645,26 +883,32 @@ void SearchableTreeView::resized()
 
         if (shouldExpand)
         {
-            // Expanded: use calculated ideal height
-            int idealHeight = getIdealTreeHeight();
-            auto treeArea = bounds.withHeight(idealHeight);
-            treeView.setBounds(treeArea);
-            treeView.setVisible(true);
-            treeView.setInterceptsMouseClicks(true, true); // Allow tree to handle clicks normally
+            // Expanded: let FilteredTreeView attach itself to AudioProcessorEditor as overlay
+            treeView.expandAsOverlay();
         }
         else
         {
-            // Collapsed: show just the first line of the tree (one item height ~24-26px)
+            // Collapsed: let FilteredTreeView return to normal parent and show preview
+            treeView.collapseFromOverlay();
+
             int itemHeight = 24; // Standard tree item height
             auto treeArea = bounds.withHeight(itemHeight);
             treeView.setBounds(treeArea);
             treeView.setVisible(true);
-            treeView.setInterceptsMouseClicks(true, true); // Allow clicking to expand
+            treeView.setInterceptsMouseClicks(true, false); // Only tree itself gets clicks, not children
+
+            // Disable mouse clicks on viewport so they go to the tree instead
+            if (auto* viewport = treeView.getViewport())
+            {
+                viewport->setViewPosition(0, 0);
+                viewport->setInterceptsMouseClicks(false, false);
+            }
         }
     }
     else
     {
-        // Normal mode: use all remaining space
+        // Normal mode: ensure not in overlay, then use all remaining space
+        treeView.collapseFromOverlay();
         treeView.setBounds(bounds);
         treeView.setVisible(true);
         treeView.setInterceptsMouseClicks(true, true);
@@ -703,6 +947,39 @@ void SearchableTreeView::textEditorReturnKeyPressed(juce::TextEditor& editor)
 
 void SearchableTreeView::moveFocusToTree()
 {
+    // Don't move focus if tree has no visible selectable items
+    if (!hasVisibleSelectableItems())
+        return;
+
+    // If in auto-hide collapsed mode, expand the tree
+    if (autoHideTreeWithoutResults && isInCollapsedMode() && !isTreeManuallyExpanded)
+    {
+        isTreeManuallyExpanded = true;
+
+        // Open all root level items
+        if (rootItem)
+        {
+            for (int i = 0; i < rootItem->getNumSubItems(); ++i)
+                if (auto* item = rootItem->getSubItem(i))
+                    item->setOpen(true);
+        }
+
+        // Update layout
+        resized();
+
+        // Notify parent of expansion change
+        if (onTreeExpansionChanged)
+            onTreeExpansionChanged(true);
+
+        // Trigger repaint
+        treeView.repaint();
+        repaint();
+
+        // Trigger repaint of top-level component for layout updates
+        if (auto* topLevel = getTopLevelComponent())
+            topLevel->repaint();
+    }
+
     // Move focus from search field to tree
     treeView.grabKeyboardFocus();
 
@@ -913,7 +1190,6 @@ void SearchableTreeView::setShowSearchField(bool show)
         return;
 
     showSearchField = show;
-    searchLabel.setVisible(show);
     searchField.setVisible(show);
     resized();
 }
@@ -983,6 +1259,38 @@ bool SearchableTreeView::hasMatches() const
     return matchCount > 0;
 }
 
+bool SearchableTreeView::hasVisibleSelectableItems() const
+{
+    if (!rootItem)
+        return false;
+
+    // Helper to recursively check for visible selectable items
+    std::function<bool(juce::TreeViewItem*)> hasVisibleItems = [&](juce::TreeViewItem* item) -> bool
+    {
+        if (!item)
+            return false;
+
+        // Check if this item is visible and selectable
+        auto* searchableItem = dynamic_cast<SearchableTreeItem*>(item);
+        if (searchableItem && !searchableItem->getHidden() && item->canBeSelected())
+            return true;
+
+        // Check children
+        for (int i = 0; i < item->getNumSubItems(); ++i)
+            if (hasVisibleItems(item->getSubItem(i)))
+                return true;
+
+        return false;
+    };
+
+    // Check all root level items
+    for (int i = 0; i < rootItem->getNumSubItems(); ++i)
+        if (hasVisibleItems(rootItem->getSubItem(i)))
+            return true;
+
+    return false;
+}
+
 int SearchableTreeView::getNeededHeight() const
 {
     int height = 0; // Title is now handled by parent
@@ -1027,41 +1335,85 @@ int SearchableTreeView::getIdealTreeHeight() const
     if (!rootItem)
         return 200;
 
-    // Count visible items (not filtered/hidden)
-    int visibleItems = 0;
-    std::function<void(juce::TreeViewItem*)> countItems = [&](juce::TreeViewItem* item)
+    // Count visible items and sum their actual heights
+    int totalHeight = 0;
+    int itemCount = 0;
+    std::function<void(juce::TreeViewItem*)> sumHeights = [&](juce::TreeViewItem* item)
     {
         if (!item)
             return;
 
         auto* searchableItem = dynamic_cast<SearchableTreeItem*>(item);
         if (!searchableItem || !searchableItem->getHidden())
-            visibleItems++;
+        {
+            // Add this item's actual height
+            totalHeight += item->getItemHeight();
+            itemCount++;
+        }
 
-        // Count children if item is open
+        // Process children if item is open
         if (item->isOpen())
             for (int i = 0; i < item->getNumSubItems(); ++i)
-                countItems(item->getSubItem(i));
+                sumHeights(item->getSubItem(i));
     };
 
     for (int i = 0; i < rootItem->getNumSubItems(); ++i)
-        countItems(rootItem->getSubItem(i));
+        sumHeights(rootItem->getSubItem(i));
 
-    // Calculate height: item height * count + some padding
-    int itemHeight = 22;                                   // standard tree item height
-    int calculatedHeight = visibleItems * itemHeight + 20; // +20 for padding
+    // Add padding
+    int calculatedHeight = totalHeight + 20;
 
     // For auto-hide mode, return calculated height (with reasonable max)
     // Don't limit based on parent height to avoid circular dependency
     if (autoHideTreeWithoutResults)
     {
-        // Just apply a reasonable maximum to prevent absurd heights
-        // Minimum is 50px (enough for 2-3 items), maximum is 600px
-        return juce::jlimit(50, 600, calculatedHeight);
+        // Apply a reasonable maximum to prevent absurd heights
+        // Minimum is 50px (enough for 2-3 items), maximum is 800px
+        return juce::jlimit(50, 800, calculatedHeight);
     }
 
     // In normal mode, return the calculated height (parent will constrain it)
     return calculatedHeight;
+}
+
+int SearchableTreeView::getIdealTreeWidth() const
+{
+    if (!rootItem)
+        return 400;
+
+    // Find the widest visible item by measuring text
+    int maxWidth = 300;     // Minimum width
+    juce::Font font(14.0f); // Match the font used in SearchableTreeItem::paintItem
+    int indentSize = 20;    // Default indent size for TreeView
+
+    std::function<void(juce::TreeViewItem*, int)> measureItems = [&](juce::TreeViewItem* item, int depth)
+    {
+        if (!item)
+            return;
+
+        auto* searchableItem = dynamic_cast<SearchableTreeItem*>(item);
+        if (!searchableItem || searchableItem->getHidden())
+            return; // Skip hidden items
+
+        // Calculate text width including indentation
+        int indentWidth = depth * indentSize;
+        int textWidth = font.getStringWidth(searchableItem->getName());
+        // More generous padding: indent + text + icon space + right padding + scrollbar room
+        int totalWidth = indentWidth + textWidth + 80;
+
+        maxWidth = juce::jmax(maxWidth, totalWidth);
+
+        // Process children if item is open
+        if (item->isOpen())
+            for (int i = 0; i < item->getNumSubItems(); ++i)
+                measureItems(item->getSubItem(i), depth + 1);
+    };
+
+    for (int i = 0; i < rootItem->getNumSubItems(); ++i)
+        measureItems(rootItem->getSubItem(i), 0);
+
+    // Return constrained width (min 300, max 1000 for wider displays)
+    return juce::jlimit(300, 1000, maxWidth);
 }
 
 bool SearchableTreeView::isInCollapsedMode() const
@@ -1076,6 +1428,14 @@ bool SearchableTreeView::isInCollapsedMode() const
 
 void SearchableTreeView::toggleManualExpansion()
 {
+    // Prevent rapid multiple toggles (debounce)
+    static juce::uint32 lastToggleTime = 0;
+    auto currentTime = juce::Time::getMillisecondCounter();
+    if (currentTime - lastToggleTime < 200) // 200ms debounce
+        return;
+
+    lastToggleTime = currentTime;
+
     // Toggle expansion state
     isTreeManuallyExpanded = !isTreeManuallyExpanded;
 
@@ -1083,12 +1443,23 @@ void SearchableTreeView::toggleManualExpansion()
     {
         if (isTreeManuallyExpanded)
         {
-            // Expanding - open all root level items and give keyboard focus
+            // Expanding - open entire tree recursively FIRST, then resize
+
+            // Helper lambda to recursively open all items
+            std::function<void(juce::TreeViewItem*)> openAllItems = [&](juce::TreeViewItem* item)
+            {
+                if (!item)
+                    return;
+
+                item->setOpen(true);
+
+                for (int i = 0; i < item->getNumSubItems(); ++i)
+                    openAllItems(item->getSubItem(i));
+            };
 
             for (int i = 0; i < rootItem->getNumSubItems(); ++i)
                 if (auto* item = rootItem->getSubItem(i))
-
-                    item->setOpen(true);
+                    openAllItems(item);
 
             // Give keyboard focus to tree view for navigation
             treeView.grabKeyboardFocus();
@@ -1110,7 +1481,7 @@ void SearchableTreeView::toggleManualExpansion()
         }
     }
 
-    // Update layout
+    // Update layout AFTER tree items are expanded/collapsed
     resized();
 
     // Notify parent of expansion change
@@ -1131,6 +1502,8 @@ void SearchableTreeView::toggleManualExpansion()
 
 void SearchableTreeView::handleEscapeKey()
 {
+    // Called from search field - clear search and lose focus
+
     // Clear the search field
     searchField.setText("", true); // true = send notification to trigger filtering/collapse
     currentSearchTerm = "";
@@ -1143,104 +1516,105 @@ void SearchableTreeView::handleEscapeKey()
         parent->grabKeyboardFocus();
 }
 
-void SearchableTreeView::mouseDown(const juce::MouseEvent& e)
+void SearchableTreeView::handleEscapeFromTree()
 {
-    // Check if this is a click on the tree view in auto-hide mode
-    if (autoHideTreeWithoutResults)
+    // Called from tree view - collapse tree and move focus to search field
+
+    // Collapse the tree if it's manually expanded
+    if (isTreeManuallyExpanded)
     {
-        // Check for click-away when tree is manually expanded
-        if (isTreeManuallyExpanded && !isInCollapsedMode())
+        isTreeManuallyExpanded = false;
+
+        // Collapse all root level items
+        if (rootItem)
         {
-            // Get the event relative to this component
-            auto localEvent = e.getEventRelativeTo(this);
-
-            // If click is outside our bounds, collapse the tree
-            if (!getLocalBounds().contains(localEvent.getPosition()))
-            {
-                // Collapse root level items
-                if (rootItem)
-                {
-                    for (int i = 0; i < rootItem->getNumSubItems(); ++i)
-                        if (auto* item = rootItem->getSubItem(i))
-                            item->setOpen(false);
-                }
-
-                isTreeManuallyExpanded = false;
-
-                // Update layout
-                resized();
-
-                // Notify parent of expansion change
-                if (onTreeExpansionChanged)
-                    onTreeExpansionChanged(isTreeManuallyExpanded);
-
-                // Trigger repaint of top-level component for layout updates
-                if (auto* topLevel = getTopLevelComponent())
-                {
-                    topLevel->repaint();
-                    topLevel->resized();
-                }
-
-                return;
-            }
+            for (int i = 0; i < rootItem->getNumSubItems(); ++i)
+                if (auto* item = rootItem->getSubItem(i))
+                    item->setOpen(false);
         }
 
-        // Check if the click originated from the tree view or its children
-        if (e.eventComponent == &treeView || treeView.isParentOf(e.eventComponent))
-        {
-            // Check if the click is on a scrollbar - if so, ignore it for collapse/expand logic
-            auto localPos = e.getEventRelativeTo(&treeView).getPosition();
-            bool isScrollbarClick = localPos.x >= treeView.getWidth() - 16; // Scrollbar area on right
+        // Clear selection
+        treeView.clearSelectedItems();
 
-            if (!isScrollbarClick)
-            {
-                // In collapsed mode - expand when clicking anywhere on the visible first line
-                if (isInCollapsedMode())
-                {
-                    toggleManualExpansion();
-                    return;
-                }
-                // In expanded mode - check if clicking in the first line (top 24px)
-                // to allow collapsing by clicking the same area again
-                else if (isTreeManuallyExpanded)
-                {
-                    if (localPos.y < 24) // Top 24px is the first tree line
-                    {
-                        toggleManualExpansion();
-                        return;
-                    }
-                    // Otherwise, let the tree handle the click normally (selecting items, etc.)
-                }
-            }
+        // Update layout
+        resized();
+
+        // Notify parent of expansion change
+        if (onTreeExpansionChanged)
+            onTreeExpansionChanged(false);
+
+        // Trigger repaint
+        treeView.repaint();
+        repaint();
+
+        // Trigger repaint of top-level component for layout updates
+        if (auto* topLevel = getTopLevelComponent())
+        {
+            topLevel->repaint();
+            topLevel->resized();
         }
     }
 
-    // Default handling
-    Component::mouseDown(e);
+    // Move focus to search field
+    moveFocusToSearchField();
+}
+
+void SearchableTreeView::collapseTree()
+{
+    // Collapse the tree if it's manually expanded
+    if (isTreeManuallyExpanded)
+    {
+        isTreeManuallyExpanded = false;
+
+        // Collapse all root level items
+        if (rootItem)
+        {
+            for (int i = 0; i < rootItem->getNumSubItems(); ++i)
+                if (auto* item = rootItem->getSubItem(i))
+                    item->setOpen(false);
+        }
+
+        // Keep selection intact - don't clear it
+
+        // Update layout
+        resized();
+
+        // Notify parent of expansion change
+        if (onTreeExpansionChanged)
+            onTreeExpansionChanged(false);
+
+        // Trigger repaint
+        treeView.repaint();
+        repaint();
+
+        // Trigger repaint of top-level component for layout updates
+        if (auto* topLevel = getTopLevelComponent())
+        {
+            topLevel->repaint();
+            topLevel->resized();
+        }
+    }
 }
 
 void SearchableTreeView::parentHierarchyChanged()
 {
     Component::parentHierarchyChanged();
-
-    // Set up global mouse listener for click-away detection
-    if (isParentOf(&treeView) && getParentComponent() != nullptr)
-    {
-        if (auto* topLevel = getTopLevelComponent())
-            topLevel->addMouseListener(this, true);
-    }
 }
 
 bool SearchableTreeView::hitTest(int x, int y)
 {
-    // In auto-hide mode when collapsed, accept hits in search field AND tree preview area
-    if (autoHideTreeWithoutResults && isInCollapsedMode())
+    // When tree is in overlay mode (expanded), only accept hits in the search field area
+    if (autoHideTreeWithoutResults && treeView.isOverlayMode)
     {
-        // Accept hits in search field (0-38) and tree area (38+)
-        return true; // Accept all hits when collapsed to allow search field interaction
+        // Only accept hits in the search field area at the top
+        if (showSearchField && y < 30) // Search field height
+            return true;
+
+        // Reject all other hits - let them pass through to the overlay tree
+        return false;
     }
 
-    // Otherwise use default hit testing
+    // Otherwise use default hit testing (collapsed mode or normal mode)
     return Component::hitTest(x, y);
 }
 
@@ -1376,7 +1750,7 @@ void SearchableTreeView::buildBrowseMenu(
     if (categoryIndex >= categories.size())
         return;
 
-    juce::String category = categories[categoryIndex];
+    const juce::String& category = categories[categoryIndex];
     auto items = itemsByCategory[category];
 
     if (items.size() <= maxItemsPerSubmenu)

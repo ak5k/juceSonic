@@ -27,10 +27,11 @@
 #define JUCESONIC_REPO_NAME "jucesonic"
 
 // ==============================================================================
-// Default Repository URLs
+// Default JSFX Repositories
 // ==============================================================================
 
-#define JUCESONIC_DEFAULT_REPO_URL "@JUCESONIC_DEFAULT_REPO_URL@"
+#define JUCESONIC_DEFAULT_JSFX_REPO_1_URL "https://github.com/ReaTeam/JSFX/raw/master/index.xml"
+#define JUCESONIC_DEFAULT_JSFX_REPO_2_URL "https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml"
 
 // ==============================================================================
 // Plugin Constants
@@ -75,7 +76,7 @@ static constexpr const char* DefaultPresetBankName = "User";
 static constexpr const char* DefaultPresetName = "Default";
 
 // UI Layout constants
-static constexpr int LiceComponentExtraHeightPixels = 16; // Extra pixels to add when calculating LICE UI height
+static constexpr int LiceComponentExtraHeightPixels = 0; // Extra pixels to add when calculating LICE UI height
 } // namespace PluginConstants
 
 // ==============================================================================

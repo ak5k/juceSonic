@@ -99,6 +99,73 @@ public:
     }
 
     //==============================================================================
+    // Override button text drawing to always show at least the first character
+    void drawButtonText(
+        juce::Graphics& g,
+        juce::TextButton& button,
+        bool /*shouldDrawButtonAsHighlighted*/,
+        bool /*shouldDrawButtonAsDown*/
+    ) override
+    {
+        juce::Font font(getTextButtonFont(button, button.getHeight()));
+        g.setFont(font);
+        g.setColour(button
+                        .findColour(
+                            button.getToggleState() ? juce::TextButton::textColourOnId
+                                                    : juce::TextButton::textColourOffId
+                        )
+                        .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+
+        const int yIndent = juce::jmin(4, button.proportionOfHeight(0.3f));
+        const int cornerSize = juce::jmin(button.getHeight(), button.getWidth()) / 2;
+
+        const int fontHeight = juce::roundToInt(font.getHeight() * 0.6f);
+        const int leftIndent = juce::jmin(fontHeight, 2 + cornerSize / (button.isConnectedOnLeft() ? 4 : 2));
+        const int rightIndent = juce::jmin(fontHeight, 2 + cornerSize / (button.isConnectedOnRight() ? 4 : 2));
+        const int textWidth = button.getWidth() - leftIndent - rightIndent;
+
+        auto buttonText = button.getButtonText();
+
+        if (textWidth > 0 && buttonText.isNotEmpty())
+        {
+            // Try JUCE's default fitted text (allows up to 2 lines, can shrink font)
+            juce::GlyphArrangement ga;
+            ga.addFittedText(
+                font,
+                buttonText,
+                (float)leftIndent,
+                (float)yIndent,
+                (float)textWidth,
+                (float)(button.getHeight() - yIndent * 2),
+                juce::Justification::centred,
+                2
+            ); // Allow 2 lines
+
+            // Check if the result is just ellipsis (3 glyphs for "...") or empty
+            bool isJustEllipsis = (ga.getNumGlyphs() <= 3 && buttonText.length() > 3);
+
+            if (isJustEllipsis && buttonText.isNotEmpty())
+            {
+                // Replace with first character only
+                ga.clear();
+                auto minText = buttonText.substring(0, 1);
+                ga.addFittedText(
+                    font,
+                    minText,
+                    (float)leftIndent,
+                    (float)yIndent,
+                    (float)textWidth,
+                    (float)(button.getHeight() - yIndent * 2),
+                    juce::Justification::centred,
+                    2
+                );
+            }
+
+            ga.draw(g);
+        }
+    }
+
+    //==============================================================================
     class LookAndFeel_V4_DocumentWindowButton final : public juce::Button
     {
     public:
@@ -150,7 +217,7 @@ public:
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LookAndFeel_V4_DocumentWindowButton)
     };
 
-    juce::Button* createDocumentWindowButton(int buttonType)
+    juce::Button* createDocumentWindowButton(int buttonType) override
     {
         juce::Path shape;
         auto crossThickness = 0.15f;

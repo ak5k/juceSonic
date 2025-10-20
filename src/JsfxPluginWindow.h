@@ -41,6 +41,14 @@ public:
     }
 
     /**
+     * @brief Hide or show the status label
+     */
+    void setStatusLabelVisible(bool visible)
+    {
+        getStatusLabel().setVisible(visible);
+    }
+
+    /**
      * @brief Refresh plugin list from directories
      */
     void refreshPluginList();
@@ -62,6 +70,7 @@ private:
     void deleteSelectedPlugins();
     void showDirectoryEditor();
     void showRepositoryEditor();
+    void showJsfxFileChooser();
     void updateAllRemotePlugins();
     void updateButtonsForSelection();
     void handlePluginTreeItemSelected(juce::TreeViewItem* item);
@@ -83,6 +92,9 @@ private:
     JsfxPluginTreeView pluginTreeView;
 
     bool showManagementButtons = true;
+
+    // File chooser for loading JSFX files
+    std::unique_ptr<class PersistentFileChooser> fileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxPluginWindow)
 };

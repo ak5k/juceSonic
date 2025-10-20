@@ -77,6 +77,10 @@ private:
     void resetToDefaults();
     void setAsDefaultPreset();
 
+    // Helper to recursively collect all preset items from selected items
+    void
+    collectPresetsRecursively(juce::Array<PresetTreeItem*>& presets, const juce::Array<PresetTreeItem*>& selectedItems);
+
     // Load/save directory paths from persistent storage
     juce::StringArray getPresetDirectories() const;
     void setPresetDirectories(const juce::StringArray& directories);

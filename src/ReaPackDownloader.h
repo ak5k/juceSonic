@@ -71,6 +71,13 @@ public:
      */
     void clearCache();
 
+    /**
+     * Clear cached files for a specific JSFX package.
+     * @param entry The JSFX entry to clear from cache
+     * @return true if package was cached and deleted, false otherwise
+     */
+    bool clearPackageCache(const ReaPackIndexParser::JsfxEntry& entry);
+
 private:
     juce::File cacheDir;
     juce::File indexCacheDir;

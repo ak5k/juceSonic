@@ -28,9 +28,6 @@ set(JUCESONIC_VST3_BUILD ON)
 set(JUCESONIC_AU_BUILD ON)
 set(JUCESONIC_STANDALONE_BUILD ON)
 
-# Default repository URL for JSFX package index
-set(JUCESONIC_DEFAULT_REPO_URL "https://raw.githubusercontent.com/ak5k/jsfx-index/main/index.json")
-
 # Generate Config.h from Config.h.in
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Config.h.in"

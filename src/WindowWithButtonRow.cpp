@@ -14,11 +14,6 @@ WindowWithButtonRow::~WindowWithButtonRow()
     setLookAndFeel(nullptr);
 }
 
-void WindowWithButtonRow::paint(juce::Graphics& g)
-{
-    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-}
-
 void WindowWithButtonRow::resized()
 {
     auto bounds = getLocalBounds().reduced(4);
@@ -26,7 +21,7 @@ void WindowWithButtonRow::resized()
     // Top button row (if visible)
     if (buttonRow.isVisible())
     {
-        const int buttonHeight = juce::jmax(30, getHeight() / 20); // Proportional height
+        const int buttonHeight = 30; // Fixed height - don't make proportional to avoid resizing when content changes
         auto topButtons = bounds.removeFromTop(buttonHeight);
         buttonRow.setBounds(topButtons);
         bounds.removeFromTop(4);

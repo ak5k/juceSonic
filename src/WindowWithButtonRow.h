@@ -19,13 +19,21 @@ public:
     WindowWithButtonRow();
     ~WindowWithButtonRow() override;
 
-    void paint(juce::Graphics& g) override;
     void resized() override;
 
     /**
      * @brief Set visibility of button row and status label
      */
     void setControlsVisible(bool visible);
+
+    /**
+     * @brief Set the menu title for narrow mode
+     * When the window is too narrow, buttons are replaced with a single menu button
+     */
+    void setButtonMenuTitle(const juce::String& title)
+    {
+        buttonRow.setMenuTitle(title);
+    }
 
 protected:
     /**

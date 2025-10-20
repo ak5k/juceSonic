@@ -1051,9 +1051,23 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
                 newInstance->m_init_mutex.Enter();
             }
 
-            // Setup framebuffer with default dimensions (400x300)
+            // Setup framebuffer with JSFX's requested dimensions or default (400x300)
+            // Check if JSFX specified dimensions via gfx(width, height) in @init
+            int gfxWidth = 400;
+            int gfxHeight = 300;
+            if (newInstance->m_gfx_reqw > 0 && newInstance->m_gfx_reqh > 0)
+            {
+                gfxWidth = newInstance->m_gfx_reqw;
+                gfxHeight = newInstance->m_gfx_reqh;
+                DBG("  Using JSFX requested dimensions: " + juce::String(gfxWidth) + "x" + juce::String(gfxHeight));
+            }
+            else
+            {
+                DBG("  Using default dimensions: 400x300");
+            }
+
             // This creates m_framebuffer and initializes gfx_w/gfx_h
-            RECT r = {0, 0, 400, 300};
+            RECT r = {0, 0, gfxWidth, gfxHeight};
             if (liceState->setup_frame(nullptr, r) >= 0)
             {
                 // Trigger initial @gfx execution
