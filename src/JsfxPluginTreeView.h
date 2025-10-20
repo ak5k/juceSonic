@@ -186,6 +186,7 @@ private:
     {
         juce::String displayName;
         juce::File directory;
+        bool isStandardCategory = true; // False for custom user directories
     };
 
     juce::Array<CategoryEntry> categories;

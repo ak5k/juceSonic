@@ -82,6 +82,7 @@ private:
     AudioPluginAudioProcessor& processor;
 
     // UI Components - button pointers managed by base class ButtonRowComponent
+    juce::TextButton* loadJsfxFileButton = nullptr;
     juce::TextButton* loadButton = nullptr;
     juce::TextButton* deleteButton = nullptr;
     juce::TextButton* directoriesButton = nullptr;
@@ -95,6 +96,9 @@ private:
 
     // File chooser for loading JSFX files
     std::unique_ptr<class PersistentFileChooser> fileChooser;
+
+    // Cache the currently selected item for Load button
+    JsfxPluginTreeItem* cachedSelectedItem = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxPluginWindow)
 };

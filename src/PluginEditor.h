@@ -229,14 +229,11 @@ private:
 
     AudioPluginAudioProcessor& processorRef;
 
-    juce::TextButton loadButton{"Load JSFX"};
     juce::TextButton unloadButton{"Unload"};
     juce::TextButton uiButton{"UI"};
     juce::TextButton editButton{"Editor"};
     juce::TextButton ioMatrixButton{"I/O Matrix"};
-
-    // Preset management dropdown
-    juce::ComboBox presetManagementMenu;
+    juce::TextButton aboutButton{"About"};
 
     // JsfxPluginWindow embedded as component (minimal UI mode)
     JsfxPluginWindow jsfxPluginWindow;
@@ -267,8 +264,6 @@ private:
     void destroyJsfxUI();
     void toggleIOMatrix();
     void toggleLiceFullscreen();
-    void setupPresetManagementMenu();
-    void handlePresetManagementSelection(int selectedId);
     void showAboutWindow();
     void checkForUpdatesIfNeeded();
     void showUpdateNotification(const juce::String& latestVersion, const juce::String& downloadUrl);

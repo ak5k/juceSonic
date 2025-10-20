@@ -237,6 +237,11 @@ public:
         searchField.setText(text, true);
     }
 
+    void setSearchPlaceholder(const juce::String& placeholder)
+    {
+        searchField.setTextToShowWhenEmpty(placeholder, juce::Colours::grey);
+    }
+
     // Global Ctrl+F cycling support
     static juce::Array<SearchableTreeView*>& getAllInstances();
     static void focusNextSearchField();

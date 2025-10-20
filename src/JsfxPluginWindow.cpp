@@ -13,19 +13,17 @@ JsfxPluginWindow::JsfxPluginWindow(AudioPluginAudioProcessor& proc)
     // Set menu title for narrow mode
     setButtonMenuTitle("Plugins");
 
-    // Customize browse button to open file chooser instead of browse menu
-    pluginTreeView.setBrowseButtonText("Load JSFX File");
-    pluginTreeView.setBrowseButtonCallback([this]() { showJsfxFileChooser(); });
-
     // Add buttons to the button row (from base class)
+    // Load JSFX File button to open file chooser
+    loadJsfxFileButton = &getButtonRow().addButton("Load JSFX File...", [this]() { showJsfxFileChooser(); });
     // Load button reuses the same handler as Enter key / double-click
     loadButton = &getButtonRow().addButton(
         "Load",
         [this]()
         {
-            auto selectedItems = pluginTreeView.getSelectedItems();
-            if (!selectedItems.isEmpty())
-                handlePluginTreeItemSelected(selectedItems[0]);
+            // Use cached item since clicking the button may deselect the tree
+            if (cachedSelectedItem)
+                handlePluginTreeItemSelected(cachedSelectedItem);
         }
     );
     deleteButton = &getButtonRow().addButton("Delete", [this]() { deleteSelectedPlugins(); });
@@ -113,7 +111,19 @@ void JsfxPluginWindow::refreshPluginList()
 
 void JsfxPluginWindow::deleteSelectedPlugins()
 {
+    // Use cached items if available (in case selection was lost when clicking button)
     auto selectedItems = pluginTreeView.getSelectedPluginItems();
+
+    // If no current selection but we have cached item, use that
+    if (selectedItems.isEmpty() && cachedSelectedItem)
+    {
+        if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(cachedSelectedItem))
+        {
+            if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::Plugin)
+                selectedItems.add(pluginItem);
+        }
+    }
+
     if (selectedItems.isEmpty())
     {
         juce::AlertWindow::showMessageBoxAsync(
@@ -144,16 +154,13 @@ void JsfxPluginWindow::deleteSelectedPlugins()
         return;
     }
 
-    juce::String message = "Are you sure you want to delete "
-                         + juce::String(pluginCount)
-                         + " plugin(s)?\n\n"
-                           "This action cannot be undone.";
+    juce::String message = "Are you sure you want to move " + juce::String(pluginCount) + " plugin(s) to trash?";
 
     auto result = juce::AlertWindow::showOkCancelBox(
         juce::MessageBoxIconType::WarningIcon,
         "Confirm Delete",
         message,
-        "Delete",
+        "Move to Trash",
         "Cancel",
         nullptr,
         nullptr
@@ -164,18 +171,21 @@ void JsfxPluginWindow::deleteSelectedPlugins()
 
     int deletedCount = 0;
 
-    // Delete plugins
+    // Move plugins to trash
     for (auto* item : selectedItems)
     {
         if (item->getType() == JsfxPluginTreeItem::ItemType::Plugin)
         {
             auto pluginFile = item->getFile();
-            if (pluginFile.existsAsFile() && pluginFile.deleteFile())
+            if (pluginFile.existsAsFile() && pluginFile.moveToTrash())
                 deletedCount++;
         }
     }
 
-    getStatusLabel().setText("Deleted " + juce::String(deletedCount) + " plugin(s)", juce::dontSendNotification);
+    getStatusLabel().setText("Moved " + juce::String(deletedCount) + " plugin(s) to trash", juce::dontSendNotification);
+
+    // Clear cache after deleting
+    cachedSelectedItem = nullptr;
 
     refreshPluginList();
 }
@@ -228,21 +238,79 @@ void JsfxPluginWindow::updateAllRemotePlugins()
 void JsfxPluginWindow::updateButtonsForSelection()
 {
     auto selectedItems = pluginTreeView.getSelectedPluginItems();
-    bool hasSelection = !selectedItems.isEmpty();
 
-    // Check if any selected item is a plugin (not just a category)
+    // Check if any selected item is a plugin (local or remote, not just a category)
     bool hasPluginSelected = false;
-    for (auto* item : selectedItems)
+    bool hasLocalPluginSelected = false;
+    int localPluginCount = 0;
+
+    // Only update cached item if we have a selection (don't clear it on deselection)
+    if (!selectedItems.isEmpty())
     {
-        if (item->getType() == JsfxPluginTreeItem::ItemType::Plugin)
+        cachedSelectedItem = nullptr;
+
+        for (auto* item : selectedItems)
         {
-            hasPluginSelected = true;
-            break;
+            auto itemType = item->getType();
+
+            if (itemType == JsfxPluginTreeItem::ItemType::Plugin)
+            {
+                hasPluginSelected = true;
+                hasLocalPluginSelected = true;
+                localPluginCount++;
+                if (!cachedSelectedItem)
+                    cachedSelectedItem = item;
+            }
+            else if (itemType == JsfxPluginTreeItem::ItemType::RemotePlugin)
+            {
+                hasPluginSelected = true;
+                if (!cachedSelectedItem)
+                    cachedSelectedItem = item;
+            }
+        }
+
+        // Update search box placeholder to show selection when not searching
+        if (pluginTreeView.getSearchText().isEmpty())
+        {
+            if (selectedItems.size() == 1 && hasPluginSelected)
+            {
+                // Show single item name
+                if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(selectedItems[0]))
+                {
+                    pluginTreeView.setSearchPlaceholder(pluginItem->getName());
+                    pluginTreeView.repaint(); // Force update to show new placeholder
+                }
+            }
+            else if (selectedItems.size() > 1)
+            {
+                // Show count
+                pluginTreeView.setSearchPlaceholder(juce::String(selectedItems.size()) + " items selected");
+                pluginTreeView.repaint(); // Force update to show new placeholder
+            }
+        }
+    }
+    else
+    {
+        // Reset placeholder when nothing selected
+        if (pluginTreeView.getSearchText().isEmpty())
+        {
+            pluginTreeView.setSearchPlaceholder("Type to search...");
+            pluginTreeView.repaint(); // Force update to show new placeholder
         }
     }
 
-    loadButton->setEnabled(hasPluginSelected);
-    deleteButton->setEnabled(hasPluginSelected);
+    // Load button enabled when exactly one plugin is selected OR we have a cached item
+    bool shouldEnableLoad = (hasPluginSelected && selectedItems.size() == 1) || cachedSelectedItem != nullptr;
+    loadButton->setEnabled(shouldEnableLoad);
+
+    // Delete button enabled when any local Plugin items are selected (not RemotePlugin which are from repos)
+    // OR we have a local Plugin cached
+    bool hasCachedLocalPlugin =
+        cachedSelectedItem
+        && dynamic_cast<JsfxPluginTreeItem*>(cachedSelectedItem)
+        && dynamic_cast<JsfxPluginTreeItem*>(cachedSelectedItem)->getType() == JsfxPluginTreeItem::ItemType::Plugin;
+    bool shouldEnableDelete = hasLocalPluginSelected || hasCachedLocalPlugin;
+    deleteButton->setEnabled(shouldEnableDelete);
 }
 
 juce::StringArray JsfxPluginWindow::getPluginDirectories() const
@@ -281,6 +349,9 @@ void JsfxPluginWindow::handlePluginTreeItemSelected(juce::TreeViewItem* item)
         {
             auto pluginFile = pluginItem->getFile();
             pluginTreeView.loadPlugin(pluginFile);
+
+            // Clear cache after loading
+            cachedSelectedItem = nullptr;
         }
         // Handle remote plugins
         else if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::RemotePlugin)
@@ -291,6 +362,9 @@ void JsfxPluginWindow::handlePluginTreeItemSelected(juce::TreeViewItem* item)
 
             // Download and load via tree view's loadRemotePlugin method
             pluginTreeView.loadRemotePlugin(entry);
+
+            // Clear cache after loading
+            cachedSelectedItem = nullptr;
 
             // Status will be updated via onPluginLoadedCallback
         }
@@ -395,8 +469,17 @@ void JsfxPluginDirectoryEditor::saveAndClose()
     juce::StringArray directories;
     directories.addLines(directoryEditor.getText());
 
-    // Remove empty lines
+    // Remove empty lines and trim whitespace/quotes from each line
     directories.removeEmptyStrings();
+
+    for (int i = 0; i < directories.size(); ++i)
+    {
+        auto dir = directories[i].trim();
+        // Remove surrounding quotes if present
+        if (dir.startsWith("\"") && dir.endsWith("\""))
+            dir = dir.substring(1, dir.length() - 1);
+        directories.set(i, dir);
+    }
 
     if (saveCallback)
         saveCallback(directories);

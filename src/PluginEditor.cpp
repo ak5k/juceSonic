@@ -24,9 +24,6 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Initialize state tree for persistent state management
     setStateTree(processorRef.getAPVTS().state);
 
-    addAndMakeVisible(loadButton);
-    loadButton.onClick = [this]() { loadJSFXFile(); };
-
     addAndMakeVisible(unloadButton);
     unloadButton.onClick = [this]() { unloadJSFXFile(); };
 
@@ -151,9 +148,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     addAndMakeVisible(ioMatrixButton);
     ioMatrixButton.onClick = [this]() { toggleIOMatrix(); };
 
-    // Preset management menu
-    addAndMakeVisible(presetManagementMenu);
-    setupPresetManagementMenu();
+    addAndMakeVisible(aboutButton);
+    aboutButton.onClick = [this]() { showAboutWindow(); };
 
     // JSFX Plugin browser (embedded with management buttons)
     addAndMakeVisible(jsfxPluginWindow);
@@ -615,19 +611,12 @@ void AudioPluginAudioProcessorEditor::resized()
 
         // Fixed minimum sizes that must fit
         int buttonWidth = 60;         // Minimum for each button
-        int presetMenuWidth = 40;     // Width for preset management menu (just arrow)
         int pluginBrowserWidth = 150; // Width for JSFX plugin browser
         int presetBrowserWidth = 150; // Width for preset browser
 
-        // Calculate minimum required width
-        int minRequired = pluginBrowserWidth
-                        + spacing
-                        + presetBrowserWidth
-                        + spacing
-                        + presetMenuWidth
-                        + spacing
-                        + (buttonWidth * 5)
-                        + (spacing * 4);
+        // Calculate minimum required width (5 buttons: Unload, Editor, UI, I/O Matrix, About)
+        int minRequired =
+            pluginBrowserWidth + spacing + presetBrowserWidth + spacing + (buttonWidth * 5) + (spacing * 4);
 
         // If we have extra space, distribute it equally to plugin and preset browsers
         int extraSpace = juce::jmax(0, totalWidth - minRequired);
@@ -669,16 +658,7 @@ void AudioPluginAudioProcessorEditor::resized()
         buttonRowArea.removeFromLeft(presetBrowserWidth);
         buttonRowArea.removeFromLeft(spacing);
 
-        // Layout preset management menu
-        presetManagementMenu.setBounds(buttonRowArea.removeFromLeft(presetMenuWidth));
-        presetManagementMenu.setVisible(true);
-
-        buttonRowArea.removeFromLeft(spacing);
-
         // Layout main buttons on the right (full 30px height)
-        loadButton.setBounds(buttonRowArea.removeFromLeft(buttonWidth));
-        loadButton.setVisible(true);
-        buttonRowArea.removeFromLeft(spacing);
         unloadButton.setBounds(buttonRowArea.removeFromLeft(buttonWidth));
         unloadButton.setVisible(true);
         buttonRowArea.removeFromLeft(spacing);
@@ -690,17 +670,19 @@ void AudioPluginAudioProcessorEditor::resized()
         buttonRowArea.removeFromLeft(spacing);
         ioMatrixButton.setBounds(buttonRowArea.removeFromLeft(buttonWidth));
         ioMatrixButton.setVisible(true);
+        buttonRowArea.removeFromLeft(spacing);
+        aboutButton.setBounds(buttonRowArea.removeFromLeft(buttonWidth));
+        aboutButton.setVisible(true);
     }
     else
     {
         // Hide all button bar components when not visible
         jsfxPluginWindow.setVisible(false);
-        loadButton.setVisible(false);
         unloadButton.setVisible(false);
         editButton.setVisible(false);
         uiButton.setVisible(false);
         ioMatrixButton.setVisible(false);
-        presetManagementMenu.setVisible(false);
+        aboutButton.setVisible(false);
         presetWindow.setVisible(false);
     }
 
@@ -1104,51 +1086,6 @@ void AudioPluginAudioProcessorEditor::updatePresetList()
 
 //==============================================================================
 // Preset Management
-
-void AudioPluginAudioProcessorEditor::setupPresetManagementMenu()
-{
-    presetManagementMenu.setTextWhenNothingSelected(""); // No text, just arrow
-    presetManagementMenu.setTextWhenNoChoicesAvailable("");
-
-    // Add menu items
-    presetManagementMenu.addItem("Presets...", 1);
-    presetManagementMenu.addItem("JSFX Plugins...", 2);
-    presetManagementMenu.addSeparator();
-    presetManagementMenu.addItem("About...", 3);
-
-    // Handle selection
-    presetManagementMenu.onChange = [this]()
-    {
-        int selectedId = presetManagementMenu.getSelectedId();
-        if (selectedId > 0)
-        {
-            handlePresetManagementSelection(selectedId);
-            // Reset to "nothing selected" after action
-            presetManagementMenu.setSelectedId(0, juce::dontSendNotification);
-        }
-    };
-}
-
-void AudioPluginAudioProcessorEditor::handlePresetManagementSelection(int selectedId)
-{
-    switch (selectedId)
-    {
-    case 1: // Presets...
-        openPresetManager();
-        break;
-
-    case 2: // JSFX Plugins...
-        openJsfxPluginBrowser();
-        break;
-
-    case 3: // About...
-        showAboutWindow();
-        break;
-
-    default:
-        break;
-    }
-}
 
 void AudioPluginAudioProcessorEditor::showAboutWindow()
 {

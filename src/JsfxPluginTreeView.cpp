@@ -46,6 +46,10 @@ void JsfxPluginTreeItem::itemSelectionChanged(bool isNowSelected)
 {
     // Metadata items are now non-selectable via canBeSelected(), so no reactive deselection needed
     repaintItem();
+
+    // Notify the tree view of selection change
+    if (pluginTreeView)
+        pluginTreeView->onSelectionChanged();
 }
 
 void JsfxPluginTreeItem::itemClicked(const juce::MouseEvent& e)
@@ -332,58 +336,40 @@ void JsfxPluginTreeView::loadPlugins(const juce::StringArray& directoryPaths)
 
     // Define standard categories
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
-    auto juceSonicDataDir =
-        appDataDir.getChildFile(PluginConstants::ApplicationName).getChildFile(PluginConstants::DataDirectoryName);
-
-    // User category: <appdata>/juceSonic/data/user
-    CategoryEntry userCategory;
-    userCategory.displayName = "User";
-    userCategory.directory = juceSonicDataDir.getChildFile(PluginConstants::UserPresetsDirectoryName);
-
-    // Local category: <appdata>/juceSonic/data/local
-    CategoryEntry localCategory;
-    localCategory.displayName = "Local";
-    localCategory.directory = juceSonicDataDir.getChildFile(PluginConstants::LocalPresetsDirectoryName);
-
-    // Remote category: <appdata>/juceSonic/data/remote
-    CategoryEntry remoteCategory;
-    remoteCategory.displayName = "Remote";
-    remoteCategory.directory = juceSonicDataDir.getChildFile(PluginConstants::RemotePresetsDirectoryName);
 
     // REAPER category: <appdata>/REAPER/Effects
     CategoryEntry reaperCategory;
     reaperCategory.displayName = "REAPER";
     reaperCategory.directory = appDataDir.getChildFile("REAPER").getChildFile("Effects");
 
-    // Add standard categories
-    categories.add(userCategory);
-    categories.add(localCategory);
-    categories.add(remoteCategory);
+    // Add REAPER category
     categories.add(reaperCategory);
 
     // Add additional custom directories from user preferences
     for (const auto& path : directoryPaths)
     {
-        juce::File dir(path);
-        if (!dir.exists() || !dir.isDirectory())
-            continue;
+        // Use JUCE to sanitize and parse the path (remove quotes, trim whitespace)
+        auto sanitizedPath = path.trim().unquoted();
+        juce::File dir(sanitizedPath);
 
-        // Check if this directory is already in our standard categories
-        bool isStandardCategory = false;
+        if (!dir.exists() || !dir.isDirectory())
+            continue; // Check if this directory is already in our standard categories
+        bool isDuplicate = false;
         for (const auto& cat : categories)
         {
             if (cat.directory == dir)
             {
-                isStandardCategory = true;
+                isDuplicate = true;
                 break;
             }
         }
 
-        if (!isStandardCategory)
+        if (!isDuplicate)
         {
             CategoryEntry customCategory;
             customCategory.displayName = dir.getFileName();
             customCategory.directory = dir;
+            customCategory.isStandardCategory = false; // Mark as custom
             categories.add(customCategory);
         }
     }
@@ -597,9 +583,12 @@ std::unique_ptr<juce::TreeViewItem> JsfxPluginTreeView::createRootItem()
 {
     auto root = std::make_unique<JsfxPluginTreeItem>("Root", JsfxPluginTreeItem::ItemType::Category);
 
-    // Create category items and scan directories
+    // Create category items for standard categories only
     for (const auto& category : categories)
     {
+        if (!category.isStandardCategory)
+            continue; // Skip custom categories - they'll be added as root items below
+
         auto categoryItem = std::make_unique<JsfxPluginTreeItem>(
             category.displayName,
             JsfxPluginTreeItem::ItemType::Category,
@@ -613,6 +602,27 @@ std::unique_ptr<juce::TreeViewItem> JsfxPluginTreeView::createRootItem()
         // Only add category if it has plugins
         if (categoryItem->getNumSubItems() > 0)
             root->addSubItem(categoryItem.release());
+    }
+
+    // Add custom directories as root-level items (like repositories)
+    for (const auto& category : categories)
+    {
+        if (category.isStandardCategory)
+            continue; // Already added above
+
+        auto customDirItem = std::make_unique<JsfxPluginTreeItem>(
+            category.displayName,
+            JsfxPluginTreeItem::ItemType::Category,
+            juce::File(),
+            this
+        );
+
+        // Scan custom directory recursively
+        scanDirectory(customDirItem.get(), category.directory, true);
+
+        // Only add if it has plugins
+        if (customDirItem->getNumSubItems() > 0)
+            root->addSubItem(customDirItem.release());
     }
 
     // Add remote repositories

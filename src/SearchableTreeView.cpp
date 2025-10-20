@@ -540,7 +540,9 @@ bool FilteredTreeView::keyPressed(const juce::KeyPress& key)
         }
     }
 
-    return juce::TreeView::keyPressed(key);
+    bool result = juce::TreeView::keyPressed(key);
+
+    return result;
 }
 
 void FilteredTreeView::mouseDown(const juce::MouseEvent& e)
