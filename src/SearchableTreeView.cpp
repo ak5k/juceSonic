@@ -1144,13 +1144,6 @@ void SearchableTreeView::handleEscapeKey()
 
 void SearchableTreeView::mouseDown(const juce::MouseEvent& e)
 {
-    DBG("SearchableTreeView::mouseDown at ("
-        << e.x
-        << ", "
-        << e.y
-        << "), eventComponent: "
-        << e.eventComponent->getName());
-
     // Check if this is a click on the tree view in auto-hide mode
     if (autoHideTreeWithoutResults)
     {
@@ -1247,11 +1240,7 @@ bool SearchableTreeView::hitTest(int x, int y)
     }
 
     // Otherwise use default hit testing
-    bool result = Component::hitTest(x, y);
-    DBG(
-        "SearchableTreeView::hitTest(" << x << ", " << y << ") - normal mode, returning " << (result ? "true" : "false")
-    );
-    return result;
+    return Component::hitTest(x, y);
 }
 
 // ============================================================================

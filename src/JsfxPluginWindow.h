@@ -61,6 +61,8 @@ protected:
 private:
     void deleteSelectedPlugins();
     void showDirectoryEditor();
+    void showRepositoryEditor();
+    void updateAllRemotePlugins();
     void updateButtonsForSelection();
     void handlePluginTreeItemSelected(juce::TreeViewItem* item);
 
@@ -74,6 +76,8 @@ private:
     juce::TextButton* loadButton = nullptr;
     juce::TextButton* deleteButton = nullptr;
     juce::TextButton* directoriesButton = nullptr;
+    juce::TextButton* repositoriesButton = nullptr;
+    juce::TextButton* updateAllButton = nullptr;
     juce::TextButton* refreshButton = nullptr;
 
     JsfxPluginTreeView pluginTreeView;
@@ -112,4 +116,87 @@ private:
     juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxPluginDirectoryEditor)
+};
+
+/**
+ * @brief Dialog for editing remote ReaPack repository URLs
+ */
+class JsfxRepositoryEditor : public juce::Component
+{
+public:
+    JsfxRepositoryEditor(JsfxPluginTreeView& treeView, std::function<void()> onSave);
+    ~JsfxRepositoryEditor() override;
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        if (event.originalComponent == &repositoryList)
+            updateButtonStates();
+    }
+
+private:
+    void saveAndClose();
+    void cancel();
+    void addRepository();
+    void removeSelectedRepository();
+    void fetchRepositoryName();
+    void onUrlChanged();
+    void updateButtonStates();
+
+    JsfxPluginTreeView& pluginTreeView;
+    std::function<void()> saveCallback;
+
+    juce::TextEditor instructionsLabel;
+    juce::ListBox repositoryList;
+    juce::TextEditor nameEditor;
+    juce::TextEditor urlEditor;
+    juce::TextButton addButton{"Add"};
+    juce::TextButton removeButton{"Remove"};
+    juce::TextButton saveButton{"Save"};
+    juce::TextButton cancelButton{"Cancel"};
+
+    juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
+
+    // ListBox model
+    class RepositoryListModel : public juce::ListBoxModel
+    {
+    public:
+        struct RepositoryEntry
+        {
+            juce::String name;
+            juce::String url;
+        };
+
+        std::vector<RepositoryEntry> repositories;
+
+        int getNumRows() override
+        {
+            return (int)repositories.size();
+        }
+
+        void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override
+        {
+            if (rowIsSelected)
+                g.fillAll(juce::Colours::lightblue);
+
+            if (rowNumber < (int)repositories.size())
+            {
+                g.setColour(juce::Colours::white);
+                g.setFont(12.0f);
+
+                auto& repo = repositories[rowNumber];
+                g.drawText(repo.name, 5, 0, width - 10, height / 2, juce::Justification::left, true);
+
+                g.setColour(juce::Colours::grey);
+                g.setFont(10.0f);
+                g.drawText(repo.url, 5, height / 2, width - 10, height / 2, juce::Justification::left, true);
+            }
+        }
+    };
+
+    RepositoryListModel listModel;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JsfxRepositoryEditor)
 };

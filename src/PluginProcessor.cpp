@@ -892,11 +892,17 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
 
             // Load JSFX from stored path (loadJSFX will handle all initialization)
             auto jsfxPath = getCurrentJSFXPath();
+            DBG("setStateInformation: Restoring JSFX from path: " + jsfxPath);
             if (jsfxPath.isNotEmpty())
             {
                 juce::File jsfxFile(jsfxPath);
+                DBG("  File exists: " + juce::String(jsfxFile.existsAsFile() ? "YES" : "NO"));
                 if (jsfxFile.existsAsFile())
-                    loadJSFX(jsfxFile);
+                {
+                    DBG("  Calling loadJSFX...");
+                    bool success = loadJSFX(jsfxFile);
+                    DBG("  loadJSFX returned: " + juce::String(success ? "SUCCESS" : "FAILED"));
+                }
             }
 
             // Restore routing configuration
@@ -995,12 +1001,33 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     juce::File sourceDir = jsfxFile.getParentDirectory();
     juce::String fileName = jsfxFile.getFileName();
 
+    DBG("loadJSFX called with:");
+    DBG("  File: " + jsfxFile.getFullPathName());
+    DBG("  Source dir: " + sourceDir.getFullPathName());
+    DBG("  Filename: " + fileName);
+
+    // Check if file contains @gfx section
+    juce::String fileContent = jsfxFile.loadFileAsString();
+    bool fileHasGfxSection = fileContent.contains("@gfx");
+    int gfxPosition = fileContent.indexOf("@gfx");
+    DBG("  File contains @gfx: " + juce::String(fileHasGfxSection ? "YES" : "NO"));
+    if (fileHasGfxSection)
+        DBG("  @gfx position in file: " + juce::String(gfxPosition));
+    DBG("  File size: " + juce::String(jsfxFile.getSize()) + " bytes");
+    DBG("  First 200 chars: " + fileContent.substring(0, 200).replace("\n", "\\n").replace("\r", "\\r"));
+
     bool wantWak = false;
     SX_Instance* newInstance =
         JesusonicAPI.sx_createInstance(sourceDir.getFullPathName().toRawUTF8(), fileName.toRawUTF8(), &wantWak);
 
     if (!newInstance)
+    {
+        DBG("ERROR: Failed to create JSFX instance");
         return false;
+    }
+
+    DBG("JSFX instance created successfully");
+    DBG("  Has GFX code: " + juce::String(newInstance->gfx_hasCode() ? "YES" : "NO"));
 
     // Setup new instance
     sx_set_host_ctx(newInstance, this, JsfxSliderAutomateThunk);
@@ -1012,9 +1039,11 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     // This ensures the LICE state and framebuffer are ready when the UI accesses it
     if (newInstance->gfx_hasCode())
     {
+        DBG("Initializing GFX for JSFX...");
         auto* liceState = newInstance->m_lice_state;
         if (liceState)
         {
+            DBG("  LICE state exists");
             // If JSFX needs initialization, call on_slider_change()
             if (newInstance->m_need_init)
             {

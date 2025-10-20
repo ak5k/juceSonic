@@ -168,8 +168,16 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudi
     // Handle tree expansion for adaptive sizing
     presetWindow.getTreeView().onTreeExpansionChanged = [this](bool isExpanded)
     {
-        // Trigger layout update when tree height changes
-        resized();
+        // Directly update only the preset window height instead of triggering full resized()
+        // This avoids feedback loops and glitches with scrollbars
+        if (buttonBarVisible && presetWindow.isVisible())
+        {
+            auto currentBounds = presetWindow.getBounds();
+            int neededHeight = presetWindow.getTreeView().getNeededHeight();
+            // Only update height, preserve x, y, and width
+            presetWindow.setBounds(currentBounds.getX(), currentBounds.getY(), currentBounds.getWidth(), neededHeight);
+        }
+
         // Ensure preset window stays on top when expanded
         if (isExpanded)
             presetWindow.toFront(false);

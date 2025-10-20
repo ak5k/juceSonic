@@ -22,11 +22,35 @@ JsfxPluginWindow::JsfxPluginWindow(AudioPluginAudioProcessor& proc)
     );
     deleteButton = &getButtonRow().addButton("Delete", [this]() { deleteSelectedPlugins(); });
     directoriesButton = &getButtonRow().addButton("Directories", [this]() { showDirectoryEditor(); });
+    repositoriesButton = &getButtonRow().addButton("Repositories", [this]() { showRepositoryEditor(); });
+    updateAllButton = &getButtonRow().addButton("Update All", [this]() { updateAllRemotePlugins(); });
     refreshButton = &getButtonRow().addButton("Refresh", [this]() { refreshPluginList(); });
 
     // Setup tree view
     addAndMakeVisible(pluginTreeView);
     pluginTreeView.onSelectionChangedCallback = [this]() { updateButtonsForSelection(); };
+
+    // Callback when plugin loads (local or remote)
+    pluginTreeView.onPluginLoadedCallback = [this](const juce::String& pluginPath, bool success)
+    {
+        juce::File pluginFile(pluginPath);
+
+        if (success)
+        {
+            getStatusLabel().setText("Loaded: " + pluginFile.getFileNameWithoutExtension(), juce::dontSendNotification);
+
+            // Notify external callback if set
+            if (onPluginSelected)
+                onPluginSelected(pluginPath);
+        }
+        else
+        {
+            getStatusLabel().setText(
+                "Failed to load: " + pluginFile.getFileNameWithoutExtension(),
+                juce::dontSendNotification
+            );
+        }
+    };
 
     // Setup tree view command callback (for Enter key / double-click)
     pluginTreeView.onCommand = [this](const juce::Array<juce::TreeViewItem*>& selectedItems)
@@ -59,6 +83,9 @@ void JsfxPluginWindow::refreshPluginList()
 {
     auto directories = getPluginDirectories();
     pluginTreeView.loadPlugins(directories);
+
+    // Load remote repositories (async)
+    pluginTreeView.loadRemoteRepositories();
 
     // Count plugins
     int totalPlugins = 0;
@@ -169,6 +196,27 @@ void JsfxPluginWindow::showDirectoryEditor()
         window->centreWithSize(600, 400);
 }
 
+void JsfxPluginWindow::showRepositoryEditor()
+{
+    auto* editor = new JsfxRepositoryEditor(pluginTreeView, [this]() { refreshPluginList(); });
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(editor);
+    options.dialogTitle = "Repositories";
+    options.resizable = false;
+    options.useNativeTitleBar = true;
+
+    auto* window = options.launchAsync();
+    if (window != nullptr)
+        window->centreWithSize(600, 450);
+}
+
+void JsfxPluginWindow::updateAllRemotePlugins()
+{
+    getStatusLabel().setText("Checking for updates...", juce::dontSendNotification);
+    pluginTreeView.updateAllRemotePlugins();
+}
+
 void JsfxPluginWindow::updateButtonsForSelection()
 {
     auto selectedItems = pluginTreeView.getSelectedPluginItems();
@@ -220,29 +268,23 @@ void JsfxPluginWindow::handlePluginTreeItemSelected(juce::TreeViewItem* item)
     // Cast to JsfxPluginTreeItem to access plugin data
     if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(item))
     {
-        // Only load if it's an actual plugin (not a category)
+        // Handle local plugins
         if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::Plugin)
         {
             auto pluginFile = pluginItem->getFile();
+            pluginTreeView.loadPlugin(pluginFile);
+        }
+        // Handle remote plugins
+        else if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::RemotePlugin)
+        {
+            auto entry = pluginItem->getReaPackEntry();
 
-            if (processor.loadJSFX(pluginFile))
-            {
-                getStatusLabel().setText(
-                    "Loaded: " + pluginFile.getFileNameWithoutExtension(),
-                    juce::dontSendNotification
-                );
+            getStatusLabel().setText("Downloading: " + entry.name, juce::dontSendNotification);
 
-                // Notify callback if set
-                if (onPluginSelected)
-                    onPluginSelected(pluginFile.getFullPathName());
-            }
-            else
-            {
-                getStatusLabel().setText(
-                    "Failed to load: " + pluginFile.getFileNameWithoutExtension(),
-                    juce::dontSendNotification
-                );
-            }
+            // Download and load via tree view's loadRemotePlugin method
+            pluginTreeView.loadRemotePlugin(entry);
+
+            // Status will be updated via onPluginLoadedCallback
         }
     }
 }
@@ -334,6 +376,298 @@ void JsfxPluginDirectoryEditor::saveAndClose()
 }
 
 void JsfxPluginDirectoryEditor::cancel()
+{
+    if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
+        window->exitModalState(0);
+}
+
+//==============================================================================
+// JsfxRepositoryEditor Implementation
+//==============================================================================
+
+JsfxRepositoryEditor::JsfxRepositoryEditor(JsfxPluginTreeView& treeView, std::function<void()> onSave)
+    : pluginTreeView(treeView)
+    , saveCallback(onSave)
+{
+    setLookAndFeel(&sharedLookAndFeel->lf);
+
+    addAndMakeVisible(instructionsLabel);
+    instructionsLabel.setMultiLine(true);
+    instructionsLabel.setReadOnly(true);
+    instructionsLabel.setScrollbarsShown(false);
+    instructionsLabel.setCaretVisible(false);
+    instructionsLabel.setPopupMenuEnabled(false);
+    instructionsLabel.setText(
+        "Manage remote ReaPack-compatible JSFX repositories.\n"
+        "Enter a repository URL to fetch its information."
+    );
+    instructionsLabel.setFont(juce::FontOptions(12.0f));
+    instructionsLabel.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    instructionsLabel.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+
+    // Load current repositories
+    auto repos = pluginTreeView.getRemoteRepositories();
+    for (const auto& [name, url] : repos)
+        listModel.repositories.push_back({name, url});
+
+    addAndMakeVisible(repositoryList);
+    repositoryList.setModel(&listModel);
+    repositoryList.setMultipleSelectionEnabled(false);
+    repositoryList.selectRow(-1);
+
+    // Update buttons when selection changes
+    repositoryList.addMouseListener(this, true);
+    auto updateSelection = [this]() { updateButtonStates(); };
+
+    addAndMakeVisible(urlEditor);
+    urlEditor.setTextToShowWhenEmpty("https://example.com/index.xml", juce::Colours::grey);
+    urlEditor.onTextChange = [this]() { onUrlChanged(); };
+    urlEditor.onReturnKey = [this]() { fetchRepositoryName(); };
+    urlEditor.onFocusLost = [this]() { fetchRepositoryName(); };
+
+    addAndMakeVisible(nameEditor);
+    nameEditor.setTextToShowWhenEmpty("Repository Name", juce::Colours::darkgrey);
+    nameEditor.setEnabled(false);
+    nameEditor.onReturnKey = [this]()
+    {
+        if (addButton.isEnabled())
+            addRepository();
+    };
+    nameEditor.onFocusLost = [this]() { fetchRepositoryName(); };
+
+    addAndMakeVisible(addButton);
+    addButton.onClick = [this]() { addRepository(); };
+    addButton.setEnabled(false);
+
+    addAndMakeVisible(removeButton);
+    removeButton.onClick = [this]() { removeSelectedRepository(); };
+    removeButton.setEnabled(false);
+
+    addAndMakeVisible(saveButton);
+    saveButton.onClick = [this]() { saveAndClose(); };
+
+    addAndMakeVisible(cancelButton);
+    cancelButton.onClick = [this]() { cancel(); };
+
+    setSize(600, 450);
+}
+
+JsfxRepositoryEditor::~JsfxRepositoryEditor()
+{
+    repositoryList.setModel(nullptr);
+    setLookAndFeel(nullptr);
+}
+
+void JsfxRepositoryEditor::paint(juce::Graphics& g)
+{
+    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+}
+
+void JsfxRepositoryEditor::resized()
+{
+    auto bounds = getLocalBounds().reduced(10);
+
+    instructionsLabel.setBounds(bounds.removeFromTop(35));
+    bounds.removeFromTop(5);
+
+    // Repository list with add/remove buttons on the right
+    auto listArea = bounds.removeFromTop(200);
+    auto listButtons = listArea.removeFromRight(80);
+    listButtons.removeFromLeft(5);
+
+    removeButton.setBounds(listButtons.removeFromTop(30));
+
+    listArea.removeFromRight(5);
+    repositoryList.setBounds(listArea);
+
+    bounds.removeFromTop(10);
+
+    // Add repository section
+    auto urlLabel = bounds.removeFromTop(15);
+    urlLabel.removeFromBottom(2);
+    // Could add a label here if needed
+
+    auto urlRow = bounds.removeFromTop(25);
+    urlEditor.setBounds(urlRow);
+    bounds.removeFromTop(5);
+
+    auto nameRow = bounds.removeFromTop(25);
+    auto nameRowRight = nameRow.removeFromRight(80);
+    nameRowRight.removeFromLeft(5);
+    addButton.setBounds(nameRowRight);
+    nameRow.removeFromRight(5);
+    nameEditor.setBounds(nameRow);
+
+    bounds.removeFromTop(10);
+
+    // Bottom buttons
+    auto buttonBar = bounds.removeFromBottom(30);
+    cancelButton.setBounds(buttonBar.removeFromRight(80));
+    buttonBar.removeFromRight(5);
+    saveButton.setBounds(buttonBar.removeFromRight(80));
+}
+
+void JsfxRepositoryEditor::onUrlChanged()
+{
+    auto url = urlEditor.getText().trim();
+
+    // Validate URL format
+    if (url.isEmpty())
+    {
+        nameEditor.clear();
+        nameEditor.setEnabled(false);
+        addButton.setEnabled(false);
+        return;
+    }
+
+    // Check if it looks like a valid URL
+    if (!url.startsWith("http://") && !url.startsWith("https://"))
+    {
+        nameEditor.clear();
+        nameEditor.setEnabled(false);
+        addButton.setEnabled(false);
+        return;
+    }
+}
+
+void JsfxRepositoryEditor::fetchRepositoryName()
+{
+    auto url = urlEditor.getText().trim();
+
+    // Only fetch if URL is valid
+    if (url.isEmpty() || (!url.startsWith("http://") && !url.startsWith("https://")))
+        return;
+
+    // Clear and disable while fetching
+    nameEditor.clear();
+    nameEditor.setEnabled(false);
+    addButton.setEnabled(false);
+    nameEditor.setTextToShowWhenEmpty("Fetching...", juce::Colours::darkgrey);
+
+    // Download and parse index in background
+    juce::Thread::launch(
+        [url, this]()
+        {
+            auto inputStream = juce::URL(url).createInputStream(
+                juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress).withConnectionTimeoutMs(5000)
+            );
+
+            juce::String repoName;
+            bool isValidReaPack = false;
+
+            if (inputStream != nullptr)
+            {
+                juce::String xmlContent = inputStream->readEntireStreamAsString();
+                repoName = ReaPackIndexParser::getRepositoryName(xmlContent);
+
+                // Only consider valid if we successfully parsed a ReaPack index
+                if (repoName.isNotEmpty())
+                    isValidReaPack = true;
+            }
+
+            // Update name on message thread
+            juce::MessageManager::callAsync(
+                [this, repoName, isValidReaPack]()
+                {
+                    nameEditor.setTextToShowWhenEmpty("Repository Name", juce::Colours::darkgrey);
+
+                    if (isValidReaPack)
+                    {
+                        nameEditor.setText(repoName);
+                        nameEditor.setEnabled(true);
+                        addButton.setEnabled(true);
+                    }
+                    else
+                    {
+                        nameEditor.clear();
+                        nameEditor.setEnabled(false);
+                        addButton.setEnabled(false);
+
+                        // Show error message
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::AlertWindow::WarningIcon,
+                            "Invalid Repository",
+                            "The URL does not point to a valid ReaPack index file."
+                        );
+                    }
+                }
+            );
+        }
+    );
+}
+
+void JsfxRepositoryEditor::updateButtonStates()
+{
+    bool hasSelection = repositoryList.getSelectedRow() >= 0;
+    removeButton.setEnabled(hasSelection);
+}
+
+void JsfxRepositoryEditor::addRepository()
+{
+    auto url = urlEditor.getText().trim();
+    auto name = nameEditor.getText().trim();
+
+    if (url.isEmpty() || name.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon,
+            "Invalid Input",
+            "Please enter a valid repository URL and wait for the name to be fetched."
+        );
+        return;
+    }
+
+    // Check for duplicates
+    for (const auto& repo : listModel.repositories)
+    {
+        if (repo.name == name || repo.url == url)
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon,
+                "Duplicate Entry",
+                "A repository with this name or URL already exists."
+            );
+            return;
+        }
+    }
+
+    listModel.repositories.push_back({name, url});
+    repositoryList.updateContent();
+
+    // Clear input fields and reset state
+    nameEditor.clear();
+    urlEditor.clear();
+    nameEditor.setEnabled(false);
+    addButton.setEnabled(false);
+}
+
+void JsfxRepositoryEditor::removeSelectedRepository()
+{
+    int selectedRow = repositoryList.getSelectedRow();
+    if (selectedRow >= 0 && selectedRow < (int)listModel.repositories.size())
+    {
+        listModel.repositories.erase(listModel.repositories.begin() + selectedRow);
+        repositoryList.updateContent();
+    }
+}
+
+void JsfxRepositoryEditor::saveAndClose()
+{
+    // Convert to vector of pairs
+    std::vector<std::pair<juce::String, juce::String>> repos;
+    for (const auto& repo : listModel.repositories)
+        repos.push_back({repo.name, repo.url});
+
+    pluginTreeView.setRemoteRepositories(repos);
+
+    if (saveCallback)
+        saveCallback();
+
+    if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
+        window->exitModalState(1);
+}
+
+void JsfxRepositoryEditor::cancel()
 {
     if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
         window->exitModalState(0);

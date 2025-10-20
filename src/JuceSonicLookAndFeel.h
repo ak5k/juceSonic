@@ -57,6 +57,14 @@ public:
         myCustomColour = baseBackground.darker(0.2f);
         setColour(juce::DocumentWindow::textColourId, textColor);
 
+        // Scrollbar colors - neutral cool grey-blue (more subdued than slider thumbs)
+        auto scrollbarBackground = baseBackground.brighter(0.05f); // Slightly lighter than base
+        auto scrollbarThumb = juce::Colour(0xff3a4555);            // Cool neutral grey-blue
+
+        setColour(juce::ScrollBar::backgroundColourId, scrollbarBackground);
+        setColour(juce::ScrollBar::thumbColourId, scrollbarThumb);
+        setColour(juce::ScrollBar::trackColourId, scrollbarBackground);
+
         // Set this as the default LookAndFeel
         juce::LookAndFeel::setDefaultLookAndFeel(this);
     }
