@@ -359,6 +359,94 @@ target_link_libraries(${PROJECT_NAME}
         jsfx
 )
 
+# ==============================================================================
+# ASIO SDK Integration (Windows only)
+# ==============================================================================
+
+if(WIN32)
+    message(STATUS "Configuring ASIO SDK support for Windows...")
+    
+    set(ASIO_SDK_URL "https://www.steinberg.net/asiosdk")
+    set(ASIO_SDK_TEMPDIR "${CMAKE_CURRENT_BINARY_DIR}/asiosdk_temp")
+    set(ASIO_SDK_DIR "${CMAKE_CURRENT_BINARY_DIR}/asiosdk")
+
+    if(NOT EXISTS "${ASIO_SDK_DIR}")
+        message(STATUS "Downloading ASIO SDK from ${ASIO_SDK_URL}...")
+        file(DOWNLOAD "${ASIO_SDK_URL}" "${CMAKE_CURRENT_BINARY_DIR}/asiosdk.zip"
+            STATUS download_status
+            SHOW_PROGRESS
+        )
+        
+        list(GET download_status 0 status_code)
+        if(status_code EQUAL 0)
+            message(STATUS "ASIO SDK downloaded successfully")
+            message(STATUS "Extracting ASIO SDK...")
+            file(ARCHIVE_EXTRACT 
+                INPUT "${CMAKE_CURRENT_BINARY_DIR}/asiosdk.zip"
+                DESTINATION "${ASIO_SDK_TEMPDIR}"
+            )
+            
+            # Find the extracted directory (name may vary with SDK version)
+            file(GLOB ASIO_SDK_DIRS "${ASIO_SDK_TEMPDIR}/*")
+            foreach(dir ${ASIO_SDK_DIRS})
+                if(IS_DIRECTORY ${dir} AND dir MATCHES ".*asiosdk.*")
+                    message(STATUS "ASIO SDK extracted to ${dir}")
+                    file(RENAME ${dir} ${ASIO_SDK_DIR})
+                    break()
+                endif()
+            endforeach()
+            
+            if(EXISTS "${ASIO_SDK_DIR}")
+                message(STATUS "ASIO SDK setup complete at: ${ASIO_SDK_DIR}")
+            else()
+                message(WARNING "ASIO SDK extraction failed - ASIO support will be disabled")
+            endif()
+        else()
+            list(GET download_status 1 error_message)
+            message(WARNING "Failed to download ASIO SDK: ${error_message}")
+            message(WARNING "ASIO support will be disabled")
+        endif()
+    else()
+        message(STATUS "ASIO SDK already exists at: ${ASIO_SDK_DIR}")
+    endif()
+
+    # Add ASIO include directories if SDK exists
+    if(EXISTS "${ASIO_SDK_DIR}")
+        target_include_directories(${PROJECT_NAME}
+            PRIVATE
+                "${ASIO_SDK_DIR}/common"
+        )
+        
+        # Enable ASIO support in JUCE
+        target_compile_definitions(${PROJECT_NAME}
+            PRIVATE
+                JUCE_ASIO=1
+        )
+        
+        message(STATUS "ASIO support enabled")
+    else()
+        message(STATUS "ASIO SDK not found - ASIO support disabled")
+        target_compile_definitions(${PROJECT_NAME}
+            PRIVATE
+                JUCE_ASIO=0
+        )
+    endif()
+    # Disable ASIO in CI builds (incompatible with GitHub Actions runner)
+    if(DEFINED ENV{CI})
+        message(STATUS "CI environment detected - disabling ASIO support")
+        target_compile_definitions(${PROJECT_NAME}
+            PRIVATE
+                JUCE_ASIO=0
+        )
+    endif()
+else()
+    # Non-Windows platforms don't use ASIO
+    target_compile_definitions(${PROJECT_NAME}
+        PRIVATE
+            JUCE_ASIO=0
+    )
+endif()
+
 if(APPLE AND NOT CMAKE_GENERATOR STREQUAL "Ninja")
     message(FATAL_ERROR "use ninja")
 endif()
