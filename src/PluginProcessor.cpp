@@ -602,7 +602,37 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     // Update parameter sync manager with new sample rate
     parameterSync.setSampleRate(sampleRate);
 
-    // Note: JSFX initialization happens in loadJSFXFromFile(), not here.
+    // Mark that prepareToPlay has been called
+    isPrepared.store(true, std::memory_order_release);
+
+    // If flag is set (from setStateInformation), load the JSFX now
+    // This handles case where setStateInformation was called before prepareToPlay
+    if (!sxInstance && needsForcePushApvtsToJsfx.load(std::memory_order_acquire))
+    {
+        auto jsfxPath = getCurrentJSFXPath();
+        if (jsfxPath.isNotEmpty())
+        {
+            juce::File jsfxFile(jsfxPath);
+            if (jsfxFile.existsAsFile())
+            {
+                DBG("prepareToPlay: Loading JSFX from restored state: " + jsfxPath);
+                loadJSFX(jsfxFile);
+                // Note: needsForcePushApvtsToJsfx flag will be handled in processBlock
+            }
+            else
+            {
+                DBG("prepareToPlay: JSFX file not found: " + jsfxPath);
+                needsForcePushApvtsToJsfx.store(false, std::memory_order_release);
+            }
+        }
+        else
+        {
+            // No valid path, clear the flag
+            needsForcePushApvtsToJsfx.store(false, std::memory_order_release);
+        }
+    }
+
+    // Note: JSFX initialization happens in loadJSFX(), not here.
     // prepareToPlay() only initializes the host plugin wrapper state.
     // If sample rate changes after JSFX is loaded, the JSFX will get the new rate
     // via sx_extended() call and through sx_processSamples() sampleRate parameter.
@@ -648,6 +678,9 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
 
 void AudioPluginAudioProcessor::releaseResources()
 {
+    // Mark as not prepared when resources are released
+    isPrepared.store(false, std::memory_order_release);
+
     // Note: Don't clean up here - releaseResources is not guaranteed to be called!
     // All cleanup happens at the start of prepareToPlay() instead.
 }
@@ -718,11 +751,32 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     //       }
     //   }
 
+    // Early return if no JSFX instance is loaded
     if (!sxInstance)
     {
+        // Clear buffers and return - can't process without JSFX
         buffer.clear();
         midiMessages.clear();
         return;
+    }
+
+    // If we need to force push APVTS to JSFX (after state restoration), do it now
+    if (needsForcePushApvtsToJsfx.load(std::memory_order_acquire))
+    {
+        DBG("processBlock: Force pushing APVTS to JSFX after state restoration");
+
+        for (int i = 0; i < numActiveParams; ++i)
+        {
+            if (i < static_cast<int>(parameterCache.size()) && parameterCache[i])
+            {
+                float normalizedValue = parameterCache[i]->getValue();
+                double actualValue = ParameterUtils::normalizedToActualValue(sxInstance, i, normalizedValue);
+                JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
+            }
+        }
+
+        needsForcePushApvtsToJsfx.store(false, std::memory_order_release);
+        DBG("processBlock: Finished force push and cleared flag");
     }
 
     // Setup MIDI routing: input from host, output accumulator
@@ -926,18 +980,36 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
             // Restore the state tree (parameters and properties)
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
 
-            // Load JSFX from stored path (loadJSFX will handle all initialization)
+            // Check if there's a valid JSFX path to restore
             auto jsfxPath = getCurrentJSFXPath();
-            DBG("setStateInformation: Restoring JSFX from path: " + jsfxPath);
+            DBG("setStateInformation: Found JSFX path in state: " + jsfxPath);
+
             if (jsfxPath.isNotEmpty())
             {
                 juce::File jsfxFile(jsfxPath);
-                DBG("  File exists: " + juce::String(jsfxFile.existsAsFile() ? "YES" : "NO"));
                 if (jsfxFile.existsAsFile())
                 {
-                    DBG("  Calling loadJSFX...");
-                    bool success = loadJSFX(jsfxFile);
-                    DBG("  loadJSFX returned: " + juce::String(success ? "SUCCESS" : "FAILED"));
+                    // Set flag to force push APVTS to JSFX
+                    // This prevents loadJSFX from initializing APVTS with JSFX defaults
+                    needsForcePushApvtsToJsfx.store(true, std::memory_order_release);
+
+                    // Check if prepareToPlay has already been called
+                    if (isPrepared.load(std::memory_order_acquire))
+                    {
+                        // prepareToPlay was already called, load JSFX now
+                        DBG("  prepareToPlay already called, loading JSFX immediately");
+                        loadJSFX(jsfxFile);
+                        // Flag will be handled in processBlock to force push APVTS
+                    }
+                    else
+                    {
+                        // prepareToPlay hasn't been called yet, defer loading
+                        DBG("  prepareToPlay not yet called, will load JSFX in prepareToPlay");
+                    }
+                }
+                else
+                {
+                    DBG("  WARNING: JSFX file does not exist: " + jsfxFile.getFullPathName());
                 }
             }
 
@@ -1161,7 +1233,28 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
 
     // Update state and parameters
     apvts.state.setProperty(jsfxPathParamID, jsfxFile.getFullPathName(), nullptr);
-    updateParameterMapping();
+
+    // Check if we should initialize with JSFX defaults or preserve APVTS state
+    bool shouldInitWithJsfxDefaults = !needsForcePushApvtsToJsfx.load(std::memory_order_acquire);
+
+    if (shouldInitWithJsfxDefaults)
+    {
+        // Normal case: Initialize BOTH APVTS and JSFX with JSFX default values
+        DBG("Initializing APVTS with JSFX defaults...");
+
+        // Suspend processing to ensure atomic initialization
+        suspendProcessing(true);
+        updateParameterMapping(true);
+        suspendProcessing(false);
+    }
+    else
+    {
+        // State restoration case: Keep APVTS values, don't initialize with JSFX defaults
+        // The force push to JSFX will happen in processBlock
+        DBG("Skipping APVTS initialization (will force push APVTS to JSFX in processBlock)");
+        updateParameterMapping(false);
+    }
+
     currentJSFXLatency.store(latencySamples, std::memory_order_relaxed);
     setLatencySamples(latencySamples);
 
@@ -1253,7 +1346,7 @@ juce::String AudioPluginAudioProcessor::getJSFXParameterDisplayText(int index, d
     return ParameterUtils::getParameterDisplayText(sxInstance, index, value);
 }
 
-void AudioPluginAudioProcessor::updateParameterMapping()
+void AudioPluginAudioProcessor::updateParameterMapping(bool initializeWithJsfxDefaults)
 {
     if (!sxInstance)
     {
@@ -1264,11 +1357,10 @@ void AudioPluginAudioProcessor::updateParameterMapping()
     numActiveParams = JesusonicAPI.sx_getNumParms(sxInstance);
     numActiveParams = juce::jmin(numActiveParams, PluginConstants::MaxParameters);
 
-    // Get parameter ranges from JSFX and sync APVTS values INTO JSFX
-    // This preserves any restored APVTS state (from setStateInformation)
+    // Get parameter ranges and defaults from JSFX
     for (int i = 0; i < numActiveParams; ++i)
     {
-        // Get parameter range information from JSFX
+        // Get parameter range information and default value from JSFX
         double jsfxDefaultVal = JesusonicAPI.sx_getParmVal(
             sxInstance,
             i,
@@ -1279,31 +1371,56 @@ void AudioPluginAudioProcessor::updateParameterMapping()
 
         if (auto* param = parameterCache[i])
         {
-            // Get current APVTS value (may be restored from saved state or default)
-            float normalizedValue = param->getValue();
+            if (initializeWithJsfxDefaults)
+            {
+                // Special case: Initialize BOTH APVTS and JSFX with JSFX default values
+                // Convert JSFX default to normalized value
+                double minVal = parameterRanges[i].minVal;
+                double maxVal = parameterRanges[i].maxVal;
+                float normalizedValue = 0.0f;
+                if (maxVal > minVal)
+                    normalizedValue = static_cast<float>((jsfxDefaultVal - minVal) / (maxVal - minVal));
 
-            // Convert normalized value to actual JSFX range
-            double actualValue = ParameterUtils::normalizedToActualValue(sxInstance, i, normalizedValue);
+                // Set APVTS to JSFX default (message thread, safe here)
+                param->setValueNotifyingHost(normalizedValue);
 
-            // Set the JSFX parameter to match APVTS (preserves restored state)
-            // sampleoffs=0 means apply immediately
-            JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
+                // JSFX already has its default value (just loaded), no need to set
 
-            DBG("Param "
-                << i
-                << " synced to JSFX: normalizedVal="
-                << juce::String(normalizedValue, 3)
-                << " actualVal="
-                << juce::String(actualValue, 3)
-                << " range=["
-                << juce::String(parameterRanges[i].minVal, 3)
-                << ".."
-                << juce::String(parameterRanges[i].maxVal, 3)
-                << "]");
+                DBG("Param "
+                    << i
+                    << " initialized with JSFX default: jsfxVal="
+                    << juce::String(jsfxDefaultVal, 3)
+                    << " normalizedVal="
+                    << juce::String(normalizedValue, 3)
+                    << " range=["
+                    << juce::String(minVal, 3)
+                    << ".."
+                    << juce::String(maxVal, 3)
+                    << "]");
+            }
+            else
+            {
+                // Normal case: Sync APVTS -> JSFX (preserves existing APVTS state)
+                float normalizedValue = param->getValue();
+                double actualValue = ParameterUtils::normalizedToActualValue(sxInstance, i, normalizedValue);
+                JesusonicAPI.sx_setParmVal(sxInstance, i, actualValue, 0);
+
+                DBG("Param "
+                    << i
+                    << " synced APVTS->JSFX: normalizedVal="
+                    << juce::String(normalizedValue, 3)
+                    << " actualVal="
+                    << juce::String(actualValue, 3)
+                    << " range=["
+                    << juce::String(parameterRanges[i].minVal, 3)
+                    << ".."
+                    << juce::String(parameterRanges[i].maxVal, 3)
+                    << "]");
+            }
         }
     }
 
-    // Initialize the parameter sync manager with current APVTS state
+    // Initialize the parameter sync manager with current state
     parameterSync.initialize(parameterCache, sxInstance, numActiveParams, lastSampleRate);
 }
 

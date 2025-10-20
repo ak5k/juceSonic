@@ -45,8 +45,6 @@ void ParameterSyncManager::initialize(
                 << juce::String(jsfxValue, 3));
         }
     }
-
-
 }
 
 void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int numSamples)
@@ -85,7 +83,6 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
         {
             // Both changed - APVTS takes precedence
 
-
             // Convert and set JSFX value directly (no smoothing)
             double jsfxTargetValue = normalizedToJsfx(jsfxInstance, i, currentApvtsValue);
             JesusonicAPI.sx_setParmVal(jsfxInstance, i, jsfxTargetValue, 0);
@@ -113,8 +110,6 @@ void ParameterSyncManager::updateFromAudioThread(SX_Instance* jsfxInstance, int 
             state.pendingApvtsValue.store(normalizedValue, std::memory_order_release);
             state.jsfxValue.store(currentJsfxValue, std::memory_order_release);
             state.apvtsNeedsUpdate.store(true, std::memory_order_release);
-
-
         }
     }
 }
@@ -141,16 +136,12 @@ void ParameterSyncManager::pushAPVTSUpdatesFromTimer()
             // Update our APVTS state tracking (release makes writes visible to audio thread)
             state.apvtsValue.store(pendingValue, std::memory_order_release);
             state.apvtsNeedsUpdate.store(false, std::memory_order_release);
-
-
         }
     }
 }
 
 void ParameterSyncManager::reset()
 {
-
-
     numParams = 0;
 
     // Reset all parameter states to defaults
@@ -169,7 +160,6 @@ void ParameterSyncManager::reset()
 void ParameterSyncManager::setSampleRate(double sampleRate)
 {
     currentSampleRate = sampleRate;
-
 }
 
 double ParameterSyncManager::jsfxToNormalized(SX_Instance* instance, int paramIndex, double jsfxValue)
