@@ -13,6 +13,7 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     setButtonMenuTitle("Presets");
 
     // Add buttons to the button row (from base class)
+    wasdButton = &getButtonRow().addButton("WASD", [this]() { setWASDMode(!wasdModeEnabled); });
     exportButton = &getButtonRow().addButton("Export", [this]() { exportSelectedPresets(); });
     deleteButton = &getButtonRow().addButton("Delete", [this]() { deleteSelectedPresets(); });
     saveButton = &getButtonRow().addButton("Save", [this]() { saveCurrentPreset(); });
@@ -20,6 +21,9 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     setDefaultButton = &getButtonRow().addButton("Set as Default", [this]() { setAsDefaultPreset(); });
     directoriesButton = &getButtonRow().addButton("Directories", [this]() { showDirectoryEditor(); });
     refreshButton = &getButtonRow().addButton("Refresh", [this]() { refreshPresetList(); });
+
+    // Initialize WASD button appearance
+    setWASDMode(false);
 
     // Setup tree view
     addAndMakeVisible(presetTreeView);
@@ -753,6 +757,106 @@ void PresetWindow::setAsDefaultPreset()
             nullptr
         );
     }
+}
+
+void PresetWindow::setWASDMode(bool enabled)
+{
+    wasdModeEnabled = enabled;
+    
+    if (wasdButton)
+    {
+        // Update button appearance to show toggle state
+        wasdButton->setToggleState(enabled, juce::dontSendNotification);
+        wasdButton->setColour(juce::TextButton::buttonOnColourId, juce::Colours::darkgreen);
+    }
+}
+
+void PresetWindow::navigateToNextPreset()
+{
+    navigatePresetJump(1);
+}
+
+void PresetWindow::navigateToPreviousPreset()
+{
+    navigatePresetJump(-1);
+}
+
+void PresetWindow::navigatePresetJump(int count)
+{
+    // Get all preset items in order
+    auto allPresets = presetTreeView.getDeepestLevelItems();
+    
+    if (allPresets.isEmpty())
+        return;
+
+    // Find currently selected preset
+    auto selectedItems = presetTreeView.getSelectedItems();
+    int currentIndex = -1;
+
+    if (!selectedItems.isEmpty())
+    {
+        for (int i = 0; i < allPresets.size(); ++i)
+        {
+            if (allPresets[i] == selectedItems[0])
+            {
+                currentIndex = i;
+                break;
+            }
+        }
+    }
+
+    // Calculate new index
+    int newIndex;
+    if (currentIndex < 0)
+    {
+        // No selection - start from first if going forward, last if going backward
+        newIndex = (count > 0) ? 0 : allPresets.size() - 1;
+    }
+    else
+    {
+        newIndex = currentIndex + count;
+        
+        // Wrap around
+        if (newIndex < 0)
+            newIndex = allPresets.size() + (newIndex % allPresets.size());
+        else if (newIndex >= allPresets.size())
+            newIndex = newIndex % allPresets.size();
+    }
+
+    // Select and load the new preset
+    if (newIndex >= 0 && newIndex < allPresets.size())
+    {
+        if (auto* presetItem = dynamic_cast<PresetTreeItem*>(allPresets[newIndex]))
+        {
+            selectAndLoadPresetItem(presetItem);
+        }
+    }
+}
+
+void PresetWindow::selectAndLoadPresetItem(PresetTreeItem* item)
+{
+    if (!item)
+        return;
+
+    // Deselect all other items
+    presetTreeView.getTreeView().clearSelectedItems();
+    
+    // Select the new item
+    item->setSelected(true, true);
+    
+    // Ensure the item is visible by expanding parent items
+    auto* parent = item->getParentItem();
+    while (parent)
+    {
+        parent->setOpen(true);
+        parent = parent->getParentItem();
+    }
+    
+    // Scroll to make the item visible
+    presetTreeView.getTreeView().scrollToKeepItemVisible(item);
+    
+    // Load the preset
+    handlePresetTreeItemSelected(item);
 }
 
 void PresetDirectoryEditor::cancel()

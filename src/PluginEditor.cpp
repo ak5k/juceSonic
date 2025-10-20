@@ -738,6 +738,7 @@ bool AudioPluginAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
     // - F         : Toggle button bar visibility
     // - F11       : Toggle fullscreen mode
     // - ESC       : Collapse all expanded trees
+    // - W/A/S/D   : Preset navigation (when WASD mode enabled)
 
     // ESC key - Collapse all expanded trees
     if (key == juce::KeyPress::escapeKey)
@@ -763,6 +764,37 @@ bool AudioPluginAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
         {
             buttonBarVisible = !buttonBarVisible;
             resized(); // Trigger layout update
+            return true;
+        }
+    }
+
+    // WASD preset navigation (when enabled)
+    if (presetWindow.isWASDModeEnabled() && !key.getModifiers().isAnyModifierKeyDown())
+    {
+        auto keyChar = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+        
+        if (keyChar == 'a')
+        {
+            // A = Previous preset
+            presetWindow.navigateToPreviousPreset();
+            return true;
+        }
+        else if (keyChar == 'd')
+        {
+            // D = Next preset
+            presetWindow.navigateToNextPreset();
+            return true;
+        }
+        else if (keyChar == 'w')
+        {
+            // W = Jump back 10
+            presetWindow.navigatePresetJump(-10);
+            return true;
+        }
+        else if (keyChar == 's')
+        {
+            // S = Jump forward 10
+            presetWindow.navigatePresetJump(10);
             return true;
         }
     }

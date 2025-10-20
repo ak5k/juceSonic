@@ -53,6 +53,19 @@ public:
     void refreshPresetList();
 
     /**
+     * @brief Navigate to next/previous preset
+     */
+    void navigateToNextPreset();
+    void navigateToPreviousPreset();
+    void navigatePresetJump(int count); // Positive = forward, negative = backward
+
+    /**
+     * @brief Get/Set WASD mode state
+     */
+    bool isWASDModeEnabled() const { return wasdModeEnabled; }
+    void setWASDMode(bool enabled);
+
+    /**
      * @brief Callback invoked when a preset is selected/loaded
      * Parameters: (bankName, presetName, presetData)
      */
@@ -85,6 +98,9 @@ private:
 
     AudioPluginAudioProcessor& processor;
 
+    // Helper to navigate to a specific preset item
+    void selectAndLoadPresetItem(PresetTreeItem* item);
+
     // UI Components - button pointers managed by base class ButtonRowComponent
     juce::TextButton* exportButton = nullptr;
     juce::TextButton* deleteButton = nullptr;
@@ -93,10 +109,12 @@ private:
     juce::TextButton* setDefaultButton = nullptr;
     juce::TextButton* directoriesButton = nullptr;
     juce::TextButton* refreshButton = nullptr;
+    juce::TextButton* wasdButton = nullptr;
 
     PresetTreeView presetTreeView;
 
     bool showManagementButtons = true;
+    bool wasdModeEnabled = false;
 
     // Track currently selected preset for delete operations
     juce::String currentPresetBankName;

@@ -132,6 +132,31 @@ void AudioPluginAudioProcessor::updateRoutingConfig(const RoutingConfig& newConf
 
     // Update read index to point to the buffer we just wrote (atomic swap)
     readIndex.store(writeIdx, std::memory_order_release);
+
+    // Encode and save routing configuration to APVTS for persistence
+    juce::String routingStr;
+
+    // Encode input routing: [JUCE input][JSFX input]
+    for (int juceIn = 0; juceIn < newConfig.numJuceInputs; ++juceIn)
+        for (int jsfxIn = 0; jsfxIn < newConfig.numJsfxInputs; ++jsfxIn)
+            routingStr += newConfig.inputRouting[juceIn][jsfxIn] ? "1" : "0";
+
+    routingStr += ",";
+
+    // Encode sidechain routing: [JUCE sidechain][JSFX sidechain]
+    for (int juceSc = 0; juceSc < newConfig.numJuceSidechains; ++juceSc)
+        for (int jsfxSc = 0; jsfxSc < newConfig.numJsfxSidechains; ++jsfxSc)
+            routingStr += newConfig.sidechainRouting[juceSc][jsfxSc] ? "1" : "0";
+
+    routingStr += ",";
+
+    // Encode output routing: [JSFX output][JUCE output]
+    for (int jsfxOut = 0; jsfxOut < newConfig.numJsfxOutputs; ++jsfxOut)
+        for (int juceOut = 0; juceOut < newConfig.numJuceOutputs; ++juceOut)
+            routingStr += newConfig.outputRouting[jsfxOut][juceOut] ? "1" : "0";
+
+    // Save to APVTS for persistence
+    apvts.state.setProperty("ioMatrixRouting", routingStr, nullptr);
 }
 
 //==============================================================================
@@ -577,29 +602,42 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     // Update parameter sync manager with new sample rate
     parameterSync.setSampleRate(sampleRate);
 
-    if (sxInstance)
-        JesusonicAPI.sx_extended(sxInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)sampleRate, nullptr);
+    // Note: JSFX initialization happens in loadJSFXFromFile(), not here.
+    // prepareToPlay() only initializes the host plugin wrapper state.
+    // If sample rate changes after JSFX is loaded, the JSFX will get the new rate
+    // via sx_extended() call and through sx_processSamples() sampleRate parameter.
 
     // Initialize routing matrix with valid bus configuration
     // This must be done here (not in loadJSFX) because bus layout isn't ready during construction
-    if (sxInstance)
-    {
-        auto bus = getBusesLayout();
-        int juceOutputs = bus.getMainOutputChannels();
+    // Always initialize, even if no JSFX is loaded yet (needed for state restoration)
+    auto bus = getBusesLayout();
+    int juceInputs = bus.getMainInputChannels();
+    int juceOutputs = bus.getMainOutputChannels();
+    int juceSidechains = (getBusCount(true) > 1) ? getBus(true, 1)->getNumberOfChannels() : 0;
 
-        // Initialize all routing configs with diagonal routing
+    // Check if routing needs initialization (channel counts are 0)
+    bool needsInit = (routingConfigs[0].numJuceInputs == 0 || 
+                      routingConfigs[0].numJuceOutputs == 0);
+
+    if (needsInit)
+    {
+        // Initialize all routing configs with current bus layout and diagonal (1:1) routing
         for (int i = 0; i < 3; ++i)
         {
+            routingConfigs[i].numJuceInputs = juceInputs;
+            routingConfigs[i].numJuceSidechains = juceSidechains;
             routingConfigs[i].numJuceOutputs = juceOutputs;
+            routingConfigs[i].numJsfxInputs = juceInputs + juceSidechains;
+            routingConfigs[i].numJsfxSidechains = 0; // Not used in current implementation
             routingConfigs[i].numJsfxOutputs = juceOutputs;
             routingConfigs[i].setDiagonal();
         }
 
-        DBG("Routing matrix initialized: "
-            << routingConfigs[0].numJsfxOutputs
-            << " JSFX outputs -> "
-            << routingConfigs[0].numJuceOutputs
-            << " JUCE outputs");
+        DBG("Routing matrix initialized with diagonal (1:1) routing: "
+            << juceInputs << " JUCE inputs + " << juceSidechains << " sidechains -> "
+            << routingConfigs[0].numJsfxInputs << " JSFX channels -> "
+            << routingConfigs[0].numJsfxOutputs << " JSFX outputs -> "
+            << routingConfigs[0].numJuceOutputs << " JUCE outputs");
     }
 }
 
@@ -791,7 +829,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         tempBuffer.getWritePointer(0),
         buffer.getNumSamples(),
         totalJsfxChannels, // Use total JSFX channels including sidechain
-        getSampleRate(),
+        (int)(getSampleRate() + 0.5), // Cast to int, matching vstframe.cpp
         tempo,
         timeSigNumerator,
         timeSigDenominator,
@@ -898,10 +936,13 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
                 }
             }
 
-            // Restore routing configuration
+            // Restore routing configuration (will only work if prepareToPlay has already initialized channel counts)
             auto routingStr = apvts.state.getProperty("ioMatrixRouting", "").toString();
             if (routingStr.isNotEmpty())
+            {
+                DBG("setStateInformation: Attempting to restore routing");
                 restoreRoutingFromString(routingStr);
+            }
         }
     }
 }
@@ -915,6 +956,14 @@ void AudioPluginAudioProcessor::restoreRoutingFromString(const juce::String& rou
     // Get current routing config to read channel counts
     int currentRead = readIndex.load(std::memory_order_acquire);
     const auto& currentConfig = routingConfigs[currentRead];
+
+    // If channel counts are not initialized yet, skip restoration
+    // prepareToPlay() will initialize them and this will be called again
+    if (currentConfig.numJuceInputs == 0 || currentConfig.numJuceOutputs == 0)
+    {
+        DBG("restoreRoutingFromString: Channel counts not initialized yet, skipping");
+        return;
+    }
 
     RoutingConfig newConfig;
     newConfig.numJuceInputs = currentConfig.numJuceInputs;
@@ -1022,11 +1071,22 @@ bool AudioPluginAudioProcessor::loadJSFX(const juce::File& jsfxFile)
     DBG("JSFX instance created successfully");
     DBG("  Has GFX code: " + juce::String(newInstance->gfx_hasCode() ? "YES" : "NO"));
 
-    // Setup new instance
+    // Setup new instance with proper initialization sequence (matching vstframe.cpp):
+    // 1. Set up host context (for slider automation)
     sx_set_host_ctx(newInstance, this, JsfxSliderAutomateThunk);
+    
+    // 2. Set sample rate
     JesusonicAPI.sx_extended(newInstance, JSFX_EXT_SET_SRATE, (void*)(intptr_t)lastSampleRate, nullptr);
+    
+    // 3. Set up MIDI context
     sx_set_midi_ctx(newInstance, &midiSendRecvCallback, this);
+    
+    // 4. Update host channel count (-1 = use current bus layout)
     JesusonicAPI.sx_updateHostNch(newInstance, getTotalNumInputChannels());
+
+    // Note: Do NOT call sx_processSamples with NULL buffer here!
+    // The JSFX @init section will be triggered automatically on the first real
+    // call to sx_processSamples during audio processing.
 
     // Initialize JSFX graphics (@gfx section) before swapping
     // This ensures the LICE state and framebuffer are ready when the UI accesses it
