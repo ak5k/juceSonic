@@ -160,15 +160,6 @@ void JsfxLiceComponent::resized()
     int newWidth = getWidth();
     int newHeight = getHeight();
 
-    DBG("JsfxLiceComponent::resized() - new size: "
-        << newWidth
-        << "x"
-        << newHeight
-        << ", last size: "
-        << lastFramebufferWidth
-        << "x"
-        << lastFramebufferHeight);
-
     if (newWidth > 0 && newHeight > 0 && (newWidth != lastFramebufferWidth || newHeight != lastFramebufferHeight))
     {
         // Recreate framebuffer with new dimensions

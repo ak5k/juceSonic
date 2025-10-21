@@ -76,6 +76,7 @@ static constexpr const char* DefaultPresetBankName = "User";
 static constexpr const char* DefaultPresetName = "Default";
 
 // UI Layout constants
+static constexpr int ParameterSliderHeight = 30;         // Height of each parameter slider row
 static constexpr int LiceComponentExtraHeightPixels = 0; // Extra pixels to add when calculating LICE UI height
 } // namespace PluginConstants
 

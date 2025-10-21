@@ -139,6 +139,7 @@ public:
     bool getJSFXParameterRange(int index, double& minVal, double& maxVal, double& step) const;
     bool isJSFXParameterEnum(int index) const;
     juce::String getJSFXParameterDisplayText(int index, double value) const;
+    bool isJSFXParameterVisible(int index) const;
 
     juce::AudioProcessorValueTreeState& getAPVTS()
     {
@@ -176,6 +177,9 @@ public:
 
     // Check if a default preset exists for the current JSFX
     bool hasDefaultPreset() const;
+
+    // Request preset refresh (e.g., after external file modifications)
+    void refreshPresets();
 
 private:
     // Helper to restore routing from encoded string

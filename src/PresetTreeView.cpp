@@ -48,6 +48,10 @@ void PresetTreeItem::itemDoubleClicked(const juce::MouseEvent&)
 void PresetTreeItem::itemSelectionChanged(bool isNowSelected)
 {
     repaintItem();
+
+    // Notify the tree view of selection change
+    if (presetTreeView)
+        presetTreeView->onSelectionChanged();
 }
 
 //==============================================================================

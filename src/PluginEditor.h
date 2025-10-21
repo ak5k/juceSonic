@@ -212,6 +212,9 @@ public:
     void resized() override;
     bool keyPressed(const juce::KeyPress& key) override;
 
+    // Called by processor before serializing state to save editor size
+    void saveEditorState();
+
     // Public so LookAndFeel can access it
 private:
     void loadJSFXFile();
@@ -270,14 +273,14 @@ private:
     void openPresetManager();
     void openJsfxPluginBrowser();
 
-    // JSFX lifecycle management (internal constructor/destructor pattern)
-    void saveJsfxState();      // Internal "destructor" - save state before unloading JSFX
-    void restoreJsfxUiState(); // Internal "constructor" - restore state after loading JSFX
+    // JSFX UI preparation (called after JSFX is loaded)
+    void prepareJsfxUi(bool restoreSavedSize = true); // Calculates proper UI size based on GFX and parameters
 
-    // Size to be restored (set by restoreJsfxUiState, applied by async callback)
+    // Size to be applied (calculated by prepareJsfxUi, applied by async callback or immediately)
     int restoredWidth = 700;
     int restoredHeight = 500;
     bool buttonBarVisible = true;
+    bool parametersVisible = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

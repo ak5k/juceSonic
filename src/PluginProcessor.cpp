@@ -498,6 +498,12 @@ bool AudioPluginAudioProcessor::hasDefaultPreset() const
     return defaultPresetFile.existsAsFile();
 }
 
+void AudioPluginAudioProcessor::refreshPresets()
+{
+    if (presetLoader)
+        presetLoader->requestRefresh(getCurrentJSFXPath());
+}
+
 void AudioPluginAudioProcessor::timerCallback()
 {
     // Check if latency has changed and update the host
@@ -964,6 +970,14 @@ juce::AudioProcessorEditor* AudioPluginAudioProcessor::createEditor()
 //==============================================================================
 void AudioPluginAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
+    // If the editor is open, save its current size to the state tree BEFORE serializing
+    // This ensures window size is persisted correctly on shutdown
+    if (auto* editor = getActiveEditor())
+    {
+        if (auto* pluginEditor = dynamic_cast<AudioPluginAudioProcessorEditor*>(editor))
+            pluginEditor->saveEditorState();
+    }
+
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
@@ -1344,6 +1358,23 @@ juce::String AudioPluginAudioProcessor::getJSFXParameterDisplayText(int index, d
         return juce::String(value);
 
     return ParameterUtils::getParameterDisplayText(sxInstance, index, value);
+}
+
+bool AudioPluginAudioProcessor::isJSFXParameterVisible(int index) const
+{
+    if (!sxInstance || index < 0 || index >= numActiveParams)
+        return false;
+
+    // Access JSFX instance directly to check slider visibility
+    auto* sx = static_cast<SX_Instance*>(sxInstance);
+    if (index < sx->m_sliders.GetSize())
+    {
+        const effectSlider* slider = sx->m_sliders.Get(index);
+        if (slider)
+            return slider->show != 0; // show field: 0=hidden, non-zero=visible
+    }
+
+    return false;
 }
 
 void AudioPluginAudioProcessor::updateParameterMapping(bool initializeWithJsfxDefaults)

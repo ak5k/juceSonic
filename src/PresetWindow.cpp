@@ -32,8 +32,12 @@ PresetWindow::PresetWindow(AudioPluginAudioProcessor& proc)
     // Setup tree view command callback (for Enter key / double-click)
     presetTreeView.onCommand = [this](const juce::Array<juce::TreeViewItem*>& selectedItems)
     {
+        // Cache selection before command processing (which might clear tree selection)
         if (!selectedItems.isEmpty())
+        {
+            cacheSelection(selectedItems);
             handlePresetTreeItemSelected(selectedItems[0]);
+        }
     };
 
     setSize(600, 500);
@@ -90,29 +94,25 @@ void PresetWindow::exportSelectedPresets()
 {
     auto selectedItems = presetTreeView.getSelectedPresetItems();
 
-    // If tree is collapsed and nothing is selected, export ALL presets
+    // If current selection is empty, use cached selection
     if (selectedItems.isEmpty())
     {
-        if (presetTreeView.isInCollapsedMode())
-        {
-            // Get all presets from the tree
-            auto allItems = presetTreeView.getDeepestLevelItems();
-            for (auto* item : allItems)
-                if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
-                    selectedItems.add(presetItem);
-        }
+        for (auto* item : getCachedSelection())
+            if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
+                selectedItems.add(presetItem);
+    }
 
-        if (selectedItems.isEmpty())
-        {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::InfoIcon,
-                "No Presets",
-                "No presets available to export.",
-                "OK",
-                nullptr
-            );
-            return;
-        }
+    // Require at least one item to be selected
+    if (selectedItems.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::InfoIcon,
+            "No Selection",
+            "Please select one or more presets, banks, or folders to export.",
+            "OK",
+            nullptr
+        );
+        return;
     }
 
     // Recursively collect all preset items from selected items
@@ -186,6 +186,7 @@ void PresetWindow::exportSelectedPresets()
                     "Exported " + juce::String(presetsToExport.size()) + " presets",
                     juce::dontSendNotification
                 );
+                clearCachedSelection();
             }
             else
             {
@@ -205,29 +206,25 @@ void PresetWindow::deleteSelectedPresets()
 {
     auto selectedItems = presetTreeView.getSelectedPresetItems();
 
-    // If tree is collapsed and nothing is selected, delete ALL presets
+    // If current selection is empty, use cached selection
     if (selectedItems.isEmpty())
     {
-        if (presetTreeView.isInCollapsedMode())
-        {
-            // Get all presets from the tree
-            auto allItems = presetTreeView.getDeepestLevelItems();
-            for (auto* item : allItems)
-                if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
-                    selectedItems.add(presetItem);
-        }
+        for (auto* item : getCachedSelection())
+            if (auto* presetItem = dynamic_cast<PresetTreeItem*>(item))
+                selectedItems.add(presetItem);
+    }
 
-        if (selectedItems.isEmpty())
-        {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::InfoIcon,
-                "No Presets",
-                "No presets available to delete.",
-                "OK",
-                nullptr
-            );
-            return;
-        }
+    // Require at least one item to be selected
+    if (selectedItems.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::InfoIcon,
+            "No Selection",
+            "Please select one or more presets, banks, or folders to delete.",
+            "OK",
+            nullptr
+        );
+        return;
     }
 
     // Recursively collect all preset items from selected items
@@ -251,8 +248,13 @@ void PresetWindow::deleteSelectedPresets()
     // Group by file to show more meaningful counts
     std::set<juce::String> uniqueFiles;
     for (auto* item : presetsToDelete)
+    {
         if (item->getType() == PresetTreeItem::ItemType::Preset)
-            uniqueFiles.insert(item->getFile().getFullPathName());
+        {
+            auto filePath = item->getFile().getFullPathName();
+            uniqueFiles.insert(filePath);
+        }
+    }
 
     juce::String message = "Are you sure you want to delete:\n";
     message += juce::String(presetsToDelete.size()) + " preset(s)";
@@ -270,20 +272,125 @@ void PresetWindow::deleteSelectedPresets()
         nullptr
     );
 
-    if (result == 0)
+    if (result != 0) // 0 means Delete was clicked, non-zero means Cancel
         return;
 
     int deletedPresets = 0;
+    int deletedBanks = 0;
+    int deletedFiles = 0;
 
-    // For individual presets, we need to rewrite the file without those presets
-    // Group presets to delete by file
-    std::map<juce::String, std::vector<PresetTreeItem*>> presetsToDeleteByFile;
+    // Group items to delete by type and file
+    std::set<juce::String> filesToDelete;                                       // Entire .rpl files to delete
+    std::map<juce::String, std::vector<PresetTreeItem*>> banksToDeleteByFile;   // Banks within files
+    std::map<juce::String, std::vector<PresetTreeItem*>> presetsToDeleteByFile; // Individual presets
 
     for (auto* item : presetsToDelete)
-        if (item->getType() == PresetTreeItem::ItemType::Preset)
-            presetsToDeleteByFile[item->getFile().getFullPathName()].push_back(item);
+    {
+        auto type = item->getType();
+        auto filePath = item->getFile().getFullPathName();
 
-    // Process each file
+        if (type == PresetTreeItem::ItemType::File)
+        {
+            // Delete the entire file
+            filesToDelete.insert(filePath);
+        }
+        else if (type == PresetTreeItem::ItemType::Bank)
+        {
+            // Delete a bank from the file
+            banksToDeleteByFile[filePath].push_back(item);
+        }
+        else if (type == PresetTreeItem::ItemType::Preset)
+        {
+            // Delete an individual preset from the file
+            presetsToDeleteByFile[filePath].push_back(item);
+        }
+    }
+
+    // 1. Delete entire files
+    for (const auto& filePath : filesToDelete)
+    {
+        juce::File file(filePath);
+        if (file.deleteFile())
+        {
+            deletedFiles++;
+        }
+        else
+        {
+        }
+    }
+
+    // 2. Delete banks from files
+    for (const auto& [filePath, banksInFile] : banksToDeleteByFile)
+    {
+        juce::File file(filePath);
+        auto content = file.loadFileAsString();
+
+        // Remove each bank from content
+        for (auto* bank : banksInFile)
+        {
+            // Find and remove this bank
+            juce::String searchPattern = "<BANK `" + bank->getBankName() + "`";
+            int bankStart = content.indexOf(searchPattern);
+
+            if (bankStart >= 0)
+            {
+                // Find the closing >
+                int depth = 1;
+                int pos = content.indexOf(bankStart, ">") + 1;
+                int bankEnd = -1;
+
+                while (pos < content.length() && depth > 0)
+                {
+                    if (content[pos] == '<')
+                        depth++;
+                    else if (content[pos] == '>')
+                    {
+                        depth--;
+                        if (depth == 0)
+                        {
+                            bankEnd = pos + 1;
+                            break;
+                        }
+                    }
+                    pos++;
+                }
+
+                if (bankEnd >= 0)
+                {
+                    content = content.substring(0, bankStart) + content.substring(bankEnd);
+                    deletedBanks++;
+                }
+                else
+                {
+                }
+            }
+            else
+            {
+            }
+        }
+
+        // Check if the file still has any presets or banks left
+        bool hasContent = content.contains("<PRESET") || content.contains("<BANK");
+
+        if (!hasContent)
+        {
+            // File is now empty (only has header), delete it
+            if (file.deleteFile())
+            {
+                deletedFiles++;
+            }
+            else
+            {
+            }
+        }
+        else
+        {
+            // Write back the modified content
+            bool writeSuccess = file.replaceWithText(content);
+        }
+    }
+
+    // 3. Delete individual presets from files
     for (const auto& [filePath, presetsInFile] : presetsToDeleteByFile)
     {
         juce::File file(filePath);
@@ -324,16 +431,54 @@ void PresetWindow::deleteSelectedPresets()
                     content = content.substring(0, presetStart) + content.substring(presetEnd);
                     deletedPresets++;
                 }
+                else
+                {
+                }
+            }
+            else
+            {
             }
         }
 
-        // Write back the modified content
-        file.replaceWithText(content);
+        // Check if the file still has any presets or banks left
+        bool hasContent = content.contains("<PRESET") || content.contains("<BANK");
+
+        if (!hasContent)
+        {
+            // File is now empty (only has header), delete it
+            if (file.deleteFile())
+            {
+                deletedFiles++;
+            }
+            else
+            {
+            }
+        }
+        else
+        {
+            // Write back the modified content
+            bool writeSuccess = file.replaceWithText(content);
+        }
     }
 
-    getStatusLabel().setText("Deleted " + juce::String(deletedPresets) + " preset(s)", juce::dontSendNotification);
+    // Build status message
+    juce::StringArray messages;
+    if (deletedFiles > 0)
+        messages.add(juce::String(deletedFiles) + " file(s)");
+    if (deletedBanks > 0)
+        messages.add(juce::String(deletedBanks) + " bank(s)");
+    if (deletedPresets > 0)
+        messages.add(juce::String(deletedPresets) + " preset(s)");
 
-    refreshPresetList();
+    juce::String statusMessage = "Deleted ";
+    statusMessage += messages.joinIntoString(", ");
+
+    getStatusLabel().setText(statusMessage, juce::dontSendNotification);
+
+    clearCachedSelection();
+
+    // Trigger preset refresh in background
+    processor.refreshPresets();
 }
 
 void PresetWindow::saveCurrentPreset()
@@ -487,15 +632,19 @@ void PresetWindow::collectPresetsRecursively(
 
 void PresetWindow::updateButtonsForSelection()
 {
-    auto selectedItems = presetTreeView.getSelectedPresetItems();
-    bool hasSelection = !selectedItems.isEmpty();
+    // Use getSelectedItems() to work directly with the tree view selection
+    auto genericSelectedItems = presetTreeView.getSelectedItems();
 
-    // In collapsed/autohide mode, enable buttons if ANY presets exist (not just selected)
-    // In expanded mode, only enable if there's a selection
-    bool hasAnyPresets = !presetTreeView.getDeepestLevelItems().isEmpty();
-    bool isCollapsed = presetTreeView.isInCollapsedMode();
+    // Cache selection when items are selected (don't clear on deselection)
+    if (!genericSelectedItems.isEmpty())
+        cacheSelection(genericSelectedItems);
 
-    bool shouldEnableButtons = hasSelection || (isCollapsed && hasAnyPresets);
+    // Button enabling logic:
+    // Enable only if there's a current selection OR cached selection
+    // No special fallback behavior - user must explicitly select items
+    bool hasCachedSelection = !getCachedSelection().isEmpty();
+    bool hasSelection = !genericSelectedItems.isEmpty();
+    bool shouldEnableButtons = hasSelection || hasCachedSelection;
 
     exportButton->setEnabled(shouldEnableButtons);
     deleteButton->setEnabled(shouldEnableButtons);

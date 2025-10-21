@@ -21,9 +21,10 @@ JsfxPluginWindow::JsfxPluginWindow(AudioPluginAudioProcessor& proc)
         "Load",
         [this]()
         {
-            // Use cached item since clicking the button may deselect the tree
-            if (cachedSelectedItem)
-                handlePluginTreeItemSelected(cachedSelectedItem);
+            // Use cached selection since clicking the button may deselect the tree
+            auto cached = getCachedSelection();
+            if (!cached.isEmpty())
+                handlePluginTreeItemSelected(cached[0]);
         }
     );
     deleteButton = &getButtonRow().addButton("Delete", [this]() { deleteSelectedPlugins(); });
@@ -61,8 +62,12 @@ JsfxPluginWindow::JsfxPluginWindow(AudioPluginAudioProcessor& proc)
     // Setup tree view command callback (for Enter key / double-click)
     pluginTreeView.onCommand = [this](const juce::Array<juce::TreeViewItem*>& selectedItems)
     {
+        // Cache selection before command processing (which might clear tree selection)
         if (!selectedItems.isEmpty())
+        {
+            cacheSelection(selectedItems);
             handlePluginTreeItemSelected(selectedItems[0]);
+        }
     };
 
     setSize(600, 500);
@@ -114,13 +119,16 @@ void JsfxPluginWindow::deleteSelectedPlugins()
     // Use cached items if available (in case selection was lost when clicking button)
     auto selectedItems = pluginTreeView.getSelectedPluginItems();
 
-    // If no current selection but we have cached item, use that
-    if (selectedItems.isEmpty() && cachedSelectedItem)
+    // If no current selection, use cached selection
+    if (selectedItems.isEmpty())
     {
-        if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(cachedSelectedItem))
+        for (auto* item : getCachedSelection())
         {
-            if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::Plugin)
-                selectedItems.add(pluginItem);
+            if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(item))
+            {
+                if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::Plugin)
+                    selectedItems.add(pluginItem);
+            }
         }
     }
 
@@ -166,7 +174,7 @@ void JsfxPluginWindow::deleteSelectedPlugins()
         nullptr
     );
 
-    if (result == 0)
+    if (result != 0) // 0 means "Move to Trash" was clicked, non-zero means Cancel
         return;
 
     int deletedCount = 0;
@@ -184,9 +192,7 @@ void JsfxPluginWindow::deleteSelectedPlugins()
 
     getStatusLabel().setText("Moved " + juce::String(deletedCount) + " plugin(s) to trash", juce::dontSendNotification);
 
-    // Clear cache after deleting
-    cachedSelectedItem = nullptr;
-
+    clearCachedSelection();
     refreshPluginList();
 }
 
@@ -244,10 +250,10 @@ void JsfxPluginWindow::updateButtonsForSelection()
     bool hasLocalPluginSelected = false;
     int localPluginCount = 0;
 
-    // Only update cached item if we have a selection (don't clear it on deselection)
+    // Cache selection when items are selected (don't clear on deselection)
     if (!selectedItems.isEmpty())
     {
-        cachedSelectedItem = nullptr;
+        juce::Array<juce::TreeViewItem*> itemsToCache;
 
         for (auto* item : selectedItems)
         {
@@ -258,16 +264,17 @@ void JsfxPluginWindow::updateButtonsForSelection()
                 hasPluginSelected = true;
                 hasLocalPluginSelected = true;
                 localPluginCount++;
-                if (!cachedSelectedItem)
-                    cachedSelectedItem = item;
+                itemsToCache.add(item);
             }
             else if (itemType == JsfxPluginTreeItem::ItemType::RemotePlugin)
             {
                 hasPluginSelected = true;
-                if (!cachedSelectedItem)
-                    cachedSelectedItem = item;
+                itemsToCache.add(item);
             }
         }
+
+        if (!itemsToCache.isEmpty())
+            cacheSelection(itemsToCache);
 
         // Update search box placeholder to show selection when not searching
         if (pluginTreeView.getSearchText().isEmpty())
@@ -299,16 +306,24 @@ void JsfxPluginWindow::updateButtonsForSelection()
         }
     }
 
-    // Load button enabled when exactly one plugin is selected OR we have a cached item
-    bool shouldEnableLoad = (hasPluginSelected && selectedItems.size() == 1) || cachedSelectedItem != nullptr;
+    // Load button enabled when exactly one plugin is selected OR we have a cached selection
+    bool hasCachedSelection = !getCachedSelection().isEmpty();
+    bool shouldEnableLoad = (hasPluginSelected && selectedItems.size() == 1) || hasCachedSelection;
     loadButton->setEnabled(shouldEnableLoad);
 
-    // Delete button enabled when any local Plugin items are selected (not RemotePlugin which are from repos)
-    // OR we have a local Plugin cached
-    bool hasCachedLocalPlugin =
-        cachedSelectedItem
-        && dynamic_cast<JsfxPluginTreeItem*>(cachedSelectedItem)
-        && dynamic_cast<JsfxPluginTreeItem*>(cachedSelectedItem)->getType() == JsfxPluginTreeItem::ItemType::Plugin;
+    // Delete button enabled when any local Plugin items are selected OR we have a local Plugin cached
+    bool hasCachedLocalPlugin = false;
+    for (auto* item : getCachedSelection())
+    {
+        if (auto* pluginItem = dynamic_cast<JsfxPluginTreeItem*>(item))
+        {
+            if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::Plugin)
+            {
+                hasCachedLocalPlugin = true;
+                break;
+            }
+        }
+    }
     bool shouldEnableDelete = hasLocalPluginSelected || hasCachedLocalPlugin;
     deleteButton->setEnabled(shouldEnableDelete);
 }
@@ -350,8 +365,7 @@ void JsfxPluginWindow::handlePluginTreeItemSelected(juce::TreeViewItem* item)
             auto pluginFile = pluginItem->getFile();
             pluginTreeView.loadPlugin(pluginFile);
 
-            // Clear cache after loading
-            cachedSelectedItem = nullptr;
+            clearCachedSelection();
         }
         // Handle remote plugins
         else if (pluginItem->getType() == JsfxPluginTreeItem::ItemType::RemotePlugin)
@@ -363,8 +377,7 @@ void JsfxPluginWindow::handlePluginTreeItemSelected(juce::TreeViewItem* item)
             // Download and load via tree view's loadRemotePlugin method
             pluginTreeView.loadRemotePlugin(entry);
 
-            // Clear cache after loading
-            cachedSelectedItem = nullptr;
+            clearCachedSelection();
 
             // Status will be updated via onPluginLoadedCallback
         }

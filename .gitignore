@@ -16,3 +16,5 @@
 !jsfx/**
 !cross-compile.sh
 !linux-dependencies.sh
+!docs/
+!docs/**

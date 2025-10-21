@@ -58,10 +58,38 @@ protected:
         return statusLabel;
     }
 
+    /**
+     * @brief Cache the current selection for later use
+     * Used to preserve selection when button clicks clear the tree selection
+     */
+    void cacheSelection(const juce::Array<juce::TreeViewItem*>& items)
+    {
+        cachedSelectedItems = items;
+    }
+
+    /**
+     * @brief Get the cached selection
+     */
+    const juce::Array<juce::TreeViewItem*>& getCachedSelection() const
+    {
+        return cachedSelectedItems;
+    }
+
+    /**
+     * @brief Clear the cached selection after operations complete
+     */
+    void clearCachedSelection()
+    {
+        cachedSelectedItems.clear();
+    }
+
 private:
     ButtonRowComponent buttonRow;
     juce::Label statusLabel;
     juce::SharedResourcePointer<SharedJuceSonicLookAndFeel> sharedLookAndFeel;
+
+    // Cache selected items to preserve selection when button clicks clear tree selection
+    juce::Array<juce::TreeViewItem*> cachedSelectedItems;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WindowWithButtonRow)
 };
