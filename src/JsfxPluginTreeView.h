@@ -222,6 +222,9 @@ private:
     // Track if any items are downloading (for timer management)
     int activeDownloads = 0;
 
+    // Track destruction to prevent callbacks from accessing destroyed object
+    std::atomic<bool> isDestroyed{false};
+
     // Scan a directory for .jsfx files
     void scanDirectory(JsfxPluginTreeItem* parentItem, const juce::File& directory, bool recursive);
 

@@ -328,7 +328,21 @@ JsfxPluginTreeView::JsfxPluginTreeView(AudioPluginAudioProcessor& proc)
     loadSavedRepositories();
 }
 
-JsfxPluginTreeView::~JsfxPluginTreeView() = default;
+JsfxPluginTreeView::~JsfxPluginTreeView()
+{
+    // Mark as destroyed to prevent callbacks from accessing this object
+    isDestroyed = true;
+
+    // Stop the timer first
+    stopTimer();
+
+    // Clear callbacks to prevent any pending async operations from accessing destroyed object
+    onSelectionChangedCallback = nullptr;
+    onPluginLoadedCallback = nullptr;
+
+    // Destroy downloader before other members to cancel pending downloads
+    downloader.reset();
+}
 
 void JsfxPluginTreeView::loadPlugins(const juce::StringArray& directoryPaths)
 {
@@ -388,26 +402,20 @@ void JsfxPluginTreeView::loadRemoteRepositories()
         if (repo.isLoaded)
             continue;
 
-        // Try to load from cache first (forceRefresh=false)
-        downloader->downloadIndex(
-            juce::URL(repo.indexUrl),
-            [this, repoUrl = repo.indexUrl](bool success, std::vector<ReaPackIndexParser::JsfxEntry> entries)
-            {
-                if (success)
-                {
-                    if (auto* targetRepo = findRepositoryByUrl(repoUrl))
-                    {
-                        targetRepo->entries = std::move(entries);
-                        targetRepo->isLoaded = true;
+        // Load from cache synchronously
+        auto entries = downloader->getCachedIndex(juce::URL(repo.indexUrl));
 
-                        // Refresh tree to show new entries
-                        juce::MessageManager::callAsync([this]() { refreshTree(); });
-                    }
-                }
-            },
-            false
-        ); // Don't force refresh - use cache if available
+        if (!entries.empty())
+        {
+            repo.entries = std::move(entries);
+            repo.isLoaded = true;
+        }
+        // If not in cache, entries will remain empty and isLoaded stays false
+        // User can manually refresh to download
     }
+
+    // Refresh tree to show loaded entries
+    refreshTree();
 }
 
 void JsfxPluginTreeView::scanDirectory(JsfxPluginTreeItem* parentItem, const juce::File& directory, bool recursive)
@@ -478,6 +486,9 @@ void JsfxPluginTreeView::loadRemotePlugin(const ReaPackIndexParser::JsfxEntry& e
         entry,
         [this, entry, expectedFile, loadAfterDownload](const ReaPackDownloader::DownloadResult& result)
         {
+            if (isDestroyed)
+                return;
+
             // Clear downloading state
             setItemDownloading(entry.name, false);
 
@@ -856,6 +867,9 @@ void JsfxPluginTreeView::fetchAndAddDefaultRepository(const juce::String& url)
             juce::MessageManager::callAsync(
                 [this, url, repoName]()
                 {
+                    if (isDestroyed)
+                        return;
+
                     if (repoName.isNotEmpty())
                     {
                         RemoteRepository repo;
@@ -977,6 +991,13 @@ void JsfxPluginTreeView::updateAllRemotePlugins()
             juce::URL(repoUrl),
             [this, tracker, finishIfDone, repoUrl](bool success, std::vector<ReaPackIndexParser::JsfxEntry> entries)
             {
+                if (isDestroyed)
+                {
+                    tracker->pendingRepos.fetch_sub(1);
+                    finishIfDone();
+                    return;
+                }
+
                 if (success)
                 {
                     if (auto* targetRepo = findRepositoryByUrl(repoUrl))
@@ -1006,6 +1027,13 @@ void JsfxPluginTreeView::updateAllRemotePlugins()
                                 entry,
                                 [this, tracker, finishIfDone, entry](const ReaPackDownloader::DownloadResult& result)
                                 {
+                                    if (isDestroyed)
+                                    {
+                                        tracker->pendingDownloads.fetch_sub(1);
+                                        finishIfDone();
+                                        return;
+                                    }
+
                                     if (result.success)
                                     {
                                         updateCachedPackageInfo(entry.name, entry.version, entry.timestamp);
